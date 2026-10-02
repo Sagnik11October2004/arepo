@@ -78,6 +78,10 @@
 #include "../domain/domain.h"
 #include "../mesh/voronoi/voronoi.h"
 
+#ifdef BLACKHOLE_FFR
+#include "../blackhole_ffr/blackhole_ffr.h"
+#endif
+
 #define MODUS_WRITE 0
 #define MODUS_READ 1
 #define MODUS_READCHECK 2
@@ -1190,6 +1194,21 @@ static void contents_restart_file(int modus)
 
   /* Particle data  */
   byten(&P[0], NumPart * sizeof(struct particle_data), modus);
+
+#ifdef BLACKHOLE_FFR
+  if(modus == MODUS_WRITE)
+    bh_ffr_validate_state("restart-write");
+
+  in(&NumBHFFR, modus);
+  if(modus == MODUS_READ)
+    bh_ffr_allocate_state(NumBHFFR);
+
+  if(NumBHFFR > 0)
+    byten(&BHP[0], NumBHFFR * sizeof(struct bh_ffr_particle_data), modus);
+
+  if(modus == MODUS_READ)
+    bh_ffr_validate_state("restart-read");
+#endif /* #ifdef BLACKHOLE_FFR */
 
   polling(modus);
 

@@ -73,6 +73,123 @@
 #include "../main/allvars.h"
 #include "../main/proto.h"
 
+#ifdef BLACKHOLE_FFR
+#include "../blackhole_ffr/blackhole_ffr.h"
+
+static struct bh_ffr_particle_data *io_bh_ffr_data(int particle)
+{
+  if(P[particle].Type != BH_FFR_PARTICLE_TYPE)
+    terminate("BH_FFR I/O callback received non-BH particle type %d", P[particle].Type);
+
+  const int b = P[particle].BHDataIndex;
+  if(b < 0 || b >= NumBHFFR || BHP[b].ParticleID != P[particle].ID)
+    terminate("BH_FFR I/O callback found invalid BHDataIndex for particle ID=%llu", (unsigned long long)P[particle].ID);
+
+  return &BHP[b];
+}
+
+static void io_func_bh_ffr_mass(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->BHMass;
+}
+
+static void io_func_bh_ffr_diskmass(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->ReservoirMass;
+}
+
+static void io_func_bh_ffr_windmass(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->WindMassBuffer;
+}
+
+static void io_func_bh_ffr_mdotsup(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->MdotSupply;
+}
+
+static void io_func_bh_ffr_mdotfeed(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->MdotProcessed;
+}
+
+static void io_func_bh_ffr_mdoth(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->MdotHorizon;
+}
+
+static void io_func_bh_ffr_mdotwind(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->MdotWind;
+}
+
+static void io_func_bh_ffr_mode(int particle, int components, void *out_buffer, int mode)
+{
+  ((int *)out_buffer)[0] = io_bh_ffr_data(particle)->AccretionState;
+}
+
+static void io_func_bh_ffr_discaxis(int particle, int components, void *out_buffer, int mode)
+{
+  struct bh_ffr_particle_data *bh = io_bh_ffr_data(particle);
+  for(int k = 0; k < 3; k++)
+    ((MyOutputFloat *)out_buffer)[k] = bh->DiscDir[k];
+}
+
+static void io_func_bh_ffr_jetaxis(int particle, int components, void *out_buffer, int mode)
+{
+  struct bh_ffr_particle_data *bh = io_bh_ffr_data(particle);
+  for(int k = 0; k < 3; k++)
+    ((MyOutputFloat *)out_buffer)[k] = bh->JetDir[k];
+}
+
+static void io_func_bh_ffr_coherence(int particle, int components, void *out_buffer, int mode)
+{
+  struct bh_ffr_particle_data *bh = io_bh_ffr_data(particle);
+  for(int k = 0; k < 3; k++)
+    ((MyOutputFloat *)out_buffer)[k] = bh->Coherence[k];
+}
+
+static void io_func_bh_ffr_ewind(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->WindEnergyBuffer;
+}
+
+static void io_func_bh_ffr_ejet(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->JetEnergyBuffer;
+}
+
+static void io_func_bh_ffr_lbol(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->BolometricLuminosity;
+}
+
+static void io_func_bh_ffr_pwind(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->WindPower;
+}
+
+static void io_func_bh_ffr_pjet(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->JetPower;
+}
+
+static void io_func_bh_ffr_sigmadm(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->SigmaDM;
+}
+
+static void io_func_bh_ffr_ethwind(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->WindThresholdEnergy;
+}
+
+static void io_func_bh_ffr_ethjet(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->JetThresholdEnergy;
+}
+#endif /* #ifdef BLACKHOLE_FFR */
+
 #ifdef OUTPUT_TASK
 /*! \brief Output of the task the particles are at.
  *
@@ -528,6 +645,85 @@ void init_io_fields()
              SET_IN_GET_PARTICLES_IN_BLOCK); /* particle mass */
   init_units(IO_MASS, 0., -1., 0., 1., 0., All.UnitMass_in_g);
   init_snapshot_type(IO_MASS, SN_MINI);
+
+
+#ifdef BLACKHOLE_FFR
+  /* FFR-MACER BH diagnostics. Native restart files carry the exact BHP state;
+   * these snapshot fields are output-only scientific diagnostics. */
+  init_field(IO_BH_FFR_MASS, "BHMA", "BH_Mass", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0, io_func_bh_ffr_mass, BHS_ONLY);
+  init_units(IO_BH_FFR_MASS, 0., -1., 0., 1., 0., All.UnitMass_in_g);
+
+  init_field(IO_BH_FFR_DISKMASS, "BHDM", "BH_DiskMass", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_ffr_diskmass, BHS_ONLY);
+  init_units(IO_BH_FFR_DISKMASS, 0., -1., 0., 1., 0., All.UnitMass_in_g);
+
+  init_field(IO_BH_FFR_WINDMASS, "BHWM", "BH_WindBufferMass", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_ffr_windmass, BHS_ONLY);
+  init_units(IO_BH_FFR_WINDMASS, 0., -1., 0., 1., 0., All.UnitMass_in_g);
+
+  init_field(IO_BH_FFR_MDOTSUP, "BHMS", "BH_MdotSupply", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_ffr_mdotsup, BHS_ONLY);
+  init_units(IO_BH_FFR_MDOTSUP, 0., 0., -1., 1., 1., All.UnitMass_in_g / All.UnitTime_in_s);
+
+  init_field(IO_BH_FFR_MDOTFEED, "BHMF", "BH_MdotFeed", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_ffr_mdotfeed, BHS_ONLY);
+  init_units(IO_BH_FFR_MDOTFEED, 0., 0., -1., 1., 1., All.UnitMass_in_g / All.UnitTime_in_s);
+
+  init_field(IO_BH_FFR_MDOTH, "BHMH", "BH_MdotHorizon", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_ffr_mdoth, BHS_ONLY);
+  init_units(IO_BH_FFR_MDOTH, 0., 0., -1., 1., 1., All.UnitMass_in_g / All.UnitTime_in_s);
+
+  init_field(IO_BH_FFR_MDOTWIND, "BHMW", "BH_MdotWind", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_ffr_mdotwind, BHS_ONLY);
+  init_units(IO_BH_FFR_MDOTWIND, 0., 0., -1., 1., 1., All.UnitMass_in_g / All.UnitTime_in_s);
+
+  init_field(IO_BH_FFR_MODE, "BHMO", "BH_Mode", MEM_NONE, FILE_INT, FILE_NONE, 1, A_NONE, 0, io_func_bh_ffr_mode, BHS_ONLY);
+  init_units(IO_BH_FFR_MODE, 0., 0., 0., 0., 0., 0.);
+
+  init_field(IO_BH_FFR_DISCAXIS, "BHDA", "BH_DiscAxis", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 3, A_NONE, 0,
+             io_func_bh_ffr_discaxis, BHS_ONLY);
+  init_units(IO_BH_FFR_DISCAXIS, 0., 0., 0., 0., 0., 0.);
+
+  init_field(IO_BH_FFR_JETAXIS, "BHJA", "BH_JetAxis", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 3, A_NONE, 0,
+             io_func_bh_ffr_jetaxis, BHS_ONLY);
+  init_units(IO_BH_FFR_JETAXIS, 0., 0., 0., 0., 0., 0.);
+
+  init_field(IO_BH_FFR_COHERENCE, "BHCO", "BH_Coherence", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 3, A_NONE, 0,
+             io_func_bh_ffr_coherence, BHS_ONLY);
+  init_units(IO_BH_FFR_COHERENCE, 0., 0., 0., 0., 0., 0.);
+
+  init_field(IO_BH_FFR_EWIND, "BHEW", "BH_EWind", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0, io_func_bh_ffr_ewind,
+             BHS_ONLY);
+  init_units(IO_BH_FFR_EWIND, 0., -1., 0., 1., 2., All.UnitEnergy_in_cgs);
+
+  init_field(IO_BH_FFR_EJET, "BHEJ", "BH_EJet", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0, io_func_bh_ffr_ejet,
+             BHS_ONLY);
+  init_units(IO_BH_FFR_EJET, 0., -1., 0., 1., 2., All.UnitEnergy_in_cgs);
+
+  init_field(IO_BH_FFR_LBOL, "BHLL", "BH_Lbol", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0, io_func_bh_ffr_lbol,
+             BHS_ONLY);
+  init_units(IO_BH_FFR_LBOL, 0., 0., -1., 1., 3., All.UnitEnergy_in_cgs / All.UnitTime_in_s);
+
+  init_field(IO_BH_FFR_PWIND, "BHPW", "BH_PWind", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0, io_func_bh_ffr_pwind,
+             BHS_ONLY);
+  init_units(IO_BH_FFR_PWIND, 0., 0., -1., 1., 3., All.UnitEnergy_in_cgs / All.UnitTime_in_s);
+
+  init_field(IO_BH_FFR_PJET, "BHPJ", "BH_PJet", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0, io_func_bh_ffr_pjet,
+             BHS_ONLY);
+  init_units(IO_BH_FFR_PJET, 0., 0., -1., 1., 3., All.UnitEnergy_in_cgs / All.UnitTime_in_s);
+
+  init_field(IO_BH_FFR_SIGMADM, "BHSD", "BH_SigmaDM", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_ffr_sigmadm, BHS_ONLY);
+  init_units(IO_BH_FFR_SIGMADM, 0., 0., 0., 0., 1., All.UnitVelocity_in_cm_per_s);
+
+  init_field(IO_BH_FFR_ETHWIND, "BHTW", "BH_EthWind", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_ffr_ethwind, BHS_ONLY);
+  init_units(IO_BH_FFR_ETHWIND, 0., -1., 0., 1., 2., All.UnitEnergy_in_cgs);
+
+  init_field(IO_BH_FFR_ETHJET, "BHTJ", "BH_EthJet", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_ffr_ethjet, BHS_ONLY);
+  init_units(IO_BH_FFR_ETHJET, 0., -1., 0., 1., 2., All.UnitEnergy_in_cgs);
+#endif /* #ifdef BLACKHOLE_FFR */
 
 #ifdef OUTPUTPOTENTIAL
   init_field(IO_POT, "POT ", "Potential", MEM_MY_SINGLE, FILE_MY_IO_FLOAT, FILE_MY_IO_FLOAT, 1, A_P, &P[0].Potential, 0,

@@ -225,6 +225,13 @@ ifeq (MHD,$(findstring MHD,$(CONFIGVARS)))
 OBJS    += hydro/mhd.o
 endif
 
+ifeq (BLACKHOLE_FFR,$(findstring BLACKHOLE_FFR,$(CONFIGVARS)))
+OBJS    += blackhole_ffr/blackhole_ffr.o \
+           blackhole_ffr/bh_ffr_domain.o
+INCL    += blackhole_ffr/blackhole_ffr.h
+SUBDIRS += blackhole_ffr
+endif
+
 ifeq (ADDBACKGROUNDGRID,$(findstring ADDBACKGROUNDGRID,$(CONFIGVARS)))
 OBJS    += add_backgroundgrid/add_bggrid.o \
            add_backgroundgrid/calc_weights.o \

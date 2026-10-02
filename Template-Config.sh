@@ -56,6 +56,7 @@
 #ENFORCE_JEANS_STABILITY_OF_CELLS  # this imposes an adaptive floor for the temperature
 #USE_SFR                       # Star formation model, turning dense gas into collisionless partices
 #SFR_KEEP_CELLS                # Do not distroy cell out of which a star has formed
+#BLACKHOLE_FFR                 # FFR-MACER Type-5 black-hole accretion/feedback module
 
 #--------------------------------------- Gravity treatment; default: no gravity
 #SELFGRAVITY                   # gravitational intraction between simulation particles/cells

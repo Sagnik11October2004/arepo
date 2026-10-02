@@ -883,6 +883,32 @@ extern struct global_data_all_processes
   int MaxPartSph; /*!< This gives the maxmimum number of SPH particles that can be stored on one
                      processor. */
 
+#ifdef BLACKHOLE_FFR
+  /* FFR-MACER runtime controls. The current specification uses a constant
+   * reservoir processing time and intentionally does not impose a fixed
+   * cold-state retention fraction or a hard Eddington mass-accretion cap. */
+  double BHAccretionRadius;
+  double BHFeedbackRadius;
+  double BHFreeFallA;
+  double BHFreeFallAlpha;
+  double BHMaxSinkFraction;
+  double BHDiskTimeMyr;
+  double BHRHotMaxInRs;
+  double BHRadiativeEfficiency;
+  double BHWindBurstFactor;
+  double BHJetBurstFactor;
+  int BHUseCentralBindingTerm;
+  double BHWindConeAngleDeg;
+  double BHJetConeAngleDeg;
+  double BHMinCoherence;
+  double BHJetDirectionTimeFactor;
+  int BHMinTargetsPerLobe;
+  double BHMinActiveTargetMassFrac;
+  int BHMaxPacketsPerStep;
+  int BHDMNeighbours;
+  double BHInternalTimestepFactor;
+#endif /* #ifdef BLACKHOLE_FFR */
+
 #if defined(COOLING)
   char TreecoolFile[MAXLEN_PATH];
 #endif /* #if defined(COOLING) */
@@ -1267,7 +1293,11 @@ extern struct particle_data
 
   float GravCost[GRAVCOSTLEVELS]; /*!< weight factors used for balancing the work-load */
 
-  unsigned char Type; /*!< flags particle type.  0=gas, 1=halo, 2=disk, 3=bulge, 4=stars, 5=bndry */
+#ifdef BLACKHOLE_FFR
+  int BHDataIndex; /*!< index into compact BHP[]; Type 5 is reserved for FFR-MACER BHs */
+#endif
+
+  unsigned char Type; /*!< flags particle type.  0=gas, 1=halo, 2=disk, 3=bulge, 4=stars, 5=bndry/BH */
   unsigned char SofteningType;
   signed char TimeBinGrav;
   signed char TimeBinHydro;
@@ -1709,6 +1739,28 @@ enum iofields
   IO_SOFTENING,
   IO_TASK,
   IO_TIMEBIN_HYDRO,
+
+#ifdef BLACKHOLE_FFR
+  IO_BH_FFR_MASS,
+  IO_BH_FFR_DISKMASS,
+  IO_BH_FFR_WINDMASS,
+  IO_BH_FFR_MDOTSUP,
+  IO_BH_FFR_MDOTFEED,
+  IO_BH_FFR_MDOTH,
+  IO_BH_FFR_MDOTWIND,
+  IO_BH_FFR_MODE,
+  IO_BH_FFR_DISCAXIS,
+  IO_BH_FFR_JETAXIS,
+  IO_BH_FFR_COHERENCE,
+  IO_BH_FFR_EWIND,
+  IO_BH_FFR_EJET,
+  IO_BH_FFR_LBOL,
+  IO_BH_FFR_PWIND,
+  IO_BH_FFR_PJET,
+  IO_BH_FFR_SIGMADM,
+  IO_BH_FFR_ETHWIND,
+  IO_BH_FFR_ETHJET,
+#endif
 
   IO_LASTENTRY /* This should be kept - it signals the end of the list */
 };

@@ -43,6 +43,10 @@
 #include "../main/allvars.h"
 #include "../main/proto.h"
 
+#ifdef BLACKHOLE_FFR
+#include "../blackhole_ffr/blackhole_ffr.h"
+#endif
+
 #include "../domain/domain.h"
 #include "../mesh/voronoi/voronoi.h"
 
@@ -333,6 +337,12 @@ int init(void)
 #ifdef ADDBACKGROUNDGRID
   prepare_domain_backgroundgrid();
 #endif /* #ifdef ADDBACKGROUNDGRID */
+
+#ifdef BLACKHOLE_FFR
+  /* Build compact Type-5 state before the first domain exchange so the
+   * initial decomposition can migrate BH records conservatively. */
+  bh_ffr_initialize_particles();
+#endif
 
   domain_Decomposition(); /* do initial domain decomposition (gives equal numbers of particles) */
 

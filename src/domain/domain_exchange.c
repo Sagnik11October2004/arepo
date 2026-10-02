@@ -48,6 +48,10 @@
 #include "../mesh/voronoi/voronoi.h"
 #include "domain.h"
 
+#ifdef BLACKHOLE_FFR
+#include "../blackhole_ffr/blackhole_ffr.h"
+#endif
+
 /*! \brief Changes memory allocation if necessary for particle and cell data.
  *
  *  If the memory usage due to a net import or export of particles changes
@@ -118,6 +122,11 @@ void domain_exchange(void)
     sumtogo += toGo[i];
 
   sumup_longs(1, &sumtogo, &sumtogo);
+
+#ifdef BLACKHOLE_FFR
+  struct bh_ffr_domain_exchange_context bh_ffr_ctx;
+  bh_ffr_domain_exchange_begin(&bh_ffr_ctx);
+#endif
 
   count           = (int *)mymalloc_movable(&count, "count", NTask * sizeof(int));
   count_sph       = (int *)mymalloc_movable(&count_sph, "count_sph", NTask * sizeof(int));
@@ -381,6 +390,10 @@ void domain_exchange(void)
 
   NumPart += count_get;
   NumGas += count_get_sph;
+
+#ifdef BLACKHOLE_FFR
+  bh_ffr_domain_exchange_finish(&bh_ffr_ctx);
+#endif
 
   myfree(keyBuf);
   myfree(sphBuf);

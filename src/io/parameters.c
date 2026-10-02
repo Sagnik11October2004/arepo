@@ -380,6 +380,88 @@ void read_parameter_file(char *fname)
       addr[nt] = &All.MinimumDensityOnStartUp;
       id[nt++] = REAL;
 
+#ifdef BLACKHOLE_FFR
+      strcpy(tag[nt], "BHAccretionRadius");
+      addr[nt] = &All.BHAccretionRadius;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHFeedbackRadius");
+      addr[nt] = &All.BHFeedbackRadius;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHFreeFallA");
+      addr[nt] = &All.BHFreeFallA;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHFreeFallAlpha");
+      addr[nt] = &All.BHFreeFallAlpha;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHMaxSinkFraction");
+      addr[nt] = &All.BHMaxSinkFraction;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHDiskTimeMyr");
+      addr[nt] = &All.BHDiskTimeMyr;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHRHotMaxInRs");
+      addr[nt] = &All.BHRHotMaxInRs;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHRadiativeEfficiency");
+      addr[nt] = &All.BHRadiativeEfficiency;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHWindBurstFactor");
+      addr[nt] = &All.BHWindBurstFactor;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHJetBurstFactor");
+      addr[nt] = &All.BHJetBurstFactor;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHUseCentralBindingTerm");
+      addr[nt] = &All.BHUseCentralBindingTerm;
+      id[nt++] = INT;
+
+      strcpy(tag[nt], "BHWindConeAngleDeg");
+      addr[nt] = &All.BHWindConeAngleDeg;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHJetConeAngleDeg");
+      addr[nt] = &All.BHJetConeAngleDeg;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHMinCoherence");
+      addr[nt] = &All.BHMinCoherence;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHJetDirectionTimeFactor");
+      addr[nt] = &All.BHJetDirectionTimeFactor;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHMinTargetsPerLobe");
+      addr[nt] = &All.BHMinTargetsPerLobe;
+      id[nt++] = INT;
+
+      strcpy(tag[nt], "BHMinActiveTargetMassFrac");
+      addr[nt] = &All.BHMinActiveTargetMassFrac;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHMaxPacketsPerStep");
+      addr[nt] = &All.BHMaxPacketsPerStep;
+      id[nt++] = INT;
+
+      strcpy(tag[nt], "BHDMNeighbours");
+      addr[nt] = &All.BHDMNeighbours;
+      id[nt++] = INT;
+
+      strcpy(tag[nt], "BHInternalTimestepFactor");
+      addr[nt] = &All.BHInternalTimestepFactor;
+      id[nt++] = REAL;
+#endif /* #ifdef BLACKHOLE_FFR */
+
 #ifdef NODEREFINE_BACKGROUND_GRID
       strcpy(tag[nt], "MeanVolume");
       addr[nt] = &All.MeanVolume;
@@ -735,6 +817,38 @@ void check_parameters()
 
   if(errorFlag)
     mpi_terminate("Softening invalid!");
+
+#ifdef BLACKHOLE_FFR
+  if(All.BHAccretionRadius <= 0 || All.BHFeedbackRadius <= 0)
+    mpi_terminate("BLACKHOLE_FFR requires positive BHAccretionRadius and BHFeedbackRadius.\n");
+  if(All.BHFreeFallA < 0)
+    mpi_terminate("BHFreeFallA must be non-negative.\n");
+  if(All.BHMaxSinkFraction <= 0 || All.BHMaxSinkFraction > 1)
+    mpi_terminate("BHMaxSinkFraction must lie in (0,1].\n");
+  if(All.BHDiskTimeMyr <= 0)
+    mpi_terminate("BHDiskTimeMyr must be positive.\n");
+  if(All.BHRHotMaxInRs <= 0)
+    mpi_terminate("BHRHotMaxInRs must be positive.\n");
+  if(All.BHRadiativeEfficiency <= 0 || All.BHRadiativeEfficiency >= 1)
+    mpi_terminate("BHRadiativeEfficiency must lie in (0,1).\n");
+  if(All.BHWindBurstFactor <= 0 || All.BHJetBurstFactor <= 0)
+    mpi_terminate("BH wind/jet burst factors must be positive.\n");
+  if(All.BHUseCentralBindingTerm != 0 && All.BHUseCentralBindingTerm != 1)
+    mpi_terminate("BHUseCentralBindingTerm must be 0 or 1.\n");
+  if(All.BHWindConeAngleDeg <= 0 || All.BHWindConeAngleDeg > 90 || All.BHJetConeAngleDeg <= 0 ||
+     All.BHJetConeAngleDeg > 90)
+    mpi_terminate("BH wind/jet cone half-angles must lie in (0,90] degrees.\n");
+  if(All.BHMinCoherence < 0 || All.BHMinCoherence > 1)
+    mpi_terminate("BHMinCoherence must lie in [0,1].\n");
+  if(All.BHJetDirectionTimeFactor <= 0)
+    mpi_terminate("BHJetDirectionTimeFactor must be positive.\n");
+  if(All.BHMinTargetsPerLobe < 1)
+    mpi_terminate("BHMinTargetsPerLobe must be at least one.\n");
+  if(All.BHMinActiveTargetMassFrac < 0 || All.BHMinActiveTargetMassFrac > 1)
+    mpi_terminate("BHMinActiveTargetMassFrac must lie in [0,1].\n");
+  if(All.BHMaxPacketsPerStep < 1 || All.BHDMNeighbours < 1 || All.BHInternalTimestepFactor <= 0)
+    mpi_terminate("Invalid BLACKHOLE_FFR packet/DM-neighbour/timestep control.\n");
+#endif /* #ifdef BLACKHOLE_FFR */
 
   if(All.NumFilesWrittenInParallel > NTask)
     {
