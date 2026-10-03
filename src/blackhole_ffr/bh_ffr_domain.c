@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <string.h>
 
 #include "blackhole_ffr.h"
@@ -66,8 +67,13 @@ void bh_ffr_domain_exchange_begin(struct bh_ffr_domain_exchange_context *ctx)
 
   struct bh_ffr_particle_data *sendbuf =
       (struct bh_ffr_particle_data *)mymalloc("BHFFRSendBuf", (nsend > 0 ? nsend : 1) * sizeof(struct bh_ffr_particle_data));
+  /* This receive buffer has to remain alive while AREPO's domain exchange
+   * allocates and frees its own movable buffers. It therefore cannot live in
+   * the non-movable mymalloc stack. */
   ctx->Received =
-      (struct bh_ffr_particle_data *)mymalloc("BHFFRRecvBuf", (nrecv > 0 ? nrecv : 1) * sizeof(struct bh_ffr_particle_data));
+      (struct bh_ffr_particle_data *)malloc((nrecv > 0 ? nrecv : 1) * sizeof(struct bh_ffr_particle_data));
+  if(ctx->Received == NULL)
+    terminate("BH_FFR: failed to allocate domain receive buffer for %zu records", nrecv);
   ctx->NumReceived = (int)nrecv;
 
   for(int i = 0; i < NumPart; i++)
@@ -110,7 +116,11 @@ void bh_ffr_domain_exchange_finish(struct bh_ffr_domain_exchange_context *ctx)
 
   struct bh_ffr_particle_data *new_data = NULL;
   if(new_count > 0)
-    new_data = (struct bh_ffr_particle_data *)mymalloc("BHFFRNewState", new_count * sizeof(struct bh_ffr_particle_data));
+    {
+      new_data = (struct bh_ffr_particle_data *)malloc(new_count * sizeof(struct bh_ffr_particle_data));
+      if(new_data == NULL)
+        terminate("BH_FFR: failed to allocate post-domain compact state for %d black holes", new_count);
+    }
 
   unsigned char *old_used = NULL;
   unsigned char *recv_used = NULL;
@@ -168,18 +178,20 @@ void bh_ffr_domain_exchange_finish(struct bh_ffr_domain_exchange_context *ctx)
       terminate("BH_FFR: received compact state for ID=%llu was not matched to a local Type-5 particle",
                 (unsigned long long)ctx->Received[j].ParticleID);
 
-  if(old_used != NULL)
-    myfree(old_used);
+  /* old_used and recv_used are AREPO-stack scratch blocks, so unwind them
+   * in exact reverse allocation order. */
   if(recv_used != NULL)
     myfree(recv_used);
+  if(old_used != NULL)
+    myfree(old_used);
 
   if(old_data != NULL)
-    myfree(old_data);
+    free(old_data);
 
   BHP = new_data;
   NumBHFFR = new_count;
 
-  myfree(ctx->Received);
+  free(ctx->Received);
   ctx->Received = NULL;
   ctx->NumReceived = 0;
 

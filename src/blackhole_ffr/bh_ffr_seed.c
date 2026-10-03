@@ -134,8 +134,12 @@ static struct bh_ffr_seed_candidate *bh_ffr_collect_seed_candidates(int *ncandid
       displs_bytes[task] = displs[task] * (int)sizeof(*local);
     }
 
+  /* The returned candidate list outlives the scratch arrays below. Allocate
+   * it outside AREPO's LIFO arena so the scratch blocks can be released here. */
   struct bh_ffr_seed_candidate *all =
-      (struct bh_ffr_seed_candidate *)mymalloc("BHFFRSeedCandidates", (ntotal > 0 ? ntotal : 1) * sizeof(*all));
+      (struct bh_ffr_seed_candidate *)malloc((ntotal > 0 ? ntotal : 1) * sizeof(*all));
+  if(all == NULL)
+    terminate("BH_FFR: failed to allocate %d global FoF seed candidates", ntotal);
 
   MPI_Allgatherv(local, nlocal * (int)sizeof(*local), MPI_BYTE, all, counts_bytes, displs_bytes, MPI_BYTE, MPI_COMM_WORLD);
 
@@ -452,7 +456,7 @@ void bh_ffr_seed_from_fof(void)
   int seeded_transactions = 0;
   for(int c = 0; c < ncandidates; c++)
     seeded_transactions += bh_ffr_seed_one_candidate(&candidates[c], seed_mass_code);
-  myfree(candidates);
+  free(candidates);
 
   int local_converted = bh_ffr_rearrange_seeded_gas_cells();
   int global_converted = 0;

@@ -1,5 +1,6 @@
 #include <math.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "blackhole_ffr.h"
@@ -99,7 +100,7 @@ void bh_ffr_free_state(void)
   bh_ffr_free_active_list();
 
   if(BHP != NULL)
-    myfree(BHP);
+    free(BHP);
 
   BHP = NULL;
   NumBHFFR = 0;
@@ -114,7 +115,12 @@ void bh_ffr_allocate_state(int count)
 
   if(count > 0)
     {
-      BHP = (struct bh_ffr_particle_data *)mymalloc("BHP", count * sizeof(struct bh_ffr_particle_data));
+      /* BHP must survive domain decomposition, whose AREPO allocator stack
+       * contains unrelated non-movable blocks. Keep this persistent auxiliary
+       * state on the C heap rather than inside the mymalloc LIFO arena. */
+      BHP = (struct bh_ffr_particle_data *)malloc(count * sizeof(struct bh_ffr_particle_data));
+      if(BHP == NULL)
+        terminate("BH_FFR: failed to allocate compact state for %d black holes", count);
       memset(BHP, 0, count * sizeof(struct bh_ffr_particle_data));
     }
 
@@ -253,7 +259,11 @@ void bh_ffr_rebuild_state_after_particle_changes(void)
   unsigned char *old_used = NULL;
 
   if(new_count > 0)
-    new_data = (struct bh_ffr_particle_data *)mymalloc("BHFFRRebuiltState", new_count * sizeof(*new_data));
+    {
+      new_data = (struct bh_ffr_particle_data *)malloc(new_count * sizeof(*new_data));
+      if(new_data == NULL)
+        terminate("BH_FFR: failed to allocate rebuilt compact state for %d black holes", new_count);
+    }
 
   if(old_count > 0)
     {
@@ -298,7 +308,7 @@ void bh_ffr_rebuild_state_after_particle_changes(void)
   if(old_used != NULL)
     myfree(old_used);
   if(old_data != NULL)
-    myfree(old_data);
+    free(old_data);
 
   BHP = new_data;
   NumBHFFR = new_count;
