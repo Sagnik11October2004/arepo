@@ -9,7 +9,7 @@ This is a runtime/conservation test for FFR-MACER FoF seeding plus the Iteration
 - explicit pre-seed checkpoint: a=0.02050 (z~47.7805), before the deterministic first seed near a~0.020526 (z~47.72)
 - post-seed snapshot: a=0.02056 (z~47.64)
 - final scale factor: a=0.02060 (z~47.54), a short persistence interval after the first BH snapshot
-- maximum timestep: 1e-4 in scale factor, safely below the shortened total interval TimeMax-TimeBegin=6e-4
+- maximum timestep: 5e-4 in scale factor/log-a control, below the shortened total interval TimeMax-TimeBegin=6e-4 and much less restrictive than the previous 1e-4 smoke-test cap
 - unigrid resolution: 128^3 parent DM particles
 - AREPO GENERATE_GAS_IN_ICS splits these into 128^3 gas cells + 128^3 Type-1 DM particles
 - Omega_m=0.31, Omega_b=0.048, Omega_Lambda=0.69, h=0.68, n_s=0.96
