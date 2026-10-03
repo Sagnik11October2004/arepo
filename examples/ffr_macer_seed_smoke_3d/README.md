@@ -1,0 +1,85 @@
+# FFR-MACER FoF seeding smoke test
+
+This is a runtime/conservation test for FFR-MACER Iteration 4.5. It is not a production cosmology calculation.
+
+## Test design
+
+- periodic box: 1 cMpc/h
+- initial redshift: z=49
+- final redshift: z=19
+- unigrid resolution: 128^3 parent DM particles
+- AREPO GENERATE_GAS_IN_ICS splits these into 128^3 gas cells + 128^3 Type-1 DM particles
+- Omega_m=0.31, Omega_b=0.048, Omega_Lambda=0.69, h=0.68, n_s=0.96
+- sigma8=2.0 **only for this smoke test**, to promote early halo formation before z=20
+- FoF seed threshold: 2e6 Msun
+- BH seed mass: 1e5 Msun
+- seed redshift condition: z>20
+- maximum donor removal fraction: 0.5
+- resolved post-seed gas capture is disabled with BHFreeFallA=0
+
+The expected mass resolution is approximately 5.10e4 Msun per Type-1 DM particle and 9.34e3 Msun per gas cell. A 2e6 Msun halo is therefore close to the minimum resolved FoF scale and is intentionally chosen to make this a cheap software test.
+
+## 1. Pull the test
+
+    cd ~/Research/arepo
+    git checkout ffr-macer
+    git pull
+
+## 2. Build MUSIC2
+
+The current MUSIC2 repository supports AREPO output, 2LPT, FFTW3, GSL and HDF5. The helper defaults to ~/Research/MUSIC2:
+
+    cd ~/Research/arepo/examples/ffr_macer_seed_smoke_3d
+    chmod +x install_music2.sh generate_ics.sh build.sh run.sh
+    ./install_music2.sh
+
+If MUSIC2 is already installed, skip this step and set MUSIC_BIN when generating the IC.
+
+## 3. Generate the IC
+
+    ./generate_ics.sh
+
+or, for a non-default MUSIC executable,
+
+    MUSIC_BIN=/absolute/path/to/MUSIC ./generate_ics.sh
+
+The generated file is ics.hdf5. MUSIC2 writes a DM-only AREPO HDF5 unigrid; AREPO then performs the baryon split at startup using GENERATE_GAS_IN_ICS.
+
+## 4. Build the dedicated AREPO executable
+
+    ./build.sh
+
+This builds ../../ArepoSeedTest with this directory's Config.sh. It does not alter Config_FFR_MACER.sh.
+
+## 5. Run with MPI
+
+Default: four MPI ranks.
+
+    ./run.sh
+
+To change the rank count:
+
+    NTASKS=8 ./run.sh
+
+The run writes output/ and run.log.
+
+## 6. Verify
+
+    python3 verify_seed.py
+
+A passing test requires all of the following:
+
+1. at least one "BH_FFR: seeded FoF group" event at z>20;
+2. Type-5 BHs in an HDF5 snapshot;
+3. BH_Mass = 1e5 Msun;
+4. BH_DiskMass = BH_MdotSupply = 0 because resolved capture is disabled;
+5. N_gas + N_BH = 128^3 in every snapshot;
+6. N_DM = 128^3 in every snapshot;
+7. total snapshot mass conserved across the gas-to-BH conversion;
+8. a snapshot after the first seeded snapshot in which the seeded BH ID still exists.
+
+If no halo seeds before z=20, that is a realization/test-threshold issue rather than evidence that the seeding transaction passed. Do not lower the threshold silently; inspect run.log first.
+
+## Why the boosted sigma8?
+
+The purpose here is to exercise MPI FoF seeding and conservative gas-to-BH conversion quickly in a tiny box. sigma8=2.0 is deliberately non-production. After this passes, repeat at 256^3 with the intended physical cosmology/threshold before treating the seeding prescription as scientifically validated.
