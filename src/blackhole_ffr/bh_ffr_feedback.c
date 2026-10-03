@@ -20,8 +20,8 @@
  * change in physical peculiar velocities, so every accepted packet has zero
  * net kick momentum and injects exactly E_packet up to MPI roundoff.
  *
- * JetEnergyBuffer is intentionally not consumed here.  Jet-axis relaxation
- * and narrow bipolar jet packets are the next separately validated stage.
+ * The wind channel remains independent of the narrow jet channel. Iteration
+ * 8 applies jet packets afterward using the gas state left by any wind events.
  */
 
 enum bh_ffr_feedback_pass

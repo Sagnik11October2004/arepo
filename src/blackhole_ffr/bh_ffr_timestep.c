@@ -132,6 +132,7 @@ void bh_ffr_step(void)
       bh_ffr_reservoir_self_test();
       bh_ffr_inner_self_test();
       bh_ffr_feedback_self_test();
+      bh_ffr_jet_self_test();
       reservoir_self_test_done = 1;
     }
 
@@ -156,11 +157,17 @@ void bh_ffr_step(void)
        * processable mass and assigns it exactly to horizon + wind channels. */
       bh_ffr_update_reservoir_state(p, dt_myr, dt_code);
 
+      /* Persistent JetDir is a memory axis, not a physical spin vector.
+       * Coherent reservoirs rotate it analytically toward DiscDir; incoherent
+       * reservoirs leave it frozen. */
+      bh_ffr_update_jet_direction(p, dt_myr);
+
       BHP[b].LastProcessedTi = All.Ti_Current;
     }
 
-  /* Iteration 7 consumes only wind packets whose binding threshold and
-   * synchronized bipolar-target safeguards are satisfied. Jet energy remains
-   * buffered for the separately validated jet-feedback stage. */
+  /* Wind and jet channels use independent burst reservoirs and geometries.
+   * They are applied sequentially so each channel solves its exact kinetic
+   * packet against the gas state left by the preceding channel. */
   bh_ffr_inject_wind_feedback();
+  bh_ffr_inject_jet_feedback();
 }
