@@ -291,8 +291,9 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
       for(int k = 0; k < 3; k++)
         out.CapturedMomentum[k] += share * P[j].Vel[k];
 
-      double dr[3] = {NGB_PERIODIC_LONG_X(P[j].Pos[0] - bh->Pos[0]), NGB_PERIODIC_LONG_Y(P[j].Pos[1] - bh->Pos[1]),
-                      NGB_PERIODIC_LONG_Z(P[j].Pos[2] - bh->Pos[2])};
+      double xtmp, ytmp, ztmp;
+      double dr[3] = {NEAREST_X(P[j].Pos[0] - bh->Pos[0]), NEAREST_Y(P[j].Pos[1] - bh->Pos[1]),
+                      NEAREST_Z(P[j].Pos[2] - bh->Pos[2])};
       double dv[3] = {P[j].Vel[0] - bh->Vel[0], P[j].Vel[1] - bh->Vel[1], P[j].Vel[2] - bh->Vel[2]};
 
       double ell[3] = {dr[1] * dv[2] - dr[2] * dv[1], dr[2] * dv[0] - dr[0] * dv[2],
