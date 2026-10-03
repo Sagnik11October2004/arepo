@@ -1,6 +1,6 @@
 # FFR-MACER FoF seeding smoke test
 
-This is a runtime/conservation test for FFR-MACER FoF seeding, Iteration-6 inner accretion/energetics, Iteration-7 resolved bipolar wind feedback, and Iteration-8 persistent-axis bipolar jet feedback. It is not a production cosmology calculation.
+This is a runtime/conservation test for FFR-MACER FoF seeding, Iteration-6 inner accretion/energetics, Iteration-7 resolved bipolar wind feedback, Iteration-8 persistent-axis bipolar jet feedback, and Iteration-9 feedback-aware BH timestep control. It is not a production cosmology calculation.
 
 ## Test design
 
@@ -130,6 +130,21 @@ The jet-only test again starts from the BH-free checkpoint. It suppresses wind r
 The verifier reads the per-step jet-axis logs and checks theta_new = theta_old exp(-dt/tdir), verifies unit DiscDir/JetDir vectors in snapshots, requires at least eight active targets in each narrow lobe, and checks every fired jet packet for exact kinetic-energy injection and zero net bipolar kick momentum. Jets return no separate rest mass; wind mass and energy are left buffered in this isolated test.
 
 A copied checkpoint can be supplied with CHECKPOINT as for the other restart helpers.
+
+## 10. Iteration-9 feedback/backlog timestep regression
+
+The production limiter combines the nearest-gas hydro bin with the internal accuracy bound
+
+    dt_BH <= f_int min(tau_d, Eth_w/P_w, Eth_j/P_j)
+
+using physical time before AREPO performs its normal power-of-two timebin quantization. If a surviving wind or jet buffer still contains at least BHMaxPacketsPerStep thresholds, it additionally forces at least one finer gravity bin, so a packet-cap backlog cannot wait on a coarse collisionless timestep.
+
+The dedicated stress helper intentionally uses BHInternalTimestepFactor=4 and BHMaxPacketsPerStep=1. Those values are test-only: they make the ordinary accuracy limit loose enough that the independent backlog branch must activate. The run is shortened to a=0.02055 and still starts from the saved BH-free checkpoint:
+
+    NTASKS=16 ./run_timestep_restart.sh
+    python3 verify_timestep.py
+
+Earlier Iteration-6/7/8 helpers set BHInternalTimestepFactor to a huge value internally so their historical regression sampling stays unchanged after Iteration 9.
 
 ## Why the boosted sigma8?
 
