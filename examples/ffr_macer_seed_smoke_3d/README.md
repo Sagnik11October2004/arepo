@@ -1,6 +1,6 @@
 # FFR-MACER FoF seeding smoke test
 
-This is a runtime/conservation test for FFR-MACER FoF seeding, Iteration-6 inner accretion/energetics, and Iteration-7 resolved bipolar wind feedback. It is not a production cosmology calculation.
+This is a runtime/conservation test for FFR-MACER FoF seeding, Iteration-6 inner accretion/energetics, Iteration-7 resolved bipolar wind feedback, and Iteration-8 persistent-axis bipolar jet feedback. It is not a production cosmology calculation.
 
 ## Test design
 
@@ -115,9 +115,21 @@ The wind-feedback test uses the same BH-free checkpoint, enables capture, enlarg
     python3 verify_feedback.py
     python3 inspect_bh.py output_feedback
 
-The runtime kernel checks each fired packet for exact returned wind mass, zero net bipolar kick momentum, and the requested kinetic-energy increment. The verifier additionally requires both lobes to satisfy BHMinTargetsPerLobe and confirms that JetEnergyBuffer remains untouched. Narrow jet injection is deliberately deferred to the next separately validated iteration.
+The runtime kernel checks each fired packet for exact returned wind mass, zero net bipolar kick momentum, and the requested kinetic-energy increment. The verifier additionally requires both lobes to satisfy BHMinTargetsPerLobe. The helper raises BHJetBurstFactor to 1e30 so this remains an isolated wind regression after Iteration 8.
 
 A copied checkpoint can be supplied with CHECKPOINT in the same way as the inner-flow helper.
+
+## 9. Iteration-8 jet-axis and narrow-jet regression
+
+The jet-only test again starts from the BH-free checkpoint. It suppresses wind release, uses Rfb=1.0 for adequate narrow-cone sampling in the coarse box, lowers the active target mass fraction to 0.01, and uses BHMinCoherence=0.10 so the persistent JetDir update is exercised:
+
+    NTASKS=16 ./run_jet_restart.sh
+    python3 verify_jet.py
+    python3 inspect_bh.py output_jet
+
+The verifier reads the per-step jet-axis logs and checks theta_new = theta_old exp(-dt/tdir), verifies unit DiscDir/JetDir vectors in snapshots, requires at least eight active targets in each narrow lobe, and checks every fired jet packet for exact kinetic-energy injection and zero net bipolar kick momentum. Jets return no separate rest mass; wind mass and energy are left buffered in this isolated test.
+
+A copied checkpoint can be supplied with CHECKPOINT as for the other restart helpers.
 
 ## Why the boosted sigma8?
 

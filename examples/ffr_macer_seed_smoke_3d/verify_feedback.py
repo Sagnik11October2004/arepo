@@ -27,7 +27,7 @@ MASS_TO_MSUN = UNIT_MASS_MSUN / HUBBLE
 RATE_TO_MSUN_YR = UNIT_MASS_MSUN / (UNIT_TIME_S / SEC_PER_YEAR)
 
 WIND_FACTOR = 0.001
-JET_FACTOR = 0.10
+JET_FACTOR = 1.0e30
 MIN_TARGETS = 8
 
 
@@ -50,6 +50,8 @@ event_re = re.compile(
 events = event_re.findall(log)
 if not events:
     fail("no resolved wind packet was fired")
+if "BH_FFR: jet packet fired" in log:
+    fail("jet packet fired during the isolated Iteration-7 wind regression")
 
 for pid, task, etxt, mtxt, qtxt, nptxt, nmtxt, detxt, pbtxt in events:
     e = float(etxt)

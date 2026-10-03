@@ -103,6 +103,11 @@ for path in SNAPS:
                 if val is not None:
                     print(f"    {name:16s}: {val}")
 
+            for name in ("BH_DiscAxis", "BH_JetAxis"):
+                val = scalar(g, name, i)
+                if val is not None:
+                    print(f"    {name:16s}: {np.asarray(val)}")
+
             history.setdefault(pid, []).append(
                 {
                     "snapshot": os.path.basename(path),

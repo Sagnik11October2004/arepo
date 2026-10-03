@@ -4,8 +4,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 CHECKPOINT="${CHECKPOINT:-$HERE/output/snap_001.hdf5}"
-PARAM="$HERE/param_feedback.txt"
-OUT="$HERE/output_feedback"
+PARAM="$HERE/param_jet.txt"
+OUT="$HERE/output_jet"
 NTASKS="${NTASKS:-16}"
 
 if [[ ! -x "$ROOT/ArepoSeedTest" ]]; then
@@ -35,22 +35,23 @@ print(f"Using BH-free checkpoint: a={a:.9f}, z={z:.6f}, N_BH={nbh}")
 PY
 
 cp "$HERE/param.txt" "$PARAM"
-sed -i 's|OutputDir                               ./output|OutputDir                               ./output_feedback|' "$PARAM"
+sed -i 's|OutputDir                               ./output|OutputDir                               ./output_jet|' "$PARAM"
 sed -i 's|BHFreeFallA                             0.0|BHFreeFallA                             1.0e-3|' "$PARAM"
 
-# A larger feedback aperture gives both wind lobes many synchronized gas
-# targets in the intentionally coarse smoke box. The smaller burst factor
-# guarantees at least one packet over the short post-seed interval.
+# Jet-only Iteration-8 regression.  The large feedback aperture gives the
+# narrow 15-degree bicone enough cells in this intentionally coarse smoke box.
+# Wind release is suppressed so changes to gas kinetic energy are attributable
+# to the jet channel alone.  Cmin=0.10 exercises the analytic jet-axis memory.
 sed -i 's|BHFeedbackRadius                        0.20|BHFeedbackRadius                        1.00|' "$PARAM"
-sed -i 's|BHWindBurstFactor                       0.01|BHWindBurstFactor                       0.001|' "$PARAM"
-# Keep this as the isolated Iteration-7 wind regression after jets exist.
-sed -i 's|BHJetBurstFactor                        0.10|BHJetBurstFactor                        1.0e30|' "$PARAM"
-sed -i 's|BHMinActiveTargetMassFrac               0.5|BHMinActiveTargetMassFrac               0.10|' "$PARAM"
+sed -i 's|BHWindBurstFactor                       0.01|BHWindBurstFactor                       1.0e30|' "$PARAM"
+sed -i 's|BHJetBurstFactor                        0.10|BHJetBurstFactor                        0.10|' "$PARAM"
+sed -i 's|BHMinActiveTargetMassFrac               0.5|BHMinActiveTargetMassFrac               0.01|' "$PARAM"
+sed -i 's|BHMinCoherence                          0.30|BHMinCoherence                          0.10|' "$PARAM"
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
 cp "$CHECKPOINT" "$OUT/snap_001.hdf5"
-rm -f "$HERE/run_feedback.log"
+rm -f "$HERE/run_jet.log"
 
 cd "$HERE"
-mpirun -np "$NTASKS" "$ROOT/ArepoSeedTest" "$PARAM" 2 1 2>&1 | tee "$HERE/run_feedback.log"
+mpirun -np "$NTASKS" "$ROOT/ArepoSeedTest" "$PARAM" 2 1 2>&1 | tee "$HERE/run_jet.log"
