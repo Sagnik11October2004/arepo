@@ -270,6 +270,11 @@ void bh_ffr_step(void)
       if(BHP[b].LastProcessedTi != All.Ti_Current && (!(dt_myr > 0) || !(dt_code > 0)))
         terminate("BH_FFR: non-positive elapsed physical timestep for active particle ID=%llu", (unsigned long long)P[p].ID);
 
+      /* Iteration-11 drag is consumed here, exactly once with the same
+       * elapsed interval that will now be committed by LastProcessedTi. The
+       * full-gravity-tree hook only refreshes the transient DM environment. */
+      bh_ffr_apply_cached_dynamical_friction(p, dt_code);
+
       /* Exact reservoir processing and Iteration-6 inner-flow partition are
        * committed together.  The update drains only the analytically
        * processable mass and assigns it exactly to horizon + wind channels. */

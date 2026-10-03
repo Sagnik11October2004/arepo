@@ -37,13 +37,21 @@ sed -i 's|OutputDir                               ./output|OutputDir            
 sed -i 's|OutputListFilename                      ./output_list.txt|OutputListFilename                      ./output_list_df.txt|' "$PARAM"
 sed -i 's|BHInternalTimestepFactor                1.0|BHInternalTimestepFactor                1.0e30|' "$PARAM"
 
-TIME_MAX=$(python3 - "$SOURCE" <<'PY'
-import h5py,sys
+read TIME_MAX MAX_STEP <<<"$(python3 - "$SOURCE" <<'PY'
+import h5py, math, sys
 with h5py.File(sys.argv[1],"r") as f:
-    print(f"{float(f['Header'].attrs['Time']) + 8.0e-6:.15f}")
+    a=float(f['Header'].attrs['Time'])
+tmax=a+8.0e-6
+# RestartFlag=2 resets TimeBegin to a. Keep the test timestep comfortably
+# below the resulting full logarithmic timeline span, rather than inheriting
+# the canonical 5e-4 dloga step from the much longer smoke run.
+maxstep=0.1*math.log(tmax/a)
+print(f"{tmax:.15f} {maxstep:.15e}")
 PY
-)
+)"
 sed -i "s|TimeMax                                 0.0206000000000000|TimeMax                                 $TIME_MAX|" "$PARAM"
+sed -i "s|MaxSizeTimestep                         0.0005|MaxSizeTimestep                         $MAX_STEP|" "$PARAM"
+echo "Iteration-11 short restart: TimeMax=$TIME_MAX MaxSizeTimestep=$MAX_STEP"
 
 rm -rf "$OUT"
 mkdir -p "$OUT"

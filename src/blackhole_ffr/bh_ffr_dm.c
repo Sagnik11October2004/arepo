@@ -54,6 +54,19 @@ static struct bh_ffr_dm_result *DMResults;
 static int DMNTargets;
 static int DMQueryType;
 
+struct bh_ffr_df_cache_entry
+{
+  MyIDType ID;
+  integertime Ti;
+  double RhoDM;
+  double SigmaDM;
+  double MeanVel[3];
+  int Valid;
+};
+
+static struct bh_ffr_df_cache_entry *DFCache = NULL;
+static int DFCacheCount = 0;
+
 typedef struct
 {
   MyDouble Pos[3];
@@ -425,27 +438,18 @@ static double bh_ffr_dm_density_code(const struct bh_ffr_dm_result *res)
   return rho;
 }
 
-static void bh_ffr_apply_dynamical_friction(int p, const struct bh_ffr_dm_result *dm)
+static void bh_ffr_apply_dynamical_friction_environment(int p, double dt, double rho, double sigma,
+                                                         const double mean[3])
 {
-  if(dm->Count < 2 || P[p].Mass <= 0)
+  if(P[p].Mass <= 0 || dt <= 0 || !(sigma > 0) || !(rho > 0))
     return;
 
   const int b = P[p].BHDataIndex;
   if(b < 0 || b >= NumBHFFR || BHP[b].ParticleID != P[p].ID)
     terminate("BH_FFR: invalid BH state in dynamical friction for ID=%llu", (unsigned long long)P[p].ID);
 
-  const double dt = bh_ffr_get_elapsed_time_code_time(p);
-  if(dt <= 0)
-    return;
-
-  const double sigma = bh_ffr_dm_sigma_1d(dm);
-  const double rho = bh_ffr_dm_density_code(dm);
-  if(!(sigma > 0) || !(rho > 0))
-    return;
-
   const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
-  double mean[3], vrel[3];
-  bh_ffr_dm_mean_velocity(dm, mean);
+  double vrel[3];
 
   double v2 = 0.0;
   for(int k = 0; k < 3; k++)
@@ -509,6 +513,23 @@ static void bh_ffr_apply_dynamical_friction(int p, const struct bh_ffr_dm_result
   fflush(stdout);
 }
 
+void bh_ffr_apply_cached_dynamical_friction(int p, double dt_code)
+{
+  if(p < 0 || p >= NumPart || P[p].Type != BH_FFR_PARTICLE_TYPE || P[p].ID == 0 || P[p].Mass <= 0)
+    return;
+
+  if(!(dt_code > 0))
+    return;
+
+  for(int n = 0; n < DFCacheCount; n++)
+    if(DFCache[n].Valid && DFCache[n].ID == P[p].ID && DFCache[n].Ti == All.Ti_Current)
+      {
+        bh_ffr_apply_dynamical_friction_environment(p, dt_code, DFCache[n].RhoDM, DFCache[n].SigmaDM,
+                                                    DFCache[n].MeanVel);
+        return;
+      }
+}
+
 static void bh_ffr_dm_self_test(void)
 {
   struct bh_ffr_dm_result res;
@@ -564,6 +585,19 @@ void bh_ffr_prepare_dm_environment_search(void)
   struct bh_ffr_dm_result *dm = (struct bh_ffr_dm_result *)mymalloc(
       "BHFFRDMResults", (NumActiveBHFFR > 0 ? NumActiveBHFFR : 1) * sizeof(*dm));
 
+  /* The gravity hook may run more than once at one synchronization time.
+   * It only refreshes this transient environment cache; the actual drag kick
+   * is consumed once from bh_ffr_step(), where the BH elapsed time is committed. */
+  free(DFCache);
+  DFCache = NULL;
+  DFCacheCount = NumActiveBHFFR;
+  if(DFCacheCount > 0)
+    {
+      DFCache = calloc(DFCacheCount, sizeof(*DFCache));
+      if(DFCache == NULL)
+        terminate("BH_FFR: failed to allocate transient dynamical-friction cache for %d BHs", DFCacheCount);
+    }
+
   bh_ffr_dm_run_query(BH_FFR_DM_PARTICLE_TYPE, dm);
 
   int local_need_fallback = 0;
@@ -608,10 +642,20 @@ void bh_ffr_prepare_dm_environment_search(void)
       if(use->Count >= 2)
         BHP[b].SigmaDM = sigma;
 
-      /* Dynamical friction is specifically a DM wake model, so do not apply
-       * it when SigmaDM had to fall back to gas. */
+      /* Dynamical friction is specifically a DM-wake model, so a gas
+       * fallback may update SigmaDM for feedback thresholds but does not
+       * populate the drag cache. */
+      DFCache[n].ID = P[p].ID;
+      DFCache[n].Ti = All.Ti_Current;
+      DFCache[n].Valid = 0;
       if(use == &dm[n] && dm[n].Count >= 2)
-        bh_ffr_apply_dynamical_friction(p, &dm[n]);
+        {
+          DFCache[n].RhoDM = bh_ffr_dm_density_code(&dm[n]);
+          DFCache[n].SigmaDM = bh_ffr_dm_sigma_1d(&dm[n]);
+          bh_ffr_dm_mean_velocity(&dm[n], DFCache[n].MeanVel);
+          if(DFCache[n].RhoDM > 0 && DFCache[n].SigmaDM > 0)
+            DFCache[n].Valid = 1;
+        }
 
       if(!isfinite(BHP[b].SigmaDM) || BHP[b].SigmaDM < 0)
         terminate("BH_FFR: invalid cached SigmaDM=%g for ID=%llu", BHP[b].SigmaDM, (unsigned long long)P[p].ID);
