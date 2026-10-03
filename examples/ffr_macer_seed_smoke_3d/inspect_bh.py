@@ -29,7 +29,6 @@ FIELDS = [
     "BH_MdotFeed",
     "BH_MdotEdd",
     "BH_ProcessedEddRatio",
-    "BH_ColdBlend",
     "BH_MdotHorizon",
     "BH_MdotWind",
     "BH_Mode",
@@ -90,9 +89,10 @@ for path in SNAPS:
             for name in ("BH_MdotSupply", "BH_MdotFeed", "BH_MdotEdd", "BH_MdotHorizon", "BH_MdotWind"):
                 val = scalar(g, name, i)
                 if val is not None:
-                    print(f"    {name:16s}: {val * RATE_TO_MSUN_YR:.9e} Msun/yr")
+                    suffix = " (candidate; not yet drained)" if name == "BH_MdotFeed" else ""
+                    print(f"    {name:16s}: {val * RATE_TO_MSUN_YR:.9e} Msun/yr{suffix}")
 
-            for name in ("BH_ProcessedEddRatio", "BH_ColdBlend", "BH_Mode", "BH_Coherence", "BH_EWind", "BH_EJet",
+            for name in ("BH_ProcessedEddRatio", "BH_Mode", "BH_Coherence", "BH_EWind", "BH_EJet",
                          "BH_Lbol", "BH_PWind", "BH_PJet", "BH_SigmaDM"):
                 val = scalar(g, name, i)
                 if val is not None:

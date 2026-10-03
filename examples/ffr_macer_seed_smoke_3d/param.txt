@@ -1,4 +1,4 @@
-% FFR-MACER Iteration-4.5 FoF seeding smoke test
+% FFR-MACER FoF seeding + Iteration-5 empty-reservoir smoke test
 % 1 cMpc/h, 128^3 DM + 128^3 gas after GENERATE_GAS_IN_ICS
 % Short z=49 smoke run; sigma8=2 is TEST-ONLY to force an early seed.
 % The deterministic test realization seeds near a=0.020526 (z~47.72), so
@@ -123,7 +123,8 @@ BHFreeFallAlpha                         0.0
 BHMaxSinkFraction                       0.25
 
 %---- Reservoir/state and persistent FFR parameters
-% Iteration 5 evaluates the processable reservoir rate/state, but does not
+% BHDiskTimeMyr is the constant physical reservoir processing time tau_d.
+% Iteration 5 evaluates only the candidate processable rate/state and does not
 % drain reservoir mass until Iteration 6 can partition it conservatively.
 BHDiskTimeMyr                           1.0
 BHRHotMaxInRs                           1200.0

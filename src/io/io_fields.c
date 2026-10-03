@@ -123,11 +123,6 @@ static void io_func_bh_ffr_mdotratio(int particle, int components, void *out_buf
   ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->ProcessedEddingtonRatio;
 }
 
-static void io_func_bh_ffr_coldblend(int particle, int components, void *out_buffer, int mode)
-{
-  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->ColdBlendWeight;
-}
-
 static void io_func_bh_ffr_mdoth(int particle, int components, void *out_buffer, int mode)
 {
   ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->MdotHorizon;
@@ -683,6 +678,8 @@ void init_io_fields()
              io_func_bh_ffr_mdotsup, BHS_ONLY);
   init_units(IO_BH_FFR_MDOTSUP, 0., 0., -1., 1., 1., All.UnitMass_in_g / All.UnitTime_in_s);
 
+  /* Iteration 5: BH_MdotFeed is the candidate processable reservoir rate.
+   * Reservoir mass is not actually drained until Iteration 6. */
   init_field(IO_BH_FFR_MDOTFEED, "BHMF", "BH_MdotFeed", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
              io_func_bh_ffr_mdotfeed, BHS_ONLY);
   init_units(IO_BH_FFR_MDOTFEED, 0., 0., -1., 1., 1., All.UnitMass_in_g / All.UnitTime_in_s);
@@ -694,10 +691,6 @@ void init_io_fields()
   init_field(IO_BH_FFR_MDOTRATIO, "BHMR", "BH_ProcessedEddRatio", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
              io_func_bh_ffr_mdotratio, BHS_ONLY);
   init_units(IO_BH_FFR_MDOTRATIO, 0., 0., 0., 0., 0., 0.);
-
-  init_field(IO_BH_FFR_COLDBLEND, "BHCB", "BH_ColdBlend", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
-             io_func_bh_ffr_coldblend, BHS_ONLY);
-  init_units(IO_BH_FFR_COLDBLEND, 0., 0., 0., 0., 0., 0.);
 
   init_field(IO_BH_FFR_MDOTH, "BHMH", "BH_MdotHorizon", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
              io_func_bh_ffr_mdoth, BHS_ONLY);

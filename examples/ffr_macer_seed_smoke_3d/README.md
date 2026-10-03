@@ -1,6 +1,6 @@
 # FFR-MACER FoF seeding smoke test
 
-This is a runtime/conservation test for FFR-MACER Iteration 4.5. It is not a production cosmology calculation.
+This is a runtime/conservation test for FFR-MACER FoF seeding plus the Iteration-5 empty-reservoir state selector. It is not a production cosmology calculation.
 
 ## Test design
 
@@ -76,7 +76,9 @@ A passing test requires all of the following:
 5. N_gas + N_BH = 128^3 in every snapshot;
 6. N_DM = 128^3 in every snapshot;
 7. total snapshot mass conserved across the gas-to-BH conversion;
-8. a snapshot after the first seeded snapshot in which the seeded BH ID still exists.
+8. a snapshot after the first seeded snapshot in which the seeded BH ID still exists;
+9. for the deliberately empty reservoir, BH_MdotFeed = BH_ProcessedEddRatio = 0, BH_MdotEdd is positive, and BH_Mode = 0 (ADIOS);
+10. BH_MdotHorizon, BH_MdotWind, BH_Lbol, BH_PWind, and BH_PJet remain zero, confirming that Iteration-6+ physics has not leaked into Iteration 5.
 
 If the deterministic test realization does not seed near z~47.72, that is a test failure or a changed realization/configuration. Do not lower the threshold silently; inspect run.log first.
 

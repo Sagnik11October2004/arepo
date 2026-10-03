@@ -101,21 +101,6 @@ double bh_ffr_truncation_to_hot_radius_ratio(double processed_edd_ratio)
   return ratio;
 }
 
-double bh_ffr_cold_blend_weight(double processed_edd_ratio)
-{
-  if(!isfinite(processed_edd_ratio) || processed_edd_ratio < 0)
-    terminate("BH_FFR: invalid processed Eddington ratio=%g in cold blend", processed_edd_ratio);
-
-  if(processed_edd_ratio <= BH_FFR_COLD_EXIT_EDD_RATIO)
-    return 0.0;
-  if(processed_edd_ratio >= BH_FFR_COLD_ENTER_EDD_RATIO)
-    return 1.0;
-
-  const double x = (processed_edd_ratio - BH_FFR_COLD_EXIT_EDD_RATIO) /
-                   (BH_FFR_COLD_ENTER_EDD_RATIO - BH_FFR_COLD_EXIT_EDD_RATIO);
-  return x * x * (3.0 - 2.0 * x);
-}
-
 static int bh_ffr_nominal_accretion_state(double processed_edd_ratio, double rtr_over_rhot)
 {
   if(processed_edd_ratio >= BH_FFR_COLD_NOMINAL_EDD_RATIO)
@@ -173,24 +158,38 @@ void bh_ffr_update_reservoir_state(int p, double dt_myr, double dt_code)
   if((dt_myr == 0) != (dt_code == 0))
     terminate("BH_FFR: inconsistent zero timestep dt_myr=%g dt_code=%g", dt_myr, dt_code);
 
+  /* Iteration 5 is deliberately diagnostic: snapshot the conserved state so
+   * an accidental early drain/growth change cannot silently enter this stage. */
+  const double reservoir_before = BHP[b].ReservoirMass;
+  const double bhmass_before = BHP[b].BHMass;
+  const double windmass_before = BHP[b].WindMassBuffer;
+  const double dynmass_before = P[p].Mass;
+  double coherence_before[3];
+  for(int k = 0; k < 3; k++)
+    coherence_before[k] = BHP[b].Coherence[k];
+
   const double processable = bh_ffr_reservoir_processable_mass(BHP[b].ReservoirMass, dt_myr, All.BHDiskTimeMyr);
   const double mdot_processed = (dt_code > 0) ? processable / dt_code : 0.0;
   const double mdot_edd = bh_ffr_eddington_rate_code(BHP[b].BHMass);
   const double processed_edd_ratio = (mdot_edd > 0) ? mdot_processed / mdot_edd : 0.0;
   const double rtr_over_rhot = bh_ffr_truncation_to_hot_radius_ratio(processed_edd_ratio);
   const int state = bh_ffr_classify_accretion_state(BHP[b].AccretionState, processed_edd_ratio, rtr_over_rhot);
-  const double cold_blend = bh_ffr_cold_blend_weight(processed_edd_ratio);
 
   if(!isfinite(mdot_processed) || mdot_processed < 0 || !isfinite(mdot_edd) || mdot_edd < 0 ||
-     !isfinite(processed_edd_ratio) || processed_edd_ratio < 0 || !isfinite(cold_blend) || cold_blend < 0 ||
-     cold_blend > 1)
+     !isfinite(processed_edd_ratio) || processed_edd_ratio < 0)
     terminate("BH_FFR: invalid Iteration-5 diagnostics for particle ID=%llu", (unsigned long long)P[p].ID);
 
   BHP[b].MdotProcessed = mdot_processed;
   BHP[b].MdotEddington = mdot_edd;
   BHP[b].ProcessedEddingtonRatio = processed_edd_ratio;
-  BHP[b].ColdBlendWeight = cold_blend;
   BHP[b].AccretionState = state;
+
+  if(BHP[b].ReservoirMass != reservoir_before || BHP[b].BHMass != bhmass_before ||
+     BHP[b].WindMassBuffer != windmass_before || P[p].Mass != dynmass_before)
+    terminate("BH_FFR: Iteration 5 modified conserved mass state for particle ID=%llu", (unsigned long long)P[p].ID);
+  for(int k = 0; k < 3; k++)
+    if(BHP[b].Coherence[k] != coherence_before[k])
+      terminate("BH_FFR: Iteration 5 modified reservoir coherence for particle ID=%llu", (unsigned long long)P[p].ID);
 
   /* No ReservoirMass, Coherence, P.Mass, BHMass, or wind-buffer mutation here.
    * That transaction belongs to Iteration 6, where processable mass can be
@@ -210,10 +209,22 @@ void bh_ffr_reservoir_self_test(void)
   if(fabs(tiny - tiny_linear) > 1.0e-9 * tiny_linear)
     terminate("BH_FFR: reservoir self-test failed small-step limit got=%g expected=%g", tiny, tiny_linear);
 
+  if(bh_ffr_reservoir_processable_mass(0.0, 5.0, 5.0) != 0.0 ||
+     bh_ffr_reservoir_processable_mass(md, 0.0, 5.0) != 0.0)
+    terminate("BH_FFR: reservoir self-test failed zero-mass/zero-step limit");
+
+  const double saturated = bh_ffr_reservoir_processable_mass(md, 1.0e6, 5.0);
+  if(fabs(saturated - md) > 1.0e-14 * md)
+    terminate("BH_FFR: reservoir self-test failed large-step saturation got=%g expected=%g", saturated, md);
+
   const double edd_cgs = bh_ffr_eddington_rate_cgs(1.0e5 * SOLAR_MASS, 0.1);
   const double edd_msun_yr = edd_cgs * SEC_PER_YEAR / SOLAR_MASS;
   if(fabs(edd_msun_yr - 2.21963658503e-3) > 1.0e-8 * 2.21963658503e-3)
     terminate("BH_FFR: reservoir self-test failed Eddington normalization got=%g Msun/yr", edd_msun_yr);
+
+  const double edd_cgs_twice = bh_ffr_eddington_rate_cgs(2.0e5 * SOLAR_MASS, 0.1);
+  if(fabs(edd_cgs_twice - 2.0 * edd_cgs) > 1.0e-14 * edd_cgs_twice)
+    terminate("BH_FFR: reservoir self-test failed linear Eddington mass scaling");
 
   const double boundary_ratio =
       (3.0 / 1200.0) * pow(BH_FFR_COLD_NOMINAL_EDD_RATIO / 1.0e-3, 2.0);
@@ -238,8 +249,11 @@ void bh_ffr_reservoir_self_test(void)
      bh_ffr_classify_accretion_state(BH_FFR_STATE_ADIOS, 1.13e-3, 0.79) != BH_FFR_STATE_TRUNCATED)
     terminate("BH_FFR: reservoir self-test failed ADIOS hysteresis");
 
-  if(fabs(bh_ffr_cold_blend_weight(0.020) - 0.5) > 1.0e-14 ||
-     bh_ffr_cold_blend_weight(BH_FFR_COLD_EXIT_EDD_RATIO) != 0.0 ||
-     bh_ffr_cold_blend_weight(BH_FFR_COLD_ENTER_EDD_RATIO) != 1.0)
-    terminate("BH_FFR: reservoir self-test failed cold smoothstep");
+  /* Equality stays on the retained side of each hysteresis band. */
+  if(bh_ffr_classify_accretion_state(BH_FFR_STATE_TRUNCATED, BH_FFR_COLD_ENTER_EDD_RATIO, 0.01) != BH_FFR_STATE_COLD ||
+     bh_ffr_classify_accretion_state(BH_FFR_STATE_COLD, BH_FFR_COLD_EXIT_EDD_RATIO, 0.01) != BH_FFR_STATE_COLD ||
+     bh_ffr_classify_accretion_state(BH_FFR_STATE_TRUNCATED, 9.0e-4, BH_FFR_ADIOS_ENTER_RTR_FACTOR) !=
+         BH_FFR_STATE_TRUNCATED ||
+     bh_ffr_classify_accretion_state(BH_FFR_STATE_ADIOS, 1.1e-3, BH_FFR_ADIOS_EXIT_RTR_FACTOR) != BH_FFR_STATE_ADIOS)
+    terminate("BH_FFR: reservoir self-test failed hysteresis equality convention");
 }
