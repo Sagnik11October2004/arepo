@@ -70,6 +70,10 @@
 #include "../main/allvars.h"
 #include "../main/proto.h"
 
+#ifdef BLACKHOLE_FFR
+#include "../blackhole_ffr/blackhole_ffr.h"
+#endif
+
 /*! \brief Sets various cosmological factors for the current simulation time.
  *
  *  \return void
@@ -346,6 +350,11 @@ integertime get_timestep_gravity(int p)
 #endif /* #ifdef PMGRID */
 
   ti_step = (integertime)(dt / All.Timebase_interval);
+
+#ifdef BLACKHOLE_FFR
+  if(P[p].Type == BH_FFR_PARTICLE_TYPE)
+    ti_step = bh_ffr_limit_gravity_timestep(p, ti_step);
+#endif
 
   validate_timestep(dt, ti_step, p);
 

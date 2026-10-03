@@ -24,6 +24,12 @@ struct bh_ffr_particle_data
 {
   MyIDType ParticleID;
 
+  /* Restart-safe synchronization bookkeeping. LastProcessedTi prevents a
+   * spurious full timebin update on startup/restart. The neighbour timebin
+   * is populated by the later gas tree pass and limits the next BH step. */
+  integertime LastProcessedTi;
+  int MinNeighbourHydroTimeBin;
+
   MyDouble BHMass;
   MyDouble ReservoirMass;
 
@@ -69,6 +75,12 @@ void bh_ffr_validate_state(const char *where);
 
 void bh_ffr_build_active_list(void);
 void bh_ffr_free_active_list(void);
+
+void bh_ffr_step(void);
+double bh_ffr_integer_interval_to_physical_myr(integertime ti0, integertime ti1);
+double bh_ffr_get_elapsed_time_myr(int p);
+integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step);
+void bh_ffr_set_min_neighbour_timebin(int p, int timebin);
 
 void bh_ffr_domain_exchange_begin(struct bh_ffr_domain_exchange_context *ctx);
 void bh_ffr_domain_exchange_finish(struct bh_ffr_domain_exchange_context *ctx);

@@ -46,6 +46,10 @@
 #include "../main/allvars.h"
 #include "../main/proto.h"
 
+#ifdef BLACKHOLE_FFR
+#include "../blackhole_ffr/blackhole_ffr.h"
+#endif
+
 /*! \brief This function (re)builds the time bin lists.
  *
  *  It counts the number of particles in each timebin and updates the
@@ -501,6 +505,15 @@ void make_list_of_active_particles(void)
 
   TimeBinsGravity.GlobalNActiveParticles = out[0];
   TimeBinsHydro.GlobalNActiveParticles   = out[1];
+
+#ifdef BLACKHOLE_FFR
+  /* During the first reconstruct_timebins() call BHP has not been created
+   * yet. Once Type-5 state exists, keep the compact BH target list exactly
+   * synchronized with AREPO's gravity active list, including after domain
+   * decomposition where reconstruct_timebins() is called again. */
+  if(BHP != NULL || NumBHFFR > 0)
+    bh_ffr_build_active_list();
+#endif
 
   TIMER_STOP(CPU_DRIFTS);
 }

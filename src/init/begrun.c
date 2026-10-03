@@ -50,9 +50,6 @@
 #include "../main/allvars.h"
 #include "../main/proto.h"
 
-#ifdef BLACKHOLE_FFR
-#include "../blackhole_ffr/blackhole_ffr.h"
-#endif
 
 #include "../domain/domain.h"
 #include "../mesh/voronoi/voronoi.h"
@@ -256,11 +253,6 @@ void begrun2(void)
   gravity_forcetest_testforcelaw();
 #endif /* #if defined(FORCETEST) && defined(FORCETEST_TESTFORCELAW) */
 
-#ifdef BLACKHOLE_FFR
-  /* Iteration 1 only builds the synchronization target list; no BH physics
-   * is executed from it until the later timestep/orchestration stage. */
-  bh_ffr_build_active_list();
-#endif
 }
 
 /*! \brief Computes conversion factors between internal code units and the

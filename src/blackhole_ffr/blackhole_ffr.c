@@ -133,6 +133,15 @@ void bh_ffr_validate_state(const char *where)
           if(BHP[b].ParticleID != P[i].ID)
             terminate("BH_FFR: ID/index mismatch for particle ID=%llu in %s", (unsigned long long)P[i].ID, where);
 
+          if(BHP[b].LastProcessedTi < 0 || BHP[b].LastProcessedTi > All.Ti_Current)
+            terminate("BH_FFR: invalid LastProcessedTi=%lld at Ti_Current=%lld for particle ID=%llu in %s",
+                      (long long)BHP[b].LastProcessedTi, (long long)All.Ti_Current, (unsigned long long)P[i].ID, where);
+
+          if(BHP[b].MinNeighbourHydroTimeBin < -1 || BHP[b].MinNeighbourHydroTimeBin == 0 ||
+             BHP[b].MinNeighbourHydroTimeBin >= TIMEBINS)
+            terminate("BH_FFR: invalid minimum neighbour hydro timebin=%d for particle ID=%llu in %s",
+                      BHP[b].MinNeighbourHydroTimeBin, (unsigned long long)P[i].ID, where);
+
           if(!isfinite(BHP[b].BHMass) || BHP[b].BHMass < 0 || !isfinite(BHP[b].ReservoirMass) || BHP[b].ReservoirMass < 0 ||
              !isfinite(BHP[b].WindMassBuffer) || BHP[b].WindMassBuffer < 0 || !isfinite(BHP[b].WindMomentumBuffer) ||
              BHP[b].WindMomentumBuffer < 0 || !isfinite(BHP[b].WindEnergyBuffer) || BHP[b].WindEnergyBuffer < 0 ||
@@ -185,6 +194,8 @@ void bh_ffr_initialize_particles(void)
         P[i].BHDataIndex = b;
 
         BHP[b].ParticleID = P[i].ID;
+        BHP[b].LastProcessedTi = 0;
+        BHP[b].MinNeighbourHydroTimeBin = -1;
         BHP[b].BHMass = P[i].Mass;
         BHP[b].ReservoirMass = 0;
         BHP[b].AccretionState = BH_FFR_STATE_UNINITIALIZED;

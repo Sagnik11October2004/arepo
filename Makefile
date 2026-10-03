@@ -249,7 +249,8 @@ endif
 
 ifeq (BLACKHOLE_FFR,$(findstring BLACKHOLE_FFR,$(CONFIGVARS)))
 OBJS    += blackhole_ffr/blackhole_ffr.o \
-           blackhole_ffr/bh_ffr_domain.o
+           blackhole_ffr/bh_ffr_domain.o \
+           blackhole_ffr/bh_ffr_timestep.o
 INCL    += blackhole_ffr/blackhole_ffr.h
 SUBDIRS += blackhole_ffr
 endif

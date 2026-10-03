@@ -54,6 +54,10 @@
 #include "../domain/domain.h"
 #include "../mesh/voronoi/voronoi.h"
 
+#ifdef BLACKHOLE_FFR
+#include "../blackhole_ffr/blackhole_ffr.h"
+#endif
+
 static void do_second_order_source_terms_first_half(void);
 static void do_second_order_source_terms_second_half(void);
 static void create_end_file(void);
@@ -391,6 +395,13 @@ void calculate_non_standard_physics_prior_mesh_construction(void)
  */
 void calculate_non_standard_physics_end_of_step(void)
 {
+#ifdef BLACKHOLE_FFR
+  /* FFR-MACER is operator-split here, after hydro closure and the second
+   * gravity half-kick. Iteration 2 only advances synchronization bookkeeping;
+   * resolved capture and all mass/energy changes remain disabled. */
+  bh_ffr_step();
+#endif
+
 #ifdef COOLING
 #ifdef USE_SFR
   cooling_and_starformation();
