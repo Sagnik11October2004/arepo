@@ -193,11 +193,15 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
     backlog = 1;
 
   integertime backlog_limit = limited;
+  int backlog_applied = 0;
   if(backlog && P[p].TimeBinGrav > 1)
     {
       backlog_limit = ((integertime)1) << (P[p].TimeBinGrav - 1);
       if(backlog_limit < limited)
-        limited = backlog_limit;
+        {
+          limited = backlog_limit;
+          backlog_applied = 1;
+        }
     }
 
   if(limited < raw_step)
@@ -208,9 +212,10 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
           BHP[b].JetThresholdEnergy > 0 ? BHP[b].JetEnergyBuffer / BHP[b].JetThresholdEnergy : 0.0;
 
       printf("BH_FFR: timestep limit ID=%llu task=%d raw=%lld limited=%lld gasbin=%d fint=%g "
-             "dtintMyr=%g dtwindMyr=%g dtjetMyr=%g windBacklog=%g jetBacklog=%g backlog=%d\n",
+             "dtintMyr=%g dtwindMyr=%g dtjetMyr=%g windBacklog=%g jetBacklog=%g backlog=%d backlogApplied=%d\n",
              (unsigned long long)P[p].ID, ThisTask, (long long)raw_step, (long long)limited, gas_bin,
-             All.BHInternalTimestepFactor, reservoir_limit_myr, wind_limit_myr, jet_limit_myr, wind_ratio, jet_ratio, backlog);
+             All.BHInternalTimestepFactor, reservoir_limit_myr, wind_limit_myr, jet_limit_myr, wind_ratio, jet_ratio, backlog,
+             backlog_applied);
       fflush(stdout);
     }
 

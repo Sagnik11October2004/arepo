@@ -26,7 +26,7 @@ pat = re.compile(
     r"BH_FFR: timestep limit ID=(\d+) task=(\d+) "
     r"raw=(\d+) limited=(\d+) gasbin=(-?\d+) fint=([^\s]+) "
     r"dtintMyr=([^\s]+) dtwindMyr=([^\s]+) dtjetMyr=([^\s]+) "
-    r"windBacklog=([^\s]+) jetBacklog=([^\s]+) backlog=(\d+)"
+    r"windBacklog=([^\s]+) jetBacklog=([^\s]+) backlog=(\d+) backlogApplied=(\d+)"
 )
 rows = pat.findall(log)
 if not rows:
@@ -46,6 +46,7 @@ for row in rows:
     dtjet = float(row[8])
     jet_backlog = float(row[10])
     backlog = int(row[11])
+    backlog_applied = int(row[12])
 
     if not (raw > 0 and limited > 0 and limited <= raw):
         raise SystemExit(f"FAIL: BH {pid}: invalid integer limiter raw={raw} limited={limited}")
@@ -59,10 +60,12 @@ for row in rows:
     if math.isfinite(dtjet) and dtjet > 0 and limited < raw:
         saw_internal = True
 
-    if backlog:
+    if backlog_applied:
         saw_backlog = True
+        if not backlog:
+            raise SystemExit(f"FAIL: BH {pid}: backlogApplied without backlog flag")
         if jet_backlog < 1.0 - 1e-8:
-            raise SystemExit(f"FAIL: BH {pid}: backlog flag set with jetBacklog={jet_backlog}")
+            raise SystemExit(f"FAIL: BH {pid}: backlog limiter applied with jetBacklog={jet_backlog}")
 
     max_jet_backlog = max(max_jet_backlog, jet_backlog)
     max_reduction = max(max_reduction, raw / limited)
