@@ -4,7 +4,8 @@
 % The deterministic test realization seeds near a=0.020526 (z~47.72).
 % output_list.txt writes a dedicated BH-free checkpoint at a=0.02050
 % (z~47.7805) so later iterations can restart shortly before seeding.
-% TimeMax leaves several post-seed synchronization points while retaining the normal timestep cap.
+% The smoke test stops at a=0.02060 (z~47.54), after a post-seed snapshot
+% and a short persistence interval, to keep Iteration tests fast.
 
 %---- Files
 InitCondFile                            ./ics
@@ -28,7 +29,7 @@ MaxMemSize                              1500
 
 %---- Cosmological interval
 TimeBegin                               0.0200000000000000
-TimeMax                                 0.0211000000000000
+TimeMax                                 0.0206000000000000
 
 ComovingIntegrationOn                   1
 PeriodicBoundariesOn                    1

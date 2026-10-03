@@ -7,7 +7,8 @@ This is a runtime/conservation test for FFR-MACER FoF seeding plus the Iteration
 - periodic box: 1 cMpc/h
 - initial redshift: z=49
 - explicit pre-seed checkpoint: a=0.02050 (z~47.7805), before the deterministic first seed near a~0.020526 (z~47.72)
-- final scale factor: a=0.02110 (z~46.39), several synchronization points after seeding
+- post-seed snapshot: a=0.02056 (z~47.64)
+- final scale factor: a=0.02060 (z~47.54), a short persistence interval after the first BH snapshot
 - unigrid resolution: 128^3 parent DM particles
 - AREPO GENERATE_GAS_IN_ICS splits these into 128^3 gas cells + 128^3 Type-1 DM particles
 - Omega_m=0.31, Omega_b=0.048, Omega_Lambda=0.69, h=0.68, n_s=0.96
