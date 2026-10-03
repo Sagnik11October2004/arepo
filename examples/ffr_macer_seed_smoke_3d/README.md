@@ -1,6 +1,6 @@
 # FFR-MACER FoF seeding smoke test
 
-This is a runtime/conservation test for FFR-MACER FoF seeding, Iteration-6 inner accretion/energetics, Iteration-7 resolved bipolar wind feedback, Iteration-8 persistent-axis bipolar jet feedback, and Iteration-9 feedback-aware BH timestep control. It is not a production cosmology calculation.
+This is a runtime/conservation test for FFR-MACER FoF seeding, Iteration-6 inner accretion/energetics, Iteration-7 resolved bipolar wind feedback, Iteration-8 persistent-axis bipolar jet feedback, Iteration-9 feedback-aware BH timestep control, and Iteration-10 cached local DM velocity dispersion. It is not a production cosmology calculation.
 
 ## Test design
 
@@ -145,6 +145,24 @@ The dedicated stress helper intentionally uses BHInternalTimestepFactor=4 and BH
     python3 verify_timestep.py
 
 Earlier Iteration-6/7/8 helpers set BHInternalTimestepFactor to a huge value internally so their historical regression sampling stays unchanged after Iteration 9.
+
+## 11. Iteration-10 full-tree DM-dispersion regression
+
+The production estimator runs only at valid full-gravity-tree synchronization points. It selects the globally nearest BHDMNeighbours Type-1 particles, computes the one-dimensional physical peculiar velocity dispersion about their local mean, and caches it in BH_SigmaDM between full-tree updates. Transient imported gravity points carry velocity solely for this query; the persistent BHP/native-restart layout is unchanged.
+
+The isolated regression leaves BHFreeFallA=0 and disables the central binding term. Therefore the BH generates no wind/jet energy, while any positive burst threshold must come exclusively from SigmaDM:
+
+    NTASKS=16 ./run_dm_restart.sh
+    python3 verify_dm.py
+    python3 inspect_bh.py output_dm
+
+The verifier requires an exact 64-particle DM sample (no gas fallback), positive finite SigmaDM, and checks
+
+    vbind^2 = SigmaDM^2
+    EthWind = BHWindBurstFactor * 0.5 * Menc * vbind^2
+    EthJet  = BHJetBurstFactor  * 0.5 * Menc * vbind^2
+
+from runtime diagnostics. If fewer than BHDMNeighbours dark-matter particles exist, production code falls back to the nearest gas velocity sample and logs source=gas-fallback; no persistent fallback flag is added because the BHP restart ABI is frozen.
 
 ## Why the boosted sigma8?
 
