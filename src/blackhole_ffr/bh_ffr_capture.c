@@ -1,0 +1,585 @@
+#include <math.h>
+#include <mpi.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "blackhole_ffr.h"
+#include "../main/proto.h"
+
+/* Iteration 4: two-pass, order-independent resolved free-fall capture. */
+
+enum bh_ffr_capture_pass
+{
+  BH_FFR_CAPTURE_PASS_LAMBDA = 0,
+  BH_FFR_CAPTURE_PASS_SHARES = 1
+};
+
+struct bh_ffr_capture_result
+{
+  MyDouble CapturedMass;
+  MyDouble CapturedMomentum[3];
+  MyDouble CoherenceIncrement[3];
+  int MinHydroTimeBin;
+};
+
+static double *LambdaSink;
+static double *SinkMass;
+static struct bh_ffr_capture_result *CaptureResults;
+static int CaptureNTargets;
+static int CapturePass;
+static int CaptureSelfTestDone;
+
+typedef struct
+{
+  MyDouble Pos[3];
+  MyFloat Vel[3];
+  MyFloat AccretionRadius;
+  MyDouble CentralMass;
+  MyDouble SchwarzschildRadius;
+  int CaptureEnabled;
+  int Firstnode;
+} data_in;
+
+static data_in *DataIn, *DataGet;
+
+typedef struct
+{
+  MyDouble CapturedMass;
+  MyDouble CapturedMomentum[3];
+  MyDouble CoherenceIncrement[3];
+  int MinHydroTimeBin;
+} data_out;
+
+static data_out *DataResult, *DataOut;
+
+static int bh_ffr_decode_hydro_timebin(int bin)
+{
+  if(bin < 0)
+    bin = -bin - 1;
+  return bin;
+}
+
+static int bh_ffr_gas_is_active(int j)
+{
+  const int bin = bh_ffr_decode_hydro_timebin(P[j].TimeBinHydro);
+  return bin > 0 && bin < TIMEBINS && TimeBinSynchronized[bin];
+}
+
+static double bh_ffr_proper_radius_to_coordinate_radius(double proper_radius)
+{
+  const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+
+  if(!isfinite(a) || a <= 0 || !isfinite(proper_radius) || proper_radius <= 0)
+    terminate("BH_FFR: invalid proper-radius conversion R=%g a=%g", proper_radius, a);
+
+  return proper_radius / a;
+}
+
+static int bh_ffr_capture_particle_from_target(int target, const char *where)
+{
+  if(target < 0 || target >= CaptureNTargets)
+    terminate("BH_FFR: capture target %d outside [0,%d) in %s", target, CaptureNTargets, where);
+
+  const int p = BHFFRActiveParticleList[target];
+  if(p < 0 || p >= NumPart || P[p].Type != BH_FFR_PARTICLE_TYPE)
+    terminate("BH_FFR: invalid active capture particle %d in %s", p, where);
+
+  const int b = P[p].BHDataIndex;
+  if(b < 0 || b >= NumBHFFR || BHP[b].ParticleID != P[p].ID)
+    terminate("BH_FFR: invalid compact state for capture particle ID=%llu in %s", (unsigned long long)P[p].ID, where);
+
+  if(P[p].Ti_Current != All.Ti_Current)
+    terminate("BH_FFR: capture particle ID=%llu is not drifted to Ti_Current=%lld in %s", (unsigned long long)P[p].ID,
+              (long long)All.Ti_Current, where);
+
+  return p;
+}
+
+static void particle2in(data_in *in, int target, int firstnode)
+{
+  const int p = bh_ffr_capture_particle_from_target(target, "particle2in");
+  const int b = P[p].BHDataIndex;
+
+  for(int k = 0; k < 3; k++)
+    {
+      in->Pos[k] = P[p].Pos[k];
+      in->Vel[k] = P[p].Vel[k];
+    }
+
+  in->AccretionRadius = bh_ffr_proper_radius_to_coordinate_radius(All.BHAccretionRadius);
+  in->CentralMass = BHP[b].BHMass + BHP[b].ReservoirMass;
+
+  const double c_internal = CLIGHT / All.UnitVelocity_in_cm_per_s;
+  in->SchwarzschildRadius =
+      (BHP[b].BHMass > 0 && c_internal > 0) ? 2.0 * All.G * BHP[b].BHMass / (c_internal * c_internal) : 0.0;
+
+  in->CaptureEnabled = (BHP[b].LastProcessedTi < All.Ti_Current);
+  in->Firstnode = firstnode;
+
+  if(!isfinite(in->CentralMass) || in->CentralMass < 0 || !isfinite(in->SchwarzschildRadius) ||
+     in->SchwarzschildRadius < 0)
+    terminate("BH_FFR: invalid capture mass/radius for particle ID=%llu", (unsigned long long)P[p].ID);
+}
+
+static void out2particle(data_out *out, int target, int mode)
+{
+  if(CapturePass == BH_FFR_CAPTURE_PASS_LAMBDA)
+    return;
+
+  if(target < 0 || target >= CaptureNTargets)
+    terminate("BH_FFR: capture result target %d outside [0,%d)", target, CaptureNTargets);
+
+  struct bh_ffr_capture_result *res = &CaptureResults[target];
+
+  if(mode == MODE_LOCAL_PARTICLES)
+    {
+      res->CapturedMass = out->CapturedMass;
+      for(int k = 0; k < 3; k++)
+        {
+          res->CapturedMomentum[k] = out->CapturedMomentum[k];
+          res->CoherenceIncrement[k] = out->CoherenceIncrement[k];
+        }
+      res->MinHydroTimeBin = out->MinHydroTimeBin;
+    }
+  else
+    {
+      res->CapturedMass += out->CapturedMass;
+      for(int k = 0; k < 3; k++)
+        {
+          res->CapturedMomentum[k] += out->CapturedMomentum[k];
+          res->CoherenceIncrement[k] += out->CoherenceIncrement[k];
+        }
+      if(out->MinHydroTimeBin < res->MinHydroTimeBin)
+        res->MinHydroTimeBin = out->MinHydroTimeBin;
+    }
+}
+
+#include "../utils/generic_comm_helpers2.h"
+
+static int bh_ffr_capture_evaluate(int target, int mode, int threadid);
+
+static void kernel_local(void)
+{
+  const int threadid = get_thread_num();
+
+  for(int task = 0; task < NTask; task++)
+    Thread[threadid].Exportflag[task] = -1;
+
+  while(1)
+    {
+      if(Thread[threadid].ExportSpace < MinSpace)
+        break;
+
+      const int target = NextParticle++;
+      if(target >= CaptureNTargets)
+        break;
+
+      bh_ffr_capture_evaluate(target, MODE_LOCAL_PARTICLES, threadid);
+    }
+}
+
+static void kernel_imported(void)
+{
+  const int threadid = get_thread_num();
+  int target = 0;
+
+  while(target < Nimport)
+    bh_ffr_capture_evaluate(target++, MODE_IMPORTED_PARTICLES, threadid);
+}
+
+static double bh_ffr_capture_lambda(const data_in *bh, double coordinate_distance)
+{
+  if(!bh->CaptureEnabled || All.BHFreeFallA == 0 || !(bh->CentralMass > 0))
+    return 0.0;
+
+  const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+  double d = coordinate_distance * a;
+
+  const double d_floor = 1.0e-12 * All.BHAccretionRadius;
+  if(d < d_floor)
+    d = d_floor;
+
+  const double tff = sqrt(d * d * d / (All.G * bh->CentralMass));
+  if(!isfinite(tff) || !(tff > 0))
+    terminate("BH_FFR: invalid free-fall time d=%g Mcen=%g G=%g", d, bh->CentralMass, All.G);
+
+  double eta = All.BHFreeFallA;
+  if(All.BHFreeFallAlpha != 0)
+    {
+      if(!(bh->SchwarzschildRadius > 0))
+        return 0.0;
+
+      const double ratio = d / bh->SchwarzschildRadius;
+      if(!(ratio > 0) || !isfinite(ratio))
+        terminate("BH_FFR: invalid d/Rs=%g in free-fall sink", ratio);
+
+      eta *= pow(ratio, All.BHFreeFallAlpha);
+    }
+
+  const double lambda = eta / tff;
+  if(!isfinite(lambda) || lambda < 0)
+    terminate("BH_FFR: invalid free-fall lambda=%g eta=%g tff=%g", lambda, eta, tff);
+
+  return lambda;
+}
+
+static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
+{
+  data_in local, *bh;
+  int numnodes, *firstnode;
+
+  if(mode == MODE_LOCAL_PARTICLES)
+    {
+      particle2in(&local, target, 0);
+      bh = &local;
+      numnodes = 1;
+      firstnode = NULL;
+    }
+  else
+    {
+      bh = &DataGet[target];
+      generic_get_numnodes(target, &numnodes, &firstnode);
+    }
+
+  data_out out;
+  memset(&out, 0, sizeof(out));
+  out.MinHydroTimeBin = TIMEBINS;
+
+  const int nfound =
+      ngb_treefind_variable_threads(bh->Pos, bh->AccretionRadius, target, mode, threadid, numnodes, firstnode);
+
+  if(nfound < 0)
+    terminate("BH_FFR: neighbour search failed during capture pass %d", CapturePass);
+
+  for(int n = 0; n < nfound; n++)
+    {
+      const int j = Thread[threadid].Ngblist[n];
+      if(j < 0 || j >= NumGas)
+        terminate("BH_FFR: capture gas index %d outside NumGas=%d", j, NumGas);
+
+      if(P[j].Type != 0 || P[j].ID == 0 || !(P[j].Mass > 0))
+        continue;
+
+      const int bin = bh_ffr_decode_hydro_timebin(P[j].TimeBinHydro);
+
+      if(CapturePass == BH_FFR_CAPTURE_PASS_SHARES && bin > 0 && bin < out.MinHydroTimeBin)
+        out.MinHydroTimeBin = bin;
+
+      if(!bh_ffr_gas_is_active(j) || !bh->CaptureEnabled)
+        continue;
+
+      const double r = sqrt(Thread[threadid].R2list[n]);
+      const double lambda = bh_ffr_capture_lambda(bh, r);
+      if(!(lambda > 0))
+        continue;
+
+      if(CapturePass == BH_FFR_CAPTURE_PASS_LAMBDA)
+        {
+          LambdaSink[j] += lambda;
+          continue;
+        }
+
+      if(!(SinkMass[j] > 0) || !(LambdaSink[j] > 0))
+        continue;
+
+      const double share = SinkMass[j] * lambda / LambdaSink[j];
+      if(!isfinite(share) || share < 0 || share > SinkMass[j] * (1.0 + 1.0e-10))
+        terminate("BH_FFR: invalid overlap share=%g sink=%g lambda=%g Lambda=%g", share, SinkMass[j], lambda, LambdaSink[j]);
+
+      out.CapturedMass += share;
+      for(int k = 0; k < 3; k++)
+        out.CapturedMomentum[k] += share * P[j].Vel[k];
+
+      double dr[3] = {NGB_PERIODIC_LONG_X(P[j].Pos[0] - bh->Pos[0]), NGB_PERIODIC_LONG_Y(P[j].Pos[1] - bh->Pos[1]),
+                      NGB_PERIODIC_LONG_Z(P[j].Pos[2] - bh->Pos[2])};
+      double dv[3] = {P[j].Vel[0] - bh->Vel[0], P[j].Vel[1] - bh->Vel[1], P[j].Vel[2] - bh->Vel[2]};
+
+      double ell[3] = {dr[1] * dv[2] - dr[2] * dv[1], dr[2] * dv[0] - dr[0] * dv[2],
+                       dr[0] * dv[1] - dr[1] * dv[0]};
+      const double ellnorm = sqrt(ell[0] * ell[0] + ell[1] * ell[1] + ell[2] * ell[2]);
+
+      if(ellnorm > 0 && isfinite(ellnorm))
+        for(int k = 0; k < 3; k++)
+          out.CoherenceIncrement[k] += share * ell[k] / ellnorm;
+    }
+
+  if(mode == MODE_LOCAL_PARTICLES)
+    out2particle(&out, target, MODE_LOCAL_PARTICLES);
+  else
+    DataResult[target] = out;
+
+  return 0;
+}
+
+static double bh_ffr_active_gas_timestep_code_time(int j)
+{
+  const int bin = bh_ffr_decode_hydro_timebin(P[j].TimeBinHydro);
+  if(bin <= 0 || bin >= TIMEBINS || !TimeBinSynchronized[bin])
+    terminate("BH_FFR: requested sink timestep for inactive/invalid gas ID=%llu bin=%d", (unsigned long long)P[j].ID, bin);
+
+  const integertime ti_step = ((integertime)1) << bin;
+  if(All.Ti_Current < ti_step)
+    return 0.0;
+
+  return bh_ffr_integer_interval_to_physical_code_time(All.Ti_Current - ti_step, All.Ti_Current);
+}
+
+static void bh_ffr_compute_exact_cell_sinks(void)
+{
+  for(int idx = 0; idx < TimeBinsHydro.NActiveParticles; idx++)
+    {
+      const int j = TimeBinsHydro.ActiveParticleList[idx];
+      if(j < 0)
+        continue;
+      if(j >= NumGas || P[j].Type != 0 || P[j].ID == 0 || !(P[j].Mass > 0))
+        continue;
+
+      const double lambda = LambdaSink[j];
+      if(!(lambda > 0))
+        continue;
+
+      const double dt = bh_ffr_active_gas_timestep_code_time(j);
+      if(!(dt > 0))
+        continue;
+
+      const double x = lambda * dt;
+      double frac = (x > 700.0) ? 1.0 : -expm1(-x);
+      if(frac > All.BHMaxSinkFraction)
+        frac = All.BHMaxSinkFraction;
+
+      if(!isfinite(frac) || frac < 0 || frac >= 1)
+        terminate("BH_FFR: invalid exact sink fraction=%g lambda=%g dt=%g", frac, lambda, dt);
+
+      SinkMass[j] = P[j].Mass * frac;
+    }
+}
+
+static void bh_ffr_apply_gas_sink(double *local_removed_mass, double local_removed_momentum[3])
+{
+  *local_removed_mass = 0;
+  for(int k = 0; k < 3; k++)
+    local_removed_momentum[k] = 0;
+
+  for(int idx = 0; idx < TimeBinsHydro.NActiveParticles; idx++)
+    {
+      const int j = TimeBinsHydro.ActiveParticleList[idx];
+      if(j < 0 || j >= NumGas || !(SinkMass[j] > 0))
+        continue;
+
+      const double oldmass = P[j].Mass;
+      const double dm = SinkMass[j];
+      if(!(oldmass > 0) || dm < 0 || dm >= oldmass)
+        terminate("BH_FFR: unsafe gas sink ID=%llu oldmass=%g dm=%g", (unsigned long long)P[j].ID, oldmass, dm);
+
+      const double keep = (oldmass - dm) / oldmass;
+      if(!(keep > 0) || keep > 1)
+        terminate("BH_FFR: invalid retained gas fraction=%g for ID=%llu", keep, (unsigned long long)P[j].ID);
+
+      *local_removed_mass += dm;
+      for(int k = 0; k < 3; k++)
+        {
+          const double removed_p = (1.0 - keep) * SphP[j].Momentum[k];
+          local_removed_momentum[k] += removed_p;
+          SphP[j].Momentum[k] *= keep;
+        }
+
+      P[j].Mass *= keep;
+      SphP[j].Energy *= keep;
+
+#ifdef PASSIVE_SCALARS
+      for(int k = 0; k < PASSIVE_SCALARS; k++)
+        SphP[j].PConservedScalars[k] *= keep;
+#endif
+#ifdef REFINEMENT_HIGH_RES_GAS
+      SphP[j].HighResMass *= keep;
+#endif
+
+      SphP[j].Density = P[j].Mass / SphP[j].Volume;
+      SphP[j].OldMass = P[j].Mass;
+      set_pressure_of_cell(j);
+
+      if(!isfinite(P[j].Mass) || !(P[j].Mass > 0) || !isfinite(SphP[j].Density) || !(SphP[j].Density > 0))
+        terminate("BH_FFR: invalid post-sink gas state for ID=%llu", (unsigned long long)P[j].ID);
+    }
+}
+
+static void bh_ffr_check_capture_ledger(double local_removed_mass, const double local_removed_momentum[3],
+                                        double local_captured_mass, const double local_captured_momentum[3])
+{
+  double in[8] = {local_removed_mass, local_captured_mass, local_removed_momentum[0], local_removed_momentum[1],
+                  local_removed_momentum[2], local_captured_momentum[0], local_captured_momentum[1],
+                  local_captured_momentum[2]};
+  double out[8];
+  MPI_Allreduce(in, out, 8, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+
+  const double mass_scale = dmax(1.0, dmax(fabs(out[0]), fabs(out[1])));
+  if(fabs(out[0] - out[1]) > 1.0e-9 * mass_scale)
+    terminate("BH_FFR: capture mass ledger failed removed=%g captured=%g", out[0], out[1]);
+
+  for(int k = 0; k < 3; k++)
+    {
+      const double pscale = dmax(1.0, dmax(fabs(out[2 + k]), fabs(out[5 + k])));
+      if(fabs(out[2 + k] - out[5 + k]) > 1.0e-9 * pscale)
+        terminate("BH_FFR: capture momentum ledger failed component=%d removed=%g captured=%g", k, out[2 + k], out[5 + k]);
+    }
+}
+
+static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double local_captured_momentum[3])
+{
+  *local_captured_mass = 0;
+  for(int k = 0; k < 3; k++)
+    local_captured_momentum[k] = 0;
+
+  for(int n = 0; n < CaptureNTargets; n++)
+    {
+      const int p = bh_ffr_capture_particle_from_target(n, "bh_ffr_apply_capture_to_bhs");
+      const int b = P[p].BHDataIndex;
+      struct bh_ffr_capture_result *res = &CaptureResults[n];
+
+      bh_ffr_set_min_neighbour_timebin(p, res->MinHydroTimeBin);
+
+      const double dm = res->CapturedMass;
+      if(!isfinite(dm) || dm < 0)
+        terminate("BH_FFR: invalid captured mass=%g for particle ID=%llu", dm, (unsigned long long)P[p].ID);
+
+      const double expected_dyn_mass = BHP[b].BHMass + BHP[b].ReservoirMass + BHP[b].WindMassBuffer;
+      const double dyn_scale = dmax(1.0, dmax(fabs(expected_dyn_mass), fabs(P[p].Mass)));
+      if(fabs(P[p].Mass - expected_dyn_mass) > 1.0e-10 * dyn_scale)
+        terminate("BH_FFR: pre-capture dynamical-mass mismatch ID=%llu P.Mass=%g components=%g", (unsigned long long)P[p].ID,
+                  P[p].Mass, expected_dyn_mass);
+
+      const double old_dyn_mass = P[p].Mass;
+      double old_momentum[3];
+      for(int k = 0; k < 3; k++)
+        old_momentum[k] = old_dyn_mass * P[p].Vel[k];
+
+      BHP[b].ReservoirMass += dm;
+      for(int k = 0; k < 3; k++)
+        BHP[b].Coherence[k] += res->CoherenceIncrement[k];
+
+      P[p].Mass = BHP[b].BHMass + BHP[b].ReservoirMass + BHP[b].WindMassBuffer;
+      if(!(P[p].Mass > 0) || !isfinite(P[p].Mass))
+        terminate("BH_FFR: invalid post-capture dynamical mass for ID=%llu", (unsigned long long)P[p].ID);
+
+      for(int k = 0; k < 3; k++)
+        P[p].Vel[k] = (old_momentum[k] + res->CapturedMomentum[k]) / P[p].Mass;
+
+      double cnorm2 = 0;
+      for(int k = 0; k < 3; k++)
+        cnorm2 += BHP[b].Coherence[k] * BHP[b].Coherence[k];
+      const double cnorm = sqrt(cnorm2);
+      const double coherence = (BHP[b].ReservoirMass > 0) ? cnorm / BHP[b].ReservoirMass : 0;
+
+      if(!isfinite(coherence) || coherence > 1.0 + 1.0e-10)
+        terminate("BH_FFR: coherence invariant failed ID=%llu C=%g Md=%g |Cd|=%g", (unsigned long long)P[p].ID, coherence,
+                  BHP[b].ReservoirMass, cnorm);
+
+      if(coherence >= All.BHMinCoherence && cnorm > 0)
+        for(int k = 0; k < 3; k++)
+          BHP[b].DiscDir[k] = BHP[b].Coherence[k] / cnorm;
+
+      const double dt_bh = bh_ffr_get_elapsed_time_code_time(p);
+      BHP[b].MdotSupply = (dt_bh > 0) ? dm / dt_bh : 0.0;
+
+      *local_captured_mass += dm;
+      for(int k = 0; k < 3; k++)
+        local_captured_momentum[k] += res->CapturedMomentum[k];
+    }
+}
+
+void bh_ffr_capture_self_test(void)
+{
+  const double lambda1 = 0.3;
+  const double lambda2 = 0.7;
+  const double dt = 0.4;
+  const double mass = 2.0;
+  const double lambda = lambda1 + lambda2;
+  const double sink = mass * (1.0 - exp(-lambda * dt));
+  const double share1 = sink * lambda1 / lambda;
+  const double share2 = sink * lambda2 / lambda;
+
+  if(fabs((share1 + share2) - sink) > 1.0e-14 * mass)
+    terminate("BH_FFR: capture self-test failed overlap partition");
+
+  const double reversed1 = sink * lambda2 / lambda;
+  const double reversed2 = sink * lambda1 / lambda;
+  if(fabs((reversed1 + reversed2) - sink) > 1.0e-14 * mass)
+    terminate("BH_FFR: capture self-test failed order independence");
+
+  const double capped = dmin(sink, 0.25 * mass);
+  if(!(capped > 0) || capped > 0.25 * mass)
+    terminate("BH_FFR: capture self-test failed sink cap");
+}
+
+void bh_ffr_capture_resolved_gas(void)
+{
+  if(NumActiveBHFFR <= 0)
+    return;
+
+#if NUM_THREADS > 1
+  terminate("BH_FFR: Iteration-4 gas capture currently requires NUM_THREADS=1 to avoid gas-owned accumulator races");
+#endif
+#ifdef MHD
+  terminate("BH_FFR: resolved gas capture is not yet enabled with MHD; a magnetic-flux sink policy is required first");
+#endif
+
+  if(!CaptureSelfTestDone)
+    {
+      bh_ffr_capture_self_test();
+      CaptureSelfTestDone = 1;
+    }
+
+  CaptureNTargets = NumActiveBHFFR;
+  CaptureResults =
+      (struct bh_ffr_capture_result *)mymalloc("BHFFRCaptureResults", CaptureNTargets * sizeof(*CaptureResults));
+  memset(CaptureResults, 0, CaptureNTargets * sizeof(*CaptureResults));
+  for(int n = 0; n < CaptureNTargets; n++)
+    CaptureResults[n].MinHydroTimeBin = TIMEBINS;
+
+  LambdaSink = NULL;
+  SinkMass = NULL;
+  if(NumGas > 0)
+    {
+      LambdaSink = (double *)mymalloc("BHFFRLambdaSink", NumGas * sizeof(double));
+      SinkMass = (double *)mymalloc("BHFFRSinkMass", NumGas * sizeof(double));
+      memset(LambdaSink, 0, NumGas * sizeof(double));
+      memset(SinkMass, 0, NumGas * sizeof(double));
+    }
+
+  if(All.TotNumGas > 0)
+    {
+      CapturePass = BH_FFR_CAPTURE_PASS_LAMBDA;
+      generic_set_MaxNexport();
+      generic_comm_pattern(CaptureNTargets, kernel_local, kernel_imported);
+
+      bh_ffr_compute_exact_cell_sinks();
+
+      CapturePass = BH_FFR_CAPTURE_PASS_SHARES;
+      generic_set_MaxNexport();
+      generic_comm_pattern(CaptureNTargets, kernel_local, kernel_imported);
+    }
+
+  for(int n = 0; n < CaptureNTargets; n++)
+    if(CaptureResults[n].MinHydroTimeBin == TIMEBINS)
+      CaptureResults[n].MinHydroTimeBin = -1;
+
+  double local_captured_mass, local_captured_momentum[3];
+  bh_ffr_apply_capture_to_bhs(&local_captured_mass, local_captured_momentum);
+
+  double local_removed_mass, local_removed_momentum[3];
+  bh_ffr_apply_gas_sink(&local_removed_mass, local_removed_momentum);
+
+  bh_ffr_check_capture_ledger(local_removed_mass, local_removed_momentum, local_captured_mass, local_captured_momentum);
+
+  if(SinkMass != NULL)
+    myfree(SinkMass);
+  if(LambdaSink != NULL)
+    myfree(LambdaSink);
+  myfree(CaptureResults);
+
+  SinkMass = NULL;
+  LambdaSink = NULL;
+  CaptureResults = NULL;
+  CaptureNTargets = 0;
+}

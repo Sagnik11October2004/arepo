@@ -18,13 +18,6 @@ static int bh_ffr_compact_index_from_particle(int p, const char *where)
   return b;
 }
 
-/*! Convert an AREPO integer-timeline interval to physical Myr.
- *
- * For cosmological runs the integer coordinate is dln(a), not physical time.
- * We reconstruct the endpoint scale factors exactly as predict.c does and use
- * AREPO's existing physical-time conversion helper. Non-cosmological runs use
- * the same helper with the corresponding code-time endpoints.
- */
 double bh_ffr_integer_interval_to_physical_myr(integertime ti0, integertime ti1)
 {
   if(ti0 < 0 || ti1 < ti0 || ti1 > TIMEBASE)
@@ -54,7 +47,22 @@ double bh_ffr_integer_interval_to_physical_myr(integertime ti0, integertime ti1)
   return dt_myr;
 }
 
-/*! Physical elapsed time since this BH last executed the subgrid hook. */
+double bh_ffr_integer_interval_to_physical_code_time(integertime ti0, integertime ti1)
+{
+  const double dt_myr = bh_ffr_integer_interval_to_physical_myr(ti0, ti1);
+  if(dt_myr == 0)
+    return 0.0;
+
+  if(!(All.UnitTime_in_s > 0) || !(All.HubbleParam > 0))
+    terminate("BH_FFR: invalid unit conversion UnitTime=%g HubbleParam=%g", All.UnitTime_in_s, All.HubbleParam);
+
+  const double dt = dt_myr * SEC_PER_MEGAYEAR * All.HubbleParam / All.UnitTime_in_s;
+  if(!isfinite(dt) || dt < 0)
+    terminate("BH_FFR: invalid physical code-time interval %g", dt);
+
+  return dt;
+}
+
 double bh_ffr_get_elapsed_time_myr(int p)
 {
   const int b = bh_ffr_compact_index_from_particle(p, "bh_ffr_get_elapsed_time_myr");
@@ -66,9 +74,17 @@ double bh_ffr_get_elapsed_time_myr(int p)
   return bh_ffr_integer_interval_to_physical_myr(BHP[b].LastProcessedTi, All.Ti_Current);
 }
 
-/*! Store the minimum neighbouring gas hydro timebin returned by the gas pass.
- * A value of -1 means that no neighbour-derived limit is currently available.
- */
+double bh_ffr_get_elapsed_time_code_time(int p)
+{
+  const int b = bh_ffr_compact_index_from_particle(p, "bh_ffr_get_elapsed_time_code_time");
+
+  if(BHP[b].LastProcessedTi > All.Ti_Current)
+    terminate("BH_FFR: LastProcessedTi=%lld exceeds Ti_Current=%lld for particle ID=%llu", (long long)BHP[b].LastProcessedTi,
+              (long long)All.Ti_Current, (unsigned long long)P[p].ID);
+
+  return bh_ffr_integer_interval_to_physical_code_time(BHP[b].LastProcessedTi, All.Ti_Current);
+}
+
 void bh_ffr_set_min_neighbour_timebin(int p, int timebin)
 {
   const int b = bh_ffr_compact_index_from_particle(p, "bh_ffr_set_min_neighbour_timebin");
@@ -79,14 +95,6 @@ void bh_ffr_set_min_neighbour_timebin(int p, int timebin)
   BHP[b].MinNeighbourHydroTimeBin = timebin;
 }
 
-/*! Apply the cached nearby-gas limit to a Type-5 gravity timestep.
- *
- * Iteration 2 deliberately does not invent a proxy for nearby gas activity.
- * MinNeighbourHydroTimeBin remains -1 until Iteration 3's distributed gas
- * search measures it. Once supplied, the normal AREPO gravity timebin
- * assignment automatically becomes equal to or finer than the fastest gas
- * neighbour inside the accretion aperture.
- */
 integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
 {
   const int b = bh_ffr_compact_index_from_particle(p, "bh_ffr_limit_gravity_timestep");
@@ -102,20 +110,12 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
   return gas_ti_step < ti_step ? gas_ti_step : ti_step;
 }
 
-/*! End-of-step FFR-MACER orchestration through Iteration 3.
- *
- * This advances only restart-safe synchronization bookkeeping. No gas mass,
- * BH mass, reservoir mass, momentum, radiation, wind, or jet state is changed.
- */
 void bh_ffr_step(void)
 {
   if(NumActiveBHFFR <= 0)
     return;
 
-  /* Iteration 3: perform the read-only distributed gas-aperture pass before
-   * advancing BH bookkeeping. This activates the nearby-gas timestep cache
-   * without removing gas or changing any sub-grid mass/energy state. */
-  bh_ffr_refresh_gas_neighbour_cache();
+  bh_ffr_capture_resolved_gas();
 
   for(int n = 0; n < NumActiveBHFFR; n++)
     {

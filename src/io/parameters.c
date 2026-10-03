@@ -823,8 +823,8 @@ void check_parameters()
     mpi_terminate("BLACKHOLE_FFR requires positive BHAccretionRadius and BHFeedbackRadius.\n");
   if(All.BHFreeFallA < 0)
     mpi_terminate("BHFreeFallA must be non-negative.\n");
-  if(All.BHMaxSinkFraction <= 0 || All.BHMaxSinkFraction > 1)
-    mpi_terminate("BHMaxSinkFraction must lie in (0,1].\n");
+  if(All.BHMaxSinkFraction <= 0 || All.BHMaxSinkFraction >= 1)
+    mpi_terminate("BHMaxSinkFraction must lie in (0,1) so an active gas cell retains positive mass.\n");
   if(All.BHDiskTimeMyr <= 0)
     mpi_terminate("BHDiskTimeMyr must be positive.\n");
   if(All.BHRHotMaxInRs <= 0)

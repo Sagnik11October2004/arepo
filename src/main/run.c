@@ -405,9 +405,9 @@ void calculate_non_standard_physics_end_of_step(void)
 {
 #ifdef BLACKHOLE_FFR
   /* FFR-MACER is operator-split here, after hydro closure and the second
-   * gravity half-kick. Through Iteration 3 this performs only read-only
-   * aperture searches plus synchronization bookkeeping; resolved capture and
-   * all mass/energy changes remain disabled. */
+   * gravity half-kick. Through Iteration 4 this activates only resolved
+   * free-fall capture into the unresolved reservoir; reservoir processing,
+   * BH growth, radiation, winds, and jets remain disabled. */
   bh_ffr_step();
 #endif
 

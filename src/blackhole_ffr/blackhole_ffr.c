@@ -145,11 +145,19 @@ void bh_ffr_validate_state(const char *where)
           if(!isfinite(BHP[b].BHMass) || BHP[b].BHMass < 0 || !isfinite(BHP[b].ReservoirMass) || BHP[b].ReservoirMass < 0 ||
              !isfinite(BHP[b].WindMassBuffer) || BHP[b].WindMassBuffer < 0 || !isfinite(BHP[b].WindMomentumBuffer) ||
              BHP[b].WindMomentumBuffer < 0 || !isfinite(BHP[b].WindEnergyBuffer) || BHP[b].WindEnergyBuffer < 0 ||
-             !isfinite(BHP[b].JetEnergyBuffer) || BHP[b].JetEnergyBuffer < 0)
+             !isfinite(BHP[b].JetEnergyBuffer) || BHP[b].JetEnergyBuffer < 0 || !isfinite(BHP[b].MdotSupply) ||
+             BHP[b].MdotSupply < 0)
             terminate("BH_FFR: invalid mass/feedback buffer for particle ID=%llu in %s", (unsigned long long)P[i].ID, where);
+
+          const double expected_dyn_mass = BHP[b].BHMass + BHP[b].ReservoirMass + BHP[b].WindMassBuffer;
+          const double dyn_scale = dmax(1.0, dmax(fabs(expected_dyn_mass), fabs(P[i].Mass)));
+          if(!isfinite(P[i].Mass) || P[i].Mass < 0 || fabs(P[i].Mass - expected_dyn_mass) > 1.0e-10 * dyn_scale)
+            terminate("BH_FFR: dynamical-mass mismatch for particle ID=%llu in %s: P.Mass=%g components=%g",
+                      (unsigned long long)P[i].ID, where, P[i].Mass, expected_dyn_mass);
 
           double jet_norm2 = 0;
           double disc_norm2 = 0;
+          double coherence_norm2 = 0;
           for(int k = 0; k < 3; k++)
             {
               if(!isfinite(BHP[b].Coherence[k]) || !isfinite(BHP[b].DiscDir[k]) || !isfinite(BHP[b].JetDir[k]))
@@ -157,7 +165,13 @@ void bh_ffr_validate_state(const char *where)
 
               jet_norm2 += BHP[b].JetDir[k] * BHP[b].JetDir[k];
               disc_norm2 += BHP[b].DiscDir[k] * BHP[b].DiscDir[k];
+              coherence_norm2 += BHP[b].Coherence[k] * BHP[b].Coherence[k];
             }
+
+          const double coherence_norm = sqrt(coherence_norm2);
+          if(coherence_norm > BHP[b].ReservoirMass * (1.0 + 1.0e-10))
+            terminate("BH_FFR: coherence norm=%g exceeds reservoir mass=%g for particle ID=%llu in %s", coherence_norm,
+                      BHP[b].ReservoirMass, (unsigned long long)P[i].ID, where);
 
           if(fabs(jet_norm2 - 1.0) > 1.0e-5 || fabs(disc_norm2 - 1.0) > 1.0e-5)
             terminate("BH_FFR: non-unit persistent axis for particle ID=%llu in %s", (unsigned long long)P[i].ID, where);
@@ -213,6 +227,5 @@ void bh_ffr_initialize_particles(void)
   long long global_count = 0;
   MPI_Allreduce(&local_count, &global_count, 1, MPI_LONG_LONG_INT, MPI_SUM, MPI_COMM_WORLD);
 
-  mpi_printf("BH_FFR: initialized %lld Type-%d black-hole records; no accretion or feedback is active yet.\n", global_count,
-             BH_FFR_PARTICLE_TYPE);
+  mpi_printf("BH_FFR: initialized %lld Type-%d black-hole records.\n", global_count, BH_FFR_PARTICLE_TYPE);
 }

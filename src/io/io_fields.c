@@ -145,8 +145,11 @@ static void io_func_bh_ffr_jetaxis(int particle, int components, void *out_buffe
 static void io_func_bh_ffr_coherence(int particle, int components, void *out_buffer, int mode)
 {
   struct bh_ffr_particle_data *bh = io_bh_ffr_data(particle);
+  double norm2 = 0;
   for(int k = 0; k < 3; k++)
-    ((MyOutputFloat *)out_buffer)[k] = bh->Coherence[k];
+    norm2 += bh->Coherence[k] * bh->Coherence[k];
+
+  ((MyOutputFloat *)out_buffer)[0] = bh->ReservoirMass > 0 ? sqrt(norm2) / bh->ReservoirMass : 0;
 }
 
 static void io_func_bh_ffr_ewind(int particle, int components, void *out_buffer, int mode)
@@ -688,7 +691,7 @@ void init_io_fields()
              io_func_bh_ffr_jetaxis, BHS_ONLY);
   init_units(IO_BH_FFR_JETAXIS, 0., 0., 0., 0., 0., 0.);
 
-  init_field(IO_BH_FFR_COHERENCE, "BHCO", "BH_Coherence", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 3, A_NONE, 0,
+  init_field(IO_BH_FFR_COHERENCE, "BHCO", "BH_Coherence", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
              io_func_bh_ffr_coherence, BHS_ONLY);
   init_units(IO_BH_FFR_COHERENCE, 0., 0., 0., 0., 0., 0.);
 
