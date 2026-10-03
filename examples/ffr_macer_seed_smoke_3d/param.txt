@@ -122,8 +122,9 @@ BHFreeFallA                             0.0
 BHFreeFallAlpha                         0.0
 BHMaxSinkFraction                       0.25
 
-%---- Persistent FFR parameters required by the current module
-% Later-iteration physics is not active yet.
+%---- Reservoir/state and persistent FFR parameters
+% Iteration 5 evaluates the processable reservoir rate/state, but does not
+% drain reservoir mass until Iteration 6 can partition it conservatively.
 BHDiskTimeMyr                           1.0
 BHRHotMaxInRs                           1200.0
 BHRadiativeEfficiency                   0.1

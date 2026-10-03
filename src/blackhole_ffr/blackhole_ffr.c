@@ -174,8 +174,15 @@ void bh_ffr_validate_state(const char *where)
              !isfinite(BHP[b].WindMassBuffer) || BHP[b].WindMassBuffer < 0 || !isfinite(BHP[b].WindMomentumBuffer) ||
              BHP[b].WindMomentumBuffer < 0 || !isfinite(BHP[b].WindEnergyBuffer) || BHP[b].WindEnergyBuffer < 0 ||
              !isfinite(BHP[b].JetEnergyBuffer) || BHP[b].JetEnergyBuffer < 0 || !isfinite(BHP[b].MdotSupply) ||
-             BHP[b].MdotSupply < 0)
-            terminate("BH_FFR: invalid mass/feedback buffer for particle ID=%llu in %s", (unsigned long long)P[i].ID, where);
+             BHP[b].MdotSupply < 0 || !isfinite(BHP[b].MdotProcessed) || BHP[b].MdotProcessed < 0 ||
+             !isfinite(BHP[b].MdotEddington) || BHP[b].MdotEddington < 0 ||
+             !isfinite(BHP[b].ProcessedEddingtonRatio) || BHP[b].ProcessedEddingtonRatio < 0 ||
+             !isfinite(BHP[b].ColdBlendWeight) || BHP[b].ColdBlendWeight < 0 || BHP[b].ColdBlendWeight > 1)
+            terminate("BH_FFR: invalid mass/rate/state buffer for particle ID=%llu in %s", (unsigned long long)P[i].ID, where);
+
+          if(BHP[b].AccretionState < BH_FFR_STATE_UNINITIALIZED || BHP[b].AccretionState > BH_FFR_STATE_COLD)
+            terminate("BH_FFR: invalid accretion state=%d for particle ID=%llu in %s", BHP[b].AccretionState,
+                      (unsigned long long)P[i].ID, where);
 
           const double expected_dyn_mass = BHP[b].BHMass + BHP[b].ReservoirMass + BHP[b].WindMassBuffer;
           const double dyn_scale = dmax(1.0, dmax(fabs(expected_dyn_mass), fabs(P[i].Mass)));

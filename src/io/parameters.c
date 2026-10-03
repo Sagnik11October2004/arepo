@@ -843,8 +843,8 @@ void check_parameters()
     mpi_terminate("BHMaxSinkFraction must lie in (0,1) so an active gas cell retains positive mass.\n");
   if(All.BHDiskTimeMyr <= 0)
     mpi_terminate("BHDiskTimeMyr must be positive.\n");
-  if(All.BHRHotMaxInRs <= 0)
-    mpi_terminate("BHRHotMaxInRs must be positive.\n");
+  if(All.BHRHotMaxInRs <= 3.0)
+    mpi_terminate("BHRHotMaxInRs must exceed 3 so the truncated-flow interval is non-empty.\n");
   if(All.BHRadiativeEfficiency <= 0 || All.BHRadiativeEfficiency >= 1)
     mpi_terminate("BHRadiativeEfficiency must lie in (0,1).\n");
   if(All.BHWindBurstFactor <= 0 || All.BHJetBurstFactor <= 0)

@@ -126,6 +126,13 @@ void bh_ffr_step(void)
   if(global_active_bhs <= 0)
     return;
 
+  static int reservoir_self_test_done = 0;
+  if(!reservoir_self_test_done)
+    {
+      bh_ffr_reservoir_self_test();
+      reservoir_self_test_done = 1;
+    }
+
   bh_ffr_capture_resolved_gas();
 
   for(int n = 0; n < NumActiveBHFFR; n++)
@@ -138,8 +145,15 @@ void bh_ffr_step(void)
                   (long long)All.Ti_Current);
 
       const double dt_myr = bh_ffr_get_elapsed_time_myr(p);
-      if(BHP[b].LastProcessedTi != All.Ti_Current && !(dt_myr > 0))
+      const double dt_code = bh_ffr_get_elapsed_time_code_time(p);
+      if(BHP[b].LastProcessedTi != All.Ti_Current && (!(dt_myr > 0) || !(dt_code > 0)))
         terminate("BH_FFR: non-positive elapsed physical timestep for active particle ID=%llu", (unsigned long long)P[p].ID);
+
+      /* Iteration 5 computes the exact finite-step processable reservoir mass
+       * and state diagnostics, but deliberately does not drain ReservoirMass.
+       * Iteration 6 will atomically partition this candidate into horizon and
+       * wind mass before committing the reservoir transaction. */
+      bh_ffr_update_reservoir_state(p, dt_myr, dt_code);
 
       BHP[b].LastProcessedTi = All.Ti_Current;
     }

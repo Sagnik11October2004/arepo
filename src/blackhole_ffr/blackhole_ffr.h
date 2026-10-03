@@ -5,6 +5,15 @@
 
 #define BH_FFR_PARTICLE_TYPE 5
 
+/* Iteration-5 state-machine closures from the design specification. The
+ * nominal physical boundaries are dotm=0.02 and Rtr/Rhot=1; the wider
+ * entry/exit values provide hysteresis against state chatter. */
+#define BH_FFR_COLD_NOMINAL_EDD_RATIO 0.020
+#define BH_FFR_COLD_ENTER_EDD_RATIO 0.022
+#define BH_FFR_COLD_EXIT_EDD_RATIO 0.018
+#define BH_FFR_ADIOS_ENTER_RTR_FACTOR 1.20
+#define BH_FFR_ADIOS_EXIT_RTR_FACTOR 0.80
+
 enum bh_ffr_accretion_state
 {
   BH_FFR_STATE_UNINITIALIZED = -1,
@@ -44,6 +53,9 @@ struct bh_ffr_particle_data
 
   MyDouble MdotSupply;
   MyDouble MdotProcessed;
+  MyDouble MdotEddington;
+  MyDouble ProcessedEddingtonRatio;
+  MyDouble ColdBlendWeight;
   MyDouble MdotHorizon;
   MyDouble MdotWind;
   MyDouble BolometricLuminosity;
@@ -98,6 +110,13 @@ void bh_ffr_refresh_gas_neighbour_cache(void);
 void bh_ffr_prepare_dm_environment_search(void);
 void bh_ffr_capture_resolved_gas(void);
 void bh_ffr_capture_self_test(void);
+double bh_ffr_reservoir_processable_mass(double reservoir_mass, double dt_myr, double tau_myr);
+double bh_ffr_eddington_rate_code(double bh_mass);
+double bh_ffr_truncation_to_hot_radius_ratio(double processed_edd_ratio);
+double bh_ffr_cold_blend_weight(double processed_edd_ratio);
+int bh_ffr_classify_accretion_state(int previous_state, double processed_edd_ratio, double rtr_over_rhot);
+void bh_ffr_update_reservoir_state(int p, double dt_myr, double dt_code);
+void bh_ffr_reservoir_self_test(void);
 int bh_ffr_seed_from_fof(void);
 double bh_ffr_integer_interval_to_physical_myr(integertime ti0, integertime ti1);
 double bh_ffr_integer_interval_to_physical_code_time(integertime ti0, integertime ti1);
