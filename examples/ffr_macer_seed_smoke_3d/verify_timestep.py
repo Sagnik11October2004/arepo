@@ -16,6 +16,14 @@ if not os.path.isabs(OUTPUT):
     OUTPUT = os.path.join(HERE, OUTPUT)
 LOG = os.path.join(HERE, "run_timestep.log")
 
+HUBBLE = 0.68
+UNIT_MASS_MSUN = 1.0e10
+UNIT_LENGTH_CM = 3.085678e21
+UNIT_VELOCITY_CM_S = 1.0e5
+SEC_PER_YEAR = 365.25 * 24.0 * 3600.0
+UNIT_TIME_S = UNIT_LENGTH_CM / UNIT_VELOCITY_CM_S
+RATE_TO_MSUN_YR = UNIT_MASS_MSUN / (UNIT_TIME_S / SEC_PER_YEAR)
+
 if not os.path.isfile(LOG):
     raise SystemExit("FAIL: run_timestep.log not found; run ./run_timestep_restart.sh first")
 
@@ -26,6 +34,7 @@ pat = re.compile(
     r"BH_FFR: timestep limit ID=(\d+) task=(\d+) "
     r"raw=(\d+) limited=(\d+) gasbin=(-?\d+) fint=([^\s]+) "
     r"dtintMyr=([^\s]+) dtwindMyr=([^\s]+) dtjetMyr=([^\s]+) "
+    r"accuracyLimited=(\d+) backlogLimit=(\d+) "
     r"windBacklog=([^\s]+) jetBacklog=([^\s]+) backlog=(\d+) backlogApplied=(\d+)"
 )
 rows = pat.findall(log)
@@ -44,9 +53,11 @@ for row in rows:
     fint = float(row[5])
     dtint = float(row[6])
     dtjet = float(row[8])
-    jet_backlog = float(row[10])
-    backlog = int(row[11])
-    backlog_applied = int(row[12])
+    accuracy_limited = int(row[9])
+    backlog_limit = int(row[10])
+    jet_backlog = float(row[12])
+    backlog = int(row[13])
+    backlog_applied = int(row[14])
 
     if not (raw > 0 and limited > 0 and limited <= raw):
         raise SystemExit(f"FAIL: BH {pid}: invalid integer limiter raw={raw} limited={limited}")
@@ -60,12 +71,24 @@ for row in rows:
     if math.isfinite(dtjet) and dtjet > 0 and limited < raw:
         saw_internal = True
 
+    if not (2 <= accuracy_limited <= raw):
+        raise SystemExit(
+            f"FAIL: BH {pid}: invalid accuracy-limited step {accuracy_limited} from raw {raw}"
+        )
+
     if backlog_applied:
         saw_backlog = True
         if not backlog:
             raise SystemExit(f"FAIL: BH {pid}: backlogApplied without backlog flag")
         if jet_backlog < 1.0 - 1e-8:
             raise SystemExit(f"FAIL: BH {pid}: backlog limiter applied with jetBacklog={jet_backlog}")
+        expected_backlog = max(2, accuracy_limited // 2)
+        if backlog_limit != expected_backlog or limited != expected_backlog:
+            raise SystemExit(
+                f"FAIL: BH {pid}: backlog limiter recursively/incorrectly reduced step "
+                f"accuracy={accuracy_limited} backlogLimit={backlog_limit} limited={limited} "
+                f"expected={expected_backlog}"
+            )
 
     max_jet_backlog = max(max_jet_backlog, jet_backlog)
     max_reduction = max(max_reduction, raw / limited)
@@ -112,7 +135,7 @@ for path in snaps:
             continue
         seen_bh = True
 
-        for name in ("BH_EJet", "BH_EthJet", "BH_PJet", "BH_MdotFeed", "BH_MdotHorizon", "BH_MdotWind"):
+        for name in ("BH_EJet", "BH_EthJet", "BH_PJet", "BH_MdotSupply", "BH_MdotFeed", "BH_MdotHorizon", "BH_MdotWind"):
             if name not in g:
                 raise SystemExit(f"FAIL: {os.path.basename(path)} missing {name}")
 
@@ -120,13 +143,22 @@ for path in snaps:
             ejet = float(g["BH_EJet"][i])
             ethj = float(g["BH_EthJet"][i])
             pjet = float(g["BH_PJet"][i])
-            if not all(math.isfinite(x) and x >= 0 for x in (ejet, ethj, pjet)):
+            supply = float(g["BH_MdotSupply"][i])
+            if not all(math.isfinite(x) and x >= 0 for x in (ejet, ethj, pjet, supply)):
                 raise SystemExit(f"FAIL: BH {int(pid)} invalid jet timestep diagnostics")
+
+            supply_phys = supply * RATE_TO_MSUN_YR
+            if supply_phys > 1.0e-2:
+                raise SystemExit(
+                    f"FAIL: BH {int(pid)} spurious supply-rate spike {supply_phys:.6e} Msun/yr; "
+                    "capture rate must use gas hydro timesteps, not the shorter BH feedback timestep"
+                )
 
             ratio = ejet / ethj if ethj > 0 else 0.0
             print(
                 f"  BH {int(pid)}: Ejet/EthJet={ratio:.6e} "
-                f"Ejet={ejet:.6e} EthJet={ethj:.6e} PJet={pjet:.6e}"
+                f"Ejet={ejet:.6e} EthJet={ethj:.6e} PJet={pjet:.6e} "
+                f"MdotSupply={supply_phys:.6e} Msun/yr"
             )
 
 if not seen_bh:
@@ -139,5 +171,7 @@ print(f"  jet packets fired           : {len(packets)}")
 print(f"  maximum raw/limited ratio   : {max_reduction:.3f}")
 print(f"  maximum logged jet backlog  : {max_jet_backlog:.3f} thresholds")
 print("  feedback accuracy limit reduced the normal gravity candidate")
-print("  packet-cap backlog forced a finer subsequent BH timestep")
+print("  packet-cap backlog forced exactly one bin below the accuracy-limited candidate")
+print("  backlog limiting is anchored and does not recursively collapse the BH timebin")
+print("  resolved-supply diagnostics use contributing gas hydro timesteps")
 print("  no forbidden integer timestep of size 1 was generated")

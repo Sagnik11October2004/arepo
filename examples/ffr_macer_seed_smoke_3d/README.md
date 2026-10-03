@@ -139,7 +139,7 @@ The production limiter combines the nearest-gas hydro bin with the internal accu
 
 using physical time before AREPO performs its normal power-of-two timebin quantization. If a surviving wind or jet buffer still contains at least BHMaxPacketsPerStep thresholds, it additionally forces at least one finer gravity bin, so a packet-cap backlog cannot wait on a coarse collisionless timestep.
 
-The dedicated stress helper intentionally uses BHInternalTimestepFactor=4 and BHMaxPacketsPerStep=1. Those values are test-only: they make the ordinary accuracy limit loose enough that the independent backlog branch must activate. The run is shortened to a=0.02055 and still starts from the saved BH-free checkpoint:
+The dedicated stress helper intentionally uses BHInternalTimestepFactor=4 and BHMaxPacketsPerStep=1. Those values are test-only: they make the ordinary accuracy limit loose enough that the independent backlog branch must activate. The backlog step is anchored to the gas+accuracy-limited candidate and may reduce it by only one additional factor of two per assignment; it is not recursively referenced to the already-shortened current BH bin. The same regression also checks that BH_MdotSupply is assembled as sum(dm_i/dt_i,hydro), avoiding diagnostic spikes when the BH timestep is shorter than the synchronized gas step. The run is shortened to a=0.02055 and still starts from the saved BH-free checkpoint:
 
     NTASKS=16 ./run_timestep_restart.sh
     python3 verify_timestep.py
