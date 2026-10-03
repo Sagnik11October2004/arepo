@@ -291,35 +291,4 @@ void bh_ffr_refresh_gas_neighbour_cache(void)
   myfree(results);
 }
 
-/*
- * Full-tree hook reserved for the cached local DM-dispersion query.
- *
- * The project specification requires a gravity-tree (not gas-tree) query and
- * BHDMNeighbours controls its eventual nearest-DM sample. The current project
- * has not defined a numeric particle type that universally means dark matter,
- * so Iteration 3 establishes and validates the full-tree execution point but
- * deliberately leaves BHP[].SigmaDM unchanged. A later iteration can add the
- * configured DM selector and velocity-moment calculation here without moving
- * the call site or querying an invalid gas-only tree.
- */
-void bh_ffr_prepare_dm_environment_search(void)
-{
-  /* The gravity tree uses the current particle ordering, so refresh the
-   * derived BH target indices immediately before this hook consumes them. */
-  bh_ffr_build_active_list();
-
-  if(NumActiveBHFFR <= 0)
-    return;
-
-  if(Tree_MaxPart <= 0 || Tree_MaxNodes <= 0 || Nodes == NULL || Nextnode == NULL || Tree_Pos_list == NULL)
-    terminate("BH_FFR: DM-environment hook called without a valid full gravity tree");
-
-  for(int n = 0; n < NumActiveBHFFR; n++)
-    {
-      const int p = BHFFRActiveParticleList[n];
-      if(p < 0 || p >= NumPart || P[p].Type != BH_FFR_PARTICLE_TYPE)
-        terminate("BH_FFR: invalid active BH index %d in full-gravity-tree hook", p);
-      if(P[p].Ti_Current != All.Ti_Current)
-        terminate("BH_FFR: active BH particle ID=%llu is not drifted at full-gravity-tree hook", (unsigned long long)P[p].ID);
-    }
-}
+/* The full-gravity-tree SigmaDM implementation lives in bh_ffr_dm.c. */

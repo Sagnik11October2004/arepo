@@ -700,6 +700,9 @@ int force_treebuild_construct(int npart, int optimized_domain_mapping, int inser
           export_Tree_Points[n].Pos[0]        = Tree_Pos_list[3 * i + 0];
           export_Tree_Points[n].Pos[1]        = Tree_Pos_list[3 * i + 1];
           export_Tree_Points[n].Pos[2]        = Tree_Pos_list[3 * i + 2];
+          export_Tree_Points[n].Vel[0]        = P[i].Vel[0];
+          export_Tree_Points[n].Vel[1]        = P[i].Vel[1];
+          export_Tree_Points[n].Vel[2]        = P[i].Vel[2];
           export_Tree_Points[n].IntPos[0]     = Tree_IntPos_list[3 * i + 0];
           export_Tree_Points[n].IntPos[1]     = Tree_IntPos_list[3 * i + 1];
           export_Tree_Points[n].IntPos[2]     = Tree_IntPos_list[3 * i + 2];

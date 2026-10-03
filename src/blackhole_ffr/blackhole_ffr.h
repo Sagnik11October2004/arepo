@@ -4,6 +4,10 @@
 #include "../main/allvars.h"
 
 #define BH_FFR_PARTICLE_TYPE 5
+/* Version-1 cosmological DM selector. The current AREPO test/production
+ * configuration uses Type-1 as dark matter. Keep this compile-time rather
+ * than adding an All/BHP field so native restart layouts remain unchanged. */
+#define BH_FFR_DM_PARTICLE_TYPE 1
 
 /* Iteration-5 state-machine closures from the design specification. The
  * nominal physical boundaries are dotm=0.02 and Rtr/Rhot=1; the wider
