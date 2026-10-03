@@ -20,7 +20,7 @@ ResubmitOn                              0
 ResubmitCommand                         none
 
 %---- Memory per MPI rank [MB]
-MaxMemSize                              4096
+MaxMemSize                              3000
 
 %---- Cosmological interval
 TimeBegin                               0.0200000000000000
