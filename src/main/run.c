@@ -389,6 +389,15 @@ void calculate_non_standard_physics_with_valid_gravity_tree_always(void) {}
  */
 void calculate_non_standard_physics_prior_mesh_construction(void)
 {
+#if defined(BLACKHOLE_FFR) && defined(FOF)
+  /* FFR-MACER seeding is tied to the FoF cadence itself. Run the no-output
+   * FoF catalogue only on full synchronization points, when every occupied
+   * time bin is active. bh_ffr_seed_from_fof() is invoked from fof_fof(-1)
+   * after global group properties and particle group numbers are known. */
+  if(All.HighestActiveTimeBin == All.HighestOccupiedTimeBin)
+    fof_fof(-1);
+#endif
+
 #if defined(COOLING) && defined(USE_SFR)
   sfr_create_star_particles();
 #endif /* #if defined(COOLING) && defined(USE_SFR) */

@@ -889,6 +889,14 @@ extern struct global_data_all_processes
    * cold-state retention fraction or a hard Eddington mass-accretion cap. */
   double BHAccretionRadius;
   double BHFeedbackRadius;
+
+  /* FoF seed thresholds are specified in physical solar masses/redshift.
+   * DonorFraction is the maximum fraction removed from any non-central
+   * donor gas cell during the instantaneous conservative seed transaction. */
+  double BHSeedHaloMassMsun;
+  double BHSeedMassMsun;
+  double BHSeedMinRedshift;
+  double BHSeedMaxDonorFraction;
   double BHFreeFallA;
   double BHFreeFallAlpha;
   double BHMaxSinkFraction;

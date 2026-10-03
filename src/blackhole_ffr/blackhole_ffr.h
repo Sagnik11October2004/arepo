@@ -86,6 +86,7 @@ struct bh_ffr_domain_exchange_context
 void bh_ffr_allocate_state(int count);
 void bh_ffr_free_state(void);
 void bh_ffr_initialize_particles(void);
+void bh_ffr_rebuild_state_after_particle_changes(void);
 void bh_ffr_validate_state(const char *where);
 
 void bh_ffr_build_active_list(void);
@@ -97,6 +98,7 @@ void bh_ffr_refresh_gas_neighbour_cache(void);
 void bh_ffr_prepare_dm_environment_search(void);
 void bh_ffr_capture_resolved_gas(void);
 void bh_ffr_capture_self_test(void);
+void bh_ffr_seed_from_fof(void);
 double bh_ffr_integer_interval_to_physical_myr(integertime ti0, integertime ti1);
 double bh_ffr_integer_interval_to_physical_code_time(integertime ti0, integertime ti1);
 double bh_ffr_get_elapsed_time_myr(int p);

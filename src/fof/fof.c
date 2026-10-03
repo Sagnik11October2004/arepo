@@ -56,6 +56,10 @@
 #include "../subfind/subfind.h"
 #include "fof.h"
 
+#ifdef BLACKHOLE_FFR
+#include "../blackhole_ffr/blackhole_ffr.h"
+#endif
+
 #ifdef FOF
 
 static MyIDType *MinID;
@@ -268,6 +272,13 @@ void fof_fof(int num)
   mpi_printf("FOF: computation of group properties took = %g sec\n", timediff(t0, t1));
 
   fof_assign_group_numbers();
+
+#ifdef BLACKHOLE_FFR
+  /* Snapshot catalogues remain read-only. The internal no-output FoF pass
+   * performed at a full synchronization point is the only seeding trigger. */
+  if(num < 0 && All.HighestActiveTimeBin == All.HighestOccupiedTimeBin)
+    bh_ffr_seed_from_fof();
+#endif
 
   mpi_printf("FOF: Finished computing FoF groups.  (presently allocated=%g MB)\n", AllocatedBytes / (1024.0 * 1024.0));
 

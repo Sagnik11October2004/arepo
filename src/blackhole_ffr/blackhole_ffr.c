@@ -36,6 +36,22 @@ static void bh_ffr_deterministic_axis(MyIDType id, MyDouble axis[3])
   axis[2] = z;
 }
 
+static void bh_ffr_initialize_record(struct bh_ffr_particle_data *bh, int p, integertime last_processed_ti)
+{
+  memset(bh, 0, sizeof(*bh));
+
+  bh->ParticleID = P[p].ID;
+  bh->LastProcessedTi = last_processed_ti;
+  bh->MinNeighbourHydroTimeBin = -1;
+  bh->BHMass = P[p].Mass;
+  bh->ReservoirMass = 0;
+  bh->AccretionState = BH_FFR_STATE_UNINITIALIZED;
+
+  bh_ffr_deterministic_axis(P[p].ID, bh->DiscDir);
+  for(int k = 0; k < 3; k++)
+    bh->JetDir[k] = bh->DiscDir[k];
+}
+
 void bh_ffr_free_active_list(void)
 {
   if(BHFFRActiveParticleList != NULL)
@@ -207,17 +223,7 @@ void bh_ffr_initialize_particles(void)
       {
         P[i].BHDataIndex = b;
 
-        BHP[b].ParticleID = P[i].ID;
-        BHP[b].LastProcessedTi = 0;
-        BHP[b].MinNeighbourHydroTimeBin = -1;
-        BHP[b].BHMass = P[i].Mass;
-        BHP[b].ReservoirMass = 0;
-        BHP[b].AccretionState = BH_FFR_STATE_UNINITIALIZED;
-
-        bh_ffr_deterministic_axis(P[i].ID, BHP[b].DiscDir);
-        for(int k = 0; k < 3; k++)
-          BHP[b].JetDir[k] = BHP[b].DiscDir[k];
-
+        bh_ffr_initialize_record(&BHP[b], i, 0);
         b++;
       }
 
@@ -228,4 +234,74 @@ void bh_ffr_initialize_particles(void)
   MPI_Allreduce(&local_count, &global_count, 1, MPI_LONG_LONG_INT, MPI_SUM, MPI_COMM_WORLD);
 
   mpi_printf("BH_FFR: initialized %lld Type-%d black-hole records.\n", global_count, BH_FFR_PARTICLE_TYPE);
+}
+
+
+void bh_ffr_rebuild_state_after_particle_changes(void)
+{
+  bh_ffr_free_active_list();
+
+  struct bh_ffr_particle_data *old_data = BHP;
+  const int old_count = NumBHFFR;
+
+  int new_count = 0;
+  for(int i = 0; i < NumPart; i++)
+    if(P[i].Type == BH_FFR_PARTICLE_TYPE)
+      new_count++;
+
+  struct bh_ffr_particle_data *new_data = NULL;
+  unsigned char *old_used = NULL;
+
+  if(new_count > 0)
+    new_data = (struct bh_ffr_particle_data *)mymalloc("BHFFRRebuiltState", new_count * sizeof(*new_data));
+
+  if(old_count > 0)
+    {
+      old_used = (unsigned char *)mymalloc("BHFFRRebuildOldUsed", old_count * sizeof(*old_used));
+      memset(old_used, 0, old_count * sizeof(*old_used));
+    }
+
+  int bnew = 0;
+  for(int i = 0; i < NumPart; i++)
+    {
+      if(P[i].Type != BH_FFR_PARTICLE_TYPE)
+        {
+          P[i].BHDataIndex = -1;
+          continue;
+        }
+
+      int found = -1;
+      const int old_index = P[i].BHDataIndex;
+
+      if(old_index >= 0 && old_index < old_count && !old_used[old_index] && old_data[old_index].ParticleID == P[i].ID)
+        found = old_index;
+      else
+        for(int b = 0; b < old_count; b++)
+          if(!old_used[b] && old_data[b].ParticleID == P[i].ID)
+            {
+              found = b;
+              break;
+            }
+
+      if(found >= 0)
+        {
+          new_data[bnew] = old_data[found];
+          old_used[found] = 1;
+        }
+      else
+        bh_ffr_initialize_record(&new_data[bnew], i, All.Ti_Current);
+
+      P[i].BHDataIndex = bnew;
+      bnew++;
+    }
+
+  if(old_used != NULL)
+    myfree(old_used);
+  if(old_data != NULL)
+    myfree(old_data);
+
+  BHP = new_data;
+  NumBHFFR = new_count;
+
+  bh_ffr_validate_state("particle-change rebuild");
 }

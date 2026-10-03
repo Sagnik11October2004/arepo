@@ -389,6 +389,22 @@ void read_parameter_file(char *fname)
       addr[nt] = &All.BHFeedbackRadius;
       id[nt++] = REAL;
 
+      strcpy(tag[nt], "BHSeedHaloMassMsun");
+      addr[nt] = &All.BHSeedHaloMassMsun;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHSeedMassMsun");
+      addr[nt] = &All.BHSeedMassMsun;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHSeedMinRedshift");
+      addr[nt] = &All.BHSeedMinRedshift;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHSeedMaxDonorFraction");
+      addr[nt] = &All.BHSeedMaxDonorFraction;
+      id[nt++] = REAL;
+
       strcpy(tag[nt], "BHFreeFallA");
       addr[nt] = &All.BHFreeFallA;
       id[nt++] = REAL;
