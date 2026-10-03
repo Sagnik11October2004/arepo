@@ -6,7 +6,8 @@ This is a runtime/conservation test for FFR-MACER FoF seeding plus the Iteration
 
 - periodic box: 1 cMpc/h
 - initial redshift: z=49
-- final scale factor: a=0.0207 (z~47.31), several synchronization points after the deterministic seed event near z~47.72
+- explicit pre-seed checkpoint: a=0.02050 (z~47.7805), before the deterministic first seed near a~0.020526 (z~47.72)
+- final scale factor: a=0.02110 (z~46.39), several synchronization points after seeding
 - unigrid resolution: 128^3 parent DM particles
 - AREPO GENERATE_GAS_IN_ICS splits these into 128^3 gas cells + 128^3 Type-1 DM particles
 - Omega_m=0.31, Omega_b=0.048, Omega_Lambda=0.69, h=0.68, n_s=0.96
@@ -76,9 +77,10 @@ A passing test requires all of the following:
 5. N_gas + N_BH = 128^3 in every snapshot;
 6. N_DM = 128^3 in every snapshot;
 7. total snapshot mass conserved across the gas-to-BH conversion;
-8. a snapshot after the first seeded snapshot in which the seeded BH ID still exists;
-9. for the deliberately empty reservoir, BH_MdotFeed = BH_ProcessedEddRatio = 0, BH_MdotEdd is positive, and BH_Mode = 0 (ADIOS);
-10. BH_MdotHorizon, BH_MdotWind, BH_Lbol, BH_PWind, and BH_PJet remain zero, confirming that Iteration-6+ physics has not leaked into Iteration 5.
+8. a dedicated checkpoint near a=0.02050 (z~47.7805) that contains no Type-5 BH and has z greater than the first seed redshift;
+9. a snapshot after the first seeded snapshot in which the seeded BH ID still exists;
+10. for the deliberately empty reservoir, BH_MdotFeed = BH_ProcessedEddRatio = 0, BH_MdotEdd is positive, and BH_Mode = 0 (ADIOS);
+11. BH_MdotHorizon, BH_MdotWind, BH_Lbol, BH_PWind, and BH_PJet remain zero, confirming that Iteration-6+ physics has not leaked into Iteration 5.
 
 If the deterministic test realization does not seed near z~47.72, that is a test failure or a changed realization/configuration. Do not lower the threshold silently; inspect run.log first.
 

@@ -17,6 +17,8 @@ HUBBLE = 0.68
 UNIT_MASS_MSUN = 1.0e10
 EXPECTED_SEED_MSUN = 1.0e5
 ZMIN = 20.0
+PRESEED_TARGET_A = 0.02050
+PRESEED_A_TOL = 1.0e-5
 
 
 def fail(msg):
@@ -56,6 +58,8 @@ events = seed_re.findall(log)
 if not events:
     fail("no FoF seed event was reported in run.log")
 
+first_seed_z = float(events[0][1])
+
 for gr, ztxt, mtxt, pid in events:
     z = float(ztxt)
     m = float(mtxt)
@@ -76,6 +80,7 @@ first_bh_ids = None
 for isnap, path in enumerate(snaps):
     with h5py.File(path, "r") as f:
         z = float(f["Header"].attrs["Redshift"])
+        a = float(f["Header"].attrs["Time"])
         ids0 = particle_ids(f, 0)
         ids1 = particle_ids(f, 1)
         ids5 = particle_ids(f, 5)
@@ -160,12 +165,27 @@ for isnap, path in enumerate(snaps):
                 if np.any(np.abs(arr) > 1.0e-12):
                     fail(f"{os.path.basename(path)}: {name} became non-zero before Iteration 6+")
 
-        records.append((os.path.basename(path), z, n0, n1, n5, total_mass))
+        records.append((os.path.basename(path), a, z, n0, n1, n5, total_mass))
 
 if first_bh_index is None:
     fail("run.log reported seeding but no snapshot contains a Type-5 BH")
 if first_bh_index >= len(snaps) - 1:
     fail("the first BH appears only in the final snapshot; no post-seeding continuation snapshot exists")
+
+preseed_candidates = [
+    rec for rec in records
+    if abs(rec[1] - PRESEED_TARGET_A) <= PRESEED_A_TOL
+]
+if not preseed_candidates:
+    fail(f"no checkpoint snapshot found near a={PRESEED_TARGET_A:.5f}")
+preseed = min(preseed_candidates, key=lambda rec: abs(rec[1] - PRESEED_TARGET_A))
+if preseed[5] != 0:
+    fail(f"{preseed[0]}: pre-seed checkpoint already contains {preseed[5]} Type-5 BH(s)")
+if not preseed[2] > first_seed_z:
+    fail(
+        f"{preseed[0]}: checkpoint z={preseed[2]:.8f} is not earlier than "
+        f"first seed z={first_seed_z:.8f}"
+    )
 
 with h5py.File(snaps[-1], "r") as f:
     final_ids = set(int(x) for x in particle_ids(f, 5))
@@ -175,8 +195,10 @@ if not first_bh_ids.issubset(final_ids):
 print("PASS: FFR-MACER FoF seeding smoke test")
 print(f"  seed events in log : {len(events)}")
 print(f"  snapshots checked  : {len(records)}")
-print(f"  first BH snapshot  : {records[first_bh_index][0]} (z={records[first_bh_index][1]:.6g})")
-print(f"  final BH count     : {records[-1][4]}")
+print(f"  pre-seed checkpoint: {preseed[0]} (a={preseed[1]:.8f}, z={preseed[2]:.6f}, N_BH=0)")
+print(f"  first seed in log  : z={first_seed_z:.6f}")
+print(f"  first BH snapshot  : {records[first_bh_index][0]} (z={records[first_bh_index][2]:.6g})")
+print(f"  final BH count     : {records[-1][5]}")
 print(f"  conserved mass     : {reference_total_mass:.12e} code-mass units")
 print("  gas/BH conversion  : N_gas + N_BH stayed exactly 128^3")
 print("  DM count           : stayed exactly 128^3")

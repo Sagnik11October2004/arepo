@@ -1,7 +1,9 @@
 % FFR-MACER FoF seeding + Iteration-5 empty-reservoir smoke test
 % 1 cMpc/h, 128^3 DM + 128^3 gas after GENERATE_GAS_IN_ICS
 % Short z=49 smoke run; sigma8=2 is TEST-ONLY to force an early seed.
-% The deterministic test realization seeds near a=0.020526 (z~47.72), so
+% The deterministic test realization seeds near a=0.020526 (z~47.72).
+% output_list.txt writes a dedicated BH-free checkpoint at a=0.02050
+% (z~47.7805) so later iterations can restart shortly before seeding.
 % TimeMax leaves several post-seed synchronization points while retaining the normal timestep cap.
 
 %---- Files
