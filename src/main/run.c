@@ -414,10 +414,10 @@ void calculate_non_standard_physics_end_of_step(void)
 {
 #ifdef BLACKHOLE_FFR
   /* FFR-MACER is operator-split here, after hydro closure and the second
-   * gravity half-kick. Iteration 6 performs resolved capture, exact reservoir
-   * processing, hysteretic state selection, conservative horizon/wind mass
-   * partition, BH growth, and scalar wind/jet/radiative energetics. Mechanical
-   * feedback injection remains disabled until the dedicated feedback stages. */
+   * gravity half-kick. Iteration 7 extends the conservative Iteration-6 inner
+   * flow with burst-thresholded, active-cell-only, exactly bipolar wind mass
+   * return and kinetic feedback. Jet energy remains buffered for the next
+   * separately validated feedback stage. */
   bh_ffr_step();
 #endif
 

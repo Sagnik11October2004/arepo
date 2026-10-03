@@ -123,6 +123,8 @@ void bh_ffr_update_reservoir_state(int p, double dt_myr, double dt_code);
 void bh_ffr_reservoir_self_test(void);
 void bh_ffr_apply_inner_flow(int p, double processable_mass, double dt_code);
 void bh_ffr_inner_self_test(void);
+void bh_ffr_inject_wind_feedback(void);
+void bh_ffr_feedback_self_test(void);
 int bh_ffr_seed_from_fof(void);
 double bh_ffr_integer_interval_to_physical_myr(integertime ti0, integertime ti1);
 double bh_ffr_integer_interval_to_physical_code_time(integertime ti0, integertime ti1);

@@ -131,6 +131,7 @@ void bh_ffr_step(void)
     {
       bh_ffr_reservoir_self_test();
       bh_ffr_inner_self_test();
+      bh_ffr_feedback_self_test();
       reservoir_self_test_done = 1;
     }
 
@@ -157,4 +158,9 @@ void bh_ffr_step(void)
 
       BHP[b].LastProcessedTi = All.Ti_Current;
     }
+
+  /* Iteration 7 consumes only wind packets whose binding threshold and
+   * synchronized bipolar-target safeguards are satisfied. Jet energy remains
+   * buffered for the separately validated jet-feedback stage. */
+  bh_ffr_inject_wind_feedback();
 }

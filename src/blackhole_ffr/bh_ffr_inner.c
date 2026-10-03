@@ -12,8 +12,9 @@
  * Gofford mass-conservation solve rather than combining an independent fixed
  * retention fraction with an unrelated wind-loss fit.
  *
- * Feedback injection is still disabled here.  Wind mass/momentum/energy and
- * jet energy accumulate in the existing buffers for later Iterations 7/8. */
+ * This file only generates the unresolved mechanical buffers. Iteration 7
+ * may consume wind mass/momentum/energy in resolved bipolar packets; jet
+ * energy remains buffered for the subsequent jet-feedback stage. */
 
 #define BH_FFR_GOFFORD_MDOT_NORM_MSUN_YR 0.28
 #define BH_FFR_GOFFORD_MDOT_EXPONENT 0.85
