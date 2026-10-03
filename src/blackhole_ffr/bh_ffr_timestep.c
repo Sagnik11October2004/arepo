@@ -102,7 +102,7 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
   return gas_ti_step < ti_step ? gas_ti_step : ti_step;
 }
 
-/*! Iteration-2 end-of-step orchestration.
+/*! End-of-step FFR-MACER orchestration through Iteration 3.
  *
  * This advances only restart-safe synchronization bookkeeping. No gas mass,
  * BH mass, reservoir mass, momentum, radiation, wind, or jet state is changed.
@@ -111,6 +111,11 @@ void bh_ffr_step(void)
 {
   if(NumActiveBHFFR <= 0)
     return;
+
+  /* Iteration 3: perform the read-only distributed gas-aperture pass before
+   * advancing BH bookkeeping. This activates the nearby-gas timestep cache
+   * without removing gas or changing any sub-grid mass/energy state. */
+  bh_ffr_refresh_gas_neighbour_cache();
 
   for(int n = 0; n < NumActiveBHFFR; n++)
     {

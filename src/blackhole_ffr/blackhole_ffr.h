@@ -62,6 +62,21 @@ extern int NumBHFFR;
 extern int *BHFFRActiveParticleList;
 extern int NumActiveBHFFR;
 
+/*! Read-only distributed gas-aperture result for one active BH.
+ *
+ * Counts and masses are accumulated independently inside the fixed proper
+ * accretion and feedback apertures. MinHydroTimeBin refers only to gas inside
+ * the accretion aperture; -1 means no finite neighbour-derived limit.
+ */
+struct bh_ffr_gas_search_result
+{
+  MyDouble AccretionMass;
+  MyDouble FeedbackMass;
+  long long AccretionCount;
+  long long FeedbackCount;
+  int MinHydroTimeBin;
+};
+
 struct bh_ffr_domain_exchange_context
 {
   struct bh_ffr_particle_data *Received;
@@ -77,6 +92,9 @@ void bh_ffr_build_active_list(void);
 void bh_ffr_free_active_list(void);
 
 void bh_ffr_step(void);
+void bh_ffr_collect_gas_environment(struct bh_ffr_gas_search_result *results);
+void bh_ffr_refresh_gas_neighbour_cache(void);
+void bh_ffr_prepare_dm_environment_search(void);
 double bh_ffr_integer_interval_to_physical_myr(integertime ti0, integertime ti1);
 double bh_ffr_get_elapsed_time_myr(int p);
 integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step);

@@ -364,7 +364,15 @@ void set_non_standard_physics_for_current_time(void)
  *
  *  \return void
  */
-void calculate_non_standard_physics_with_valid_gravity_tree(void) {}
+void calculate_non_standard_physics_with_valid_gravity_tree(void)
+{
+#ifdef BLACKHOLE_FFR
+  /* Iteration 3 establishes the full-gravity-tree execution point required
+   * for the cached local DM-dispersion estimator. The estimator itself is
+   * deliberately deferred until the DM particle selector is specified. */
+  bh_ffr_prepare_dm_environment_search();
+#endif
+}
 
 /*! \brief Calls extra modules after the gravitational force is recomputed
  *
@@ -397,8 +405,9 @@ void calculate_non_standard_physics_end_of_step(void)
 {
 #ifdef BLACKHOLE_FFR
   /* FFR-MACER is operator-split here, after hydro closure and the second
-   * gravity half-kick. Iteration 2 only advances synchronization bookkeeping;
-   * resolved capture and all mass/energy changes remain disabled. */
+   * gravity half-kick. Through Iteration 3 this performs only read-only
+   * aperture searches plus synchronization bookkeeping; resolved capture and
+   * all mass/energy changes remain disabled. */
   bh_ffr_step();
 #endif
 
