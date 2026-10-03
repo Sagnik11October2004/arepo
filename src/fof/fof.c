@@ -82,6 +82,9 @@ void fof_fof(int num)
 {
   int i, start, lenloc, largestgroup;
   double t0, t1, cputime;
+#ifdef BLACKHOLE_FFR
+  int bh_ffr_seeded_this_pass = 0;
+#endif
 
   TIMER_START(CPU_FOF);
 
@@ -277,7 +280,7 @@ void fof_fof(int num)
   /* Snapshot catalogues remain read-only. The internal no-output FoF pass
    * performed at a full synchronization point is the only seeding trigger. */
   if(num < 0 && All.HighestActiveTimeBin == All.HighestOccupiedTimeBin)
-    bh_ffr_seed_from_fof();
+    bh_ffr_seeded_this_pass = bh_ffr_seed_from_fof();
 #endif
 
   mpi_printf("FOF: Finished computing FoF groups.  (presently allocated=%g MB)\n", AllocatedBytes / (1024.0 * 1024.0));
@@ -335,6 +338,18 @@ void fof_fof(int num)
 #else  /* #ifndef FOF_STOREIDS */
   myfree(PS);
 #endif /* #ifndef FOF_STOREIDS #else */
+
+#ifdef BLACKHOLE_FFR
+  /* A successful seed conversion changes NumGas and the gas-block ordering.
+   * Keep the old neighbour tree alive while FoF owns PS and its other arena
+   * allocations, then rebuild only after all FoF scratch storage is gone. */
+  if(bh_ffr_seeded_this_pass > 0)
+    {
+      ngb_treefree();
+      ngb_treeallocate();
+      ngb_treebuild(NumGas);
+    }
+#endif
 
   TIMER_STOP(CPU_FOF);
 }

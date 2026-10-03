@@ -421,7 +421,7 @@ static int bh_ffr_rearrange_seeded_gas_cells(void)
   return converted;
 }
 
-void bh_ffr_seed_from_fof(void)
+int bh_ffr_seed_from_fof(void)
 {
 #ifdef MHD
   terminate("BH_FFR: FoF seed formation is not yet enabled with MHD; a magnetic-flux conversion policy is required first");
@@ -445,7 +445,7 @@ void bh_ffr_seed_from_fof(void)
               All.BHSeedMassMsun, All.BHSeedMinRedshift, All.BHSeedMaxDonorFraction);
 
   if(!(All.cf_redshift > All.BHSeedMinRedshift))
-    return;
+    return 0;
 
   const double halo_threshold_code = bh_ffr_seed_msun_to_code_mass(All.BHSeedHaloMassMsun);
   const double seed_mass_code = bh_ffr_seed_msun_to_code_mass(All.BHSeedMassMsun);
@@ -465,7 +465,7 @@ void bh_ffr_seed_from_fof(void)
   if(global_converted != seeded_transactions)
     terminate("BH_FFR: seed conversion count mismatch transactions=%d converted=%d", seeded_transactions, global_converted);
   if(global_converted == 0)
-    return;
+    return 0;
 
   All.TotNumGas -= global_converted;
   if(All.TotNumGas < 0)
@@ -474,14 +474,14 @@ void bh_ffr_seed_from_fof(void)
   bh_ffr_rebuild_state_after_particle_changes();
   reconstruct_timebins();
 
-  ngb_treefree();
-  ngb_treeallocate();
-  ngb_treebuild(NumGas);
-
+  /* The FoF caller still owns PS and other movable arena blocks here. The
+   * gas neighbour tree is stale after the gas-to-BH conversion, but it is
+   * rebuilt by fof_fof() only after FoF has released those scratch blocks. */
   bh_ffr_validate_state("FoF seeding");
 
   long long local_bh = NumBHFFR, global_bh = 0;
   MPI_Allreduce(&local_bh, &global_bh, 1, MPI_LONG_LONG_INT, MPI_SUM, MPI_COMM_WORLD);
   mpi_printf("BH_FFR: FoF full-step seeding created %d seed(s); total Type-%d BH count is now %lld.\n",
              global_converted, BH_FFR_PARTICLE_TYPE, global_bh);
+  return global_converted;
 }
