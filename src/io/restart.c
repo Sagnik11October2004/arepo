@@ -1257,6 +1257,14 @@ static void contents_restart_file(int modus)
   byten(TimeBinsHydro.LastInTimeBin, TIMEBINS * sizeof(int), modus);
   byten(TimeBinsGravity.LastInTimeBin, TIMEBINS * sizeof(int), modus);
 
+#ifdef BLACKHOLE_FFR
+  /* The native restart stores AREPO's gravity active list but not the derived
+   * compact Type-5 target list. Rebuild it only after the gravity list has
+   * been restored. */
+  if(modus == MODUS_READ)
+    bh_ffr_build_active_list();
+#endif
+
 #ifdef USE_SFR
   byten(TimeBinSfr, TIMEBINS * sizeof(double), modus);
 #endif
@@ -1350,6 +1358,20 @@ void readjust_timebase(double TimeMax_old, double TimeMax_new)
       ti_end /= 2;
       All.Ti_Current /= 2;
       All.Previous_Ti_Current /= 2;
+
+#ifdef BLACKHOLE_FFR
+      for(int b = 0; b < NumBHFFR; b++)
+        {
+          BHP[b].LastProcessedTi /= 2;
+
+          if(BHP[b].MinNeighbourHydroTimeBin > 0)
+            {
+              BHP[b].MinNeighbourHydroTimeBin--;
+              if(BHP[b].MinNeighbourHydroTimeBin <= 0)
+                terminate("BH_FFR: minimum neighbour hydro timebin exhausted while readjusting restart timebase");
+            }
+        }
+#endif
 
 #ifdef PMGRID
       All.PM_Ti_begstep /= 2;
