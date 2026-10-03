@@ -272,6 +272,9 @@ void bh_ffr_collect_gas_environment(struct bh_ffr_gas_search_result *results)
 
 void bh_ffr_refresh_gas_neighbour_cache(void)
 {
+  /* Re-derive current particle indices before constructing search targets. */
+  bh_ffr_build_active_list();
+
   /* Allocate a one-record dummy buffer on zero-target ranks; the collective
    * search itself decides whether the global active set is empty. */
   struct bh_ffr_gas_search_result *results = (struct bh_ffr_gas_search_result *)mymalloc(
@@ -301,6 +304,10 @@ void bh_ffr_refresh_gas_neighbour_cache(void)
  */
 void bh_ffr_prepare_dm_environment_search(void)
 {
+  /* The gravity tree uses the current particle ordering, so refresh the
+   * derived BH target indices immediately before this hook consumes them. */
+  bh_ffr_build_active_list();
+
   if(NumActiveBHFFR <= 0)
     return;
 

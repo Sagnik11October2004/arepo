@@ -113,6 +113,10 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
 
 void bh_ffr_step(void)
 {
+  /* Particle array indices can change after domain/FoF reordering. Rebuild
+   * this derived target cache from AREPO's current gravity-active list. */
+  bh_ffr_build_active_list();
+
   /* Capture uses AREPO's generic MPI communication pattern. A BH may exist on
    * only one task, but every task in MPI_COMM_WORLD must enter the same
    * collectives in the same order. Therefore gate the collective phase on the
