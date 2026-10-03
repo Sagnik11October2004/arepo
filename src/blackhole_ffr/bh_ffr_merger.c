@@ -321,9 +321,10 @@ void bh_ffr_merge_close_black_holes(void)
           for(int k = 0; k < 3; k++)
             P[ps].Vel[k] = merged_vel[k];
 
-          printf("BH_FFR: merger survivor ID=%llu task=%d members=%d Mdyn=%g MBH=%g Mres=%g Mwindbuf=%g\n",
+          printf("BH_FFR: merger survivor ID=%llu task=%d members=%d Mdyn=%g MBH=%g Mres=%g Mwindbuf=%g "
+                 "Vx=%g Vy=%g Vz=%g\n",
                  (unsigned long long)survivor_id, ThisTask, nmembers, P[ps].Mass, BHP[bs].BHMass,
-                 BHP[bs].ReservoirMass, BHP[bs].WindMassBuffer);
+                 BHP[bs].ReservoirMass, BHP[bs].WindMassBuffer, P[ps].Vel[0], P[ps].Vel[1], P[ps].Vel[2]);
           fflush(stdout);
         }
 

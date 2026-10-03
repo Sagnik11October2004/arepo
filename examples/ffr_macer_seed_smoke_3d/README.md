@@ -164,6 +164,25 @@ The verifier requires an exact 64-particle DM sample (no gas fallback), positive
 
 from runtime diagnostics. If fewer than BHDMNeighbours dark-matter particles exist, production code falls back to the nearest gas velocity sample and logs source=gas-fallback; no persistent fallback flag is added because the BHP restart ABI is frozen.
 
+## 12. Iteration-11 dynamical-friction and simple-merger regressions
+
+Iteration 11 adds a deliberately simple orbital sub-grid layer without changing the persistent BHP layout.
+
+The dynamical-friction term reuses the exact nearest-DM sample from Iteration 10. It estimates the local DM density from the outermost sampled neighbour, evaluates the standard Chandrasekhar factor with a fixed Coulomb logarithm lnLambda=3, and damps the BH velocity relative to the local mean DM velocity. The exact finite-step damping is capped at 50 percent per full-tree refresh so the kick cannot overshoot the local streaming velocity.
+
+    NTASKS=16 ./run_df_restart.sh
+    python3 verify_df.py
+
+The merger rule is intentionally simple: synchronized BHs merge whenever their two proper accretion apertures overlap, d < 2 R_acc. The lowest particle ID survives. Dynamical mass and linear momentum are conserved; BH mass, reservoir mass, wind mass/momentum/energy buffer, jet energy buffer and coherence are combined. Instantaneous rates/powers are reset and recomputed on the following step. The loser uses AREPO's normal deleted-particle marker (ID=0, Mass=0).
+
+The synthetic merger helper duplicates the one-BH Iteration-10 snapshot at a 0.05 proper separation and restarts from it:
+
+    NTASKS=16 ./run_merger_restart.sh
+    python3 verify_merger.py
+    python3 inspect_bh.py output_merger
+
+The version-1 merger deliberately has no boundness, relative-velocity, binary-hardening, gravitational-wave delay or recoil criterion.
+
 ## Why the boosted sigma8?
 
 The purpose here is to exercise MPI FoF seeding and conservative gas-to-BH conversion quickly in a tiny box. sigma8=2.0 is deliberately non-production. After this passes, repeat at 256^3 with the intended physical cosmology/threshold before treating the seeding prescription as scientifically validated.
