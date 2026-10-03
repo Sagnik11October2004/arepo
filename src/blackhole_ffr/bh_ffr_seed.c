@@ -163,7 +163,7 @@ static int bh_ffr_find_seed_central(int grnr, double seed_mass_code, struct bh_f
   int local_index = -1;
 
   for(int i = 0; i < NumGas; i++)
-    if(P[i].Type == 0 && P[i].ID != 0 && P[i].Mass > 0 && P[i].Mass < seed_mass_code && PS[i].GrNr == grnr)
+    if(P[i].Type == 0 && P[i].ID != 0 && P[i].Mass > 0 && PS[i].GrNr == grnr)
       {
         const double density = SphP[i].Density;
         const unsigned long long id = (unsigned long long)P[i].ID;
@@ -205,9 +205,15 @@ static int bh_ffr_find_seed_central(int grnr, double seed_mass_code, struct bh_f
 
   MPI_Bcast(central, (int)sizeof(*central), MPI_BYTE, owner, MPI_COMM_WORLD);
 
-  if(!(central->Mass > 0) || !(central->Mass < seed_mass_code) || !isfinite(central->Density))
+  if(!(central->Mass > 0) || !isfinite(central->Density))
     terminate("BH_FFR: invalid FoF seed central ID=%llu mass=%g density=%g", (unsigned long long)central->ID,
               central->Mass, central->Density);
+
+  /* The seed mass must exceed the mass of the actual densest gas cell.
+   * Do not silently move the seed to a less-dense cell if this is violated. */
+  if(!(central->Mass < seed_mass_code))
+    return 0;
+
   return 1;
 }
 
