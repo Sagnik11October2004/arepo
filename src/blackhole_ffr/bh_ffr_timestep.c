@@ -1,4 +1,5 @@
 #include <math.h>
+#include <mpi.h>
 
 #include "blackhole_ffr.h"
 #include "../main/proto.h"
@@ -112,7 +113,13 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
 
 void bh_ffr_step(void)
 {
-  if(NumActiveBHFFR <= 0)
+  /* Capture uses AREPO's generic MPI communication pattern. A BH may exist on
+   * only one task, but every task in MPI_COMM_WORLD must enter the same
+   * collectives in the same order. Therefore gate the collective phase on the
+   * global, not local, number of active BHs. */
+  int global_active_bhs = 0;
+  MPI_Allreduce(&NumActiveBHFFR, &global_active_bhs, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+  if(global_active_bhs <= 0)
     return;
 
   bh_ffr_capture_resolved_gas();

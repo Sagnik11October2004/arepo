@@ -515,7 +515,12 @@ void bh_ffr_capture_self_test(void)
 
 void bh_ffr_capture_resolved_gas(void)
 {
-  if(NumActiveBHFFR <= 0)
+  /* Collective routine: ranks with zero local BH targets must still enter the
+   * generic communication passes so they can receive/export neighbour-tree
+   * work for BHs owned by other ranks. */
+  int global_active_bhs = 0;
+  MPI_Allreduce(&NumActiveBHFFR, &global_active_bhs, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+  if(global_active_bhs <= 0)
     return;
 
 #ifdef MHD
@@ -529,9 +534,10 @@ void bh_ffr_capture_resolved_gas(void)
     }
 
   CaptureNTargets = NumActiveBHFFR;
-  CaptureResults =
-      (struct bh_ffr_capture_result *)mymalloc("BHFFRCaptureResults", CaptureNTargets * sizeof(*CaptureResults));
-  memset(CaptureResults, 0, CaptureNTargets * sizeof(*CaptureResults));
+  CaptureResults = (struct bh_ffr_capture_result *)mymalloc(
+      "BHFFRCaptureResults", (CaptureNTargets > 0 ? CaptureNTargets : 1) * sizeof(*CaptureResults));
+  if(CaptureNTargets > 0)
+    memset(CaptureResults, 0, CaptureNTargets * sizeof(*CaptureResults));
   for(int n = 0; n < CaptureNTargets; n++)
     CaptureResults[n].MinHydroTimeBin = TIMEBINS;
 

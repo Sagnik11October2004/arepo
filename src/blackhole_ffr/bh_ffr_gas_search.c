@@ -230,9 +230,14 @@ static int bh_ffr_gas_search_evaluate(int target, int mode, int threadid)
 
 void bh_ffr_collect_gas_environment(struct bh_ffr_gas_search_result *results)
 {
-  if(NumActiveBHFFR <= 0)
+  /* Collective routine: a zero-target rank still has to service imported BH
+   * searches and enter generic_comm_pattern() in lockstep with BH-owning
+   * ranks. Only a globally empty active-BH set may return early. */
+  int global_active_bhs = 0;
+  MPI_Allreduce(&NumActiveBHFFR, &global_active_bhs, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+  if(global_active_bhs <= 0)
     return;
-  if(results == NULL)
+  if(NumActiveBHFFR > 0 && results == NULL)
     terminate("BH_FFR: NULL result buffer for %d active BH gas searches", NumActiveBHFFR);
 
   GasSearchResults = results;
@@ -267,11 +272,10 @@ void bh_ffr_collect_gas_environment(struct bh_ffr_gas_search_result *results)
 
 void bh_ffr_refresh_gas_neighbour_cache(void)
 {
-  if(NumActiveBHFFR <= 0)
-    return;
-
-  struct bh_ffr_gas_search_result *results =
-      (struct bh_ffr_gas_search_result *)mymalloc("BHFFRGasSearchResults", NumActiveBHFFR * sizeof(*results));
+  /* Allocate a one-record dummy buffer on zero-target ranks; the collective
+   * search itself decides whether the global active set is empty. */
+  struct bh_ffr_gas_search_result *results = (struct bh_ffr_gas_search_result *)mymalloc(
+      "BHFFRGasSearchResults", (NumActiveBHFFR > 0 ? NumActiveBHFFR : 1) * sizeof(*results));
 
   bh_ffr_collect_gas_environment(results);
 
