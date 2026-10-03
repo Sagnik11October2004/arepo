@@ -96,19 +96,122 @@ void bh_ffr_set_min_neighbour_timebin(int p, int timebin)
   BHP[b].MinNeighbourHydroTimeBin = timebin;
 }
 
+static double bh_ffr_code_time_to_myr(double dt_code)
+{
+  if(!isfinite(dt_code) || dt_code < 0 || !(All.UnitTime_in_s > 0) || !(All.HubbleParam > 0))
+    terminate("BH_FFR: invalid code-time to Myr conversion dt=%g", dt_code);
+
+  return dt_code * All.UnitTime_in_s / (All.HubbleParam * SEC_PER_MEGAYEAR);
+}
+
+static integertime bh_ffr_limit_integer_step_by_physical_myr(integertime ti_step, double limit_myr)
+{
+  if(!isfinite(limit_myr) || !(limit_myr > 0) || ti_step <= 2)
+    return ti_step;
+
+  integertime limited = ti_step;
+
+  while(limited > 2)
+    {
+      integertime ti1 = All.Ti_Current + limited;
+      if(ti1 > TIMEBASE)
+        ti1 = TIMEBASE;
+
+      const double dt_myr = bh_ffr_integer_interval_to_physical_myr(All.Ti_Current, ti1);
+      if(dt_myr <= limit_myr)
+        break;
+
+      limited >>= 1;
+    }
+
+  return limited;
+}
+
 integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
 {
   const int b = bh_ffr_compact_index_from_particle(p, "bh_ffr_limit_gravity_timestep");
+  integertime limited = ti_step;
+  const integertime raw_step = ti_step;
+
+  /* Existing local-hydro synchronization constraint. */
   const int gas_bin = BHP[b].MinNeighbourHydroTimeBin;
+  if(gas_bin >= 0)
+    {
+      if(gas_bin == 0 || gas_bin >= TIMEBINS)
+        terminate("BH_FFR: corrupt neighbour hydro timebin=%d for particle ID=%llu", gas_bin, (unsigned long long)P[p].ID);
 
-  if(gas_bin < 0)
-    return ti_step;
+      const integertime gas_ti_step = ((integertime)1) << gas_bin;
+      if(gas_ti_step < limited)
+        limited = gas_ti_step;
+    }
 
-  if(gas_bin == 0 || gas_bin >= TIMEBINS)
-    terminate("BH_FFR: corrupt neighbour hydro timebin=%d for particle ID=%llu", gas_bin, (unsigned long long)P[p].ID);
+  /* Iteration 9 internal accuracy limits. The analytic reservoir/direction
+   * maps are stable without this restriction; this controls coefficient and
+   * burst-threshold evolution over one BH step.  Energy/power ratios are in
+   * physical code time and are converted to Myr before timeline limiting. */
+  double dt_limit_myr = All.BHInternalTimestepFactor * All.BHDiskTimeMyr;
+  double wind_limit_myr = HUGE_VAL;
+  double jet_limit_myr = HUGE_VAL;
 
-  const integertime gas_ti_step = ((integertime)1) << gas_bin;
-  return gas_ti_step < ti_step ? gas_ti_step : ti_step;
+  if(BHP[b].WindThresholdEnergy > 0 && BHP[b].WindPower > 0)
+    {
+      const double tcode = BHP[b].WindThresholdEnergy / BHP[b].WindPower;
+      wind_limit_myr = All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(tcode);
+      if(!isfinite(wind_limit_myr) || !(wind_limit_myr > 0))
+        terminate("BH_FFR: invalid wind timestep limit=%g Myr for ID=%llu", wind_limit_myr,
+                  (unsigned long long)P[p].ID);
+      if(wind_limit_myr < dt_limit_myr)
+        dt_limit_myr = wind_limit_myr;
+    }
+
+  if(BHP[b].JetThresholdEnergy > 0 && BHP[b].JetPower > 0)
+    {
+      const double tcode = BHP[b].JetThresholdEnergy / BHP[b].JetPower;
+      jet_limit_myr = All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(tcode);
+      if(!isfinite(jet_limit_myr) || !(jet_limit_myr > 0))
+        terminate("BH_FFR: invalid jet timestep limit=%g Myr for ID=%llu", jet_limit_myr,
+                  (unsigned long long)P[p].ID);
+      if(jet_limit_myr < dt_limit_myr)
+        dt_limit_myr = jet_limit_myr;
+    }
+
+  limited = bh_ffr_limit_integer_step_by_physical_myr(limited, dt_limit_myr);
+
+  /* If a channel still stores at least as many full thresholds as can be
+   * released in one activation, force at least one finer existing gravity bin.
+   * This is independent of the current power, so a stale energetic backlog
+   * still gets revisited after a state transition drives P_x to zero. */
+  int backlog = 0;
+  if(BHP[b].WindThresholdEnergy > 0 &&
+     BHP[b].WindEnergyBuffer >= All.BHMaxPacketsPerStep * BHP[b].WindThresholdEnergy)
+    backlog = 1;
+  if(BHP[b].JetThresholdEnergy > 0 &&
+     BHP[b].JetEnergyBuffer >= All.BHMaxPacketsPerStep * BHP[b].JetThresholdEnergy)
+    backlog = 1;
+
+  integertime backlog_limit = limited;
+  if(backlog && P[p].TimeBinGrav > 1)
+    {
+      backlog_limit = ((integertime)1) << (P[p].TimeBinGrav - 1);
+      if(backlog_limit < limited)
+        limited = backlog_limit;
+    }
+
+  if(limited < raw_step)
+    {
+      const double wind_ratio =
+          BHP[b].WindThresholdEnergy > 0 ? BHP[b].WindEnergyBuffer / BHP[b].WindThresholdEnergy : 0.0;
+      const double jet_ratio =
+          BHP[b].JetThresholdEnergy > 0 ? BHP[b].JetEnergyBuffer / BHP[b].JetThresholdEnergy : 0.0;
+
+      printf("BH_FFR: timestep limit ID=%llu task=%d raw=%lld limited=%lld gasbin=%d fint=%g "
+             "dtintMyr=%g dtwindMyr=%g dtjetMyr=%g windBacklog=%g jetBacklog=%g backlog=%d\n",
+             (unsigned long long)P[p].ID, ThisTask, (long long)raw_step, (long long)limited, gas_bin,
+             All.BHInternalTimestepFactor, dt_limit_myr, wind_limit_myr, jet_limit_myr, wind_ratio, jet_ratio, backlog);
+      fflush(stdout);
+    }
+
+  return limited;
 }
 
 void bh_ffr_step(void)
