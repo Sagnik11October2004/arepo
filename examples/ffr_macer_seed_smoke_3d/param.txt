@@ -2,7 +2,7 @@
 % 1 cMpc/h, 128^3 DM + 128^3 gas after GENERATE_GAS_IN_ICS
 % Short z=49 smoke run; sigma8=2 is TEST-ONLY to force an early seed.
 % The deterministic test realization seeds near a=0.020526 (z~47.72), so
-% TimeMax leaves several post-seed synchronization points for survival checks.
+% TimeMax leaves several post-seed synchronization points while retaining the normal timestep cap.
 
 %---- Files
 InitCondFile                            ./ics
@@ -26,7 +26,7 @@ MaxMemSize                              1500
 
 %---- Cosmological interval
 TimeBegin                               0.0200000000000000
-TimeMax                                 0.0207000000000000
+TimeMax                                 0.0211000000000000
 
 ComovingIntegrationOn                   1
 PeriodicBoundariesOn                    1
@@ -52,7 +52,7 @@ NumFilesWrittenInParallel               1
 TypeOfTimestepCriterion                 0
 ErrTolIntAccuracy                       0.012
 CourantFac                              0.3
-MaxSizeTimestep                         0.0001
+MaxSizeTimestep                         0.001
 MinSizeTimestep                         1.0e-8
 
 %---- Gas initialization / floors
