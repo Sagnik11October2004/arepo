@@ -143,6 +143,7 @@ BHJetDirectionTimeFactor                1.0
 BHMinTargetsPerLobe                     8
 BHMinActiveTargetMassFrac               0.5
 BHMaxPacketsPerStep                     4
+% Nearest Type-1 DM sample used for the cached 1D local velocity dispersion.
 BHDMNeighbours                          64
 % Internal BH accuracy factor in dt <= f_int min(tau_d, Eth_w/P_w, Eth_j/P_j).
 % This smoke default is intentionally loose; production convergence should test ~0.25.

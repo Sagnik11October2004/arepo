@@ -463,6 +463,15 @@ static void bh_ffr_feedback_prepare_candidates(void)
       BHP[b].WindThresholdEnergy = All.BHWindBurstFactor * base_threshold;
       BHP[b].JetThresholdEnergy = All.BHJetBurstFactor * base_threshold;
 
+      if(BHP[b].SigmaDM > 0)
+        {
+          printf("BH_FFR: binding threshold ID=%llu task=%d Menc=%g sigmaDM=%g vbind2=%g central=%d "
+                 "EthWind=%g EthJet=%g\n",
+                 (unsigned long long)P[p].ID, ThisTask, res->EnclosedMass, BHP[b].SigmaDM, vbind2,
+                 All.BHUseCentralBindingTerm, BHP[b].WindThresholdEnergy, BHP[b].JetThresholdEnergy);
+          fflush(stdout);
+        }
+
       if(FeedbackPacketCount[n] >= All.BHMaxPacketsPerStep)
         continue;
 

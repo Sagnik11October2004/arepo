@@ -862,8 +862,9 @@ void check_parameters()
     mpi_terminate("BHMinTargetsPerLobe must be at least one.\n");
   if(All.BHMinActiveTargetMassFrac < 0 || All.BHMinActiveTargetMassFrac > 1)
     mpi_terminate("BHMinActiveTargetMassFrac must lie in [0,1].\n");
-  if(All.BHMaxPacketsPerStep < 1 || All.BHDMNeighbours < 1 || All.BHInternalTimestepFactor <= 0)
-    mpi_terminate("Invalid BLACKHOLE_FFR packet/DM-neighbour/timestep control.\n");
+  if(All.BHMaxPacketsPerStep < 1 || All.BHDMNeighbours < 2 || All.BHDMNeighbours > 256 ||
+     All.BHInternalTimestepFactor <= 0)
+    mpi_terminate("BLACKHOLE_FFR requires BHMaxPacketsPerStep>=1, 2<=BHDMNeighbours<=256, and positive BHInternalTimestepFactor.\n");
 #endif /* #ifdef BLACKHOLE_FFR */
 
   if(All.NumFilesWrittenInParallel > NTask)
