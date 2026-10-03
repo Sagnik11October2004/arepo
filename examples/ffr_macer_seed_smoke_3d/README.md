@@ -6,7 +6,7 @@ This is a runtime/conservation test for FFR-MACER Iteration 4.5. It is not a pro
 
 - periodic box: 1 cMpc/h
 - initial redshift: z=49
-- final redshift: z=19
+- final scale factor: a=0.0207 (z~47.31), several synchronization points after the deterministic seed event near z~47.72
 - unigrid resolution: 128^3 parent DM particles
 - AREPO GENERATE_GAS_IN_ICS splits these into 128^3 gas cells + 128^3 Type-1 DM particles
 - Omega_m=0.31, Omega_b=0.048, Omega_Lambda=0.69, h=0.68, n_s=0.96
@@ -53,13 +53,13 @@ This builds ../../ArepoSeedTest with this directory's Config.sh. It does not alt
 
 ## 5. Run with MPI
 
-Default: four MPI ranks.
+Default: four MPI ranks. The checked-in 1500 MB/rank memory cap also permits a 16-rank smoke run on a ~32 GB machine.
 
     ./run.sh
 
 To change the rank count:
 
-    NTASKS=8 ./run.sh
+    NTASKS=16 ./run.sh
 
 The run writes output/ and run.log.
 
@@ -78,7 +78,7 @@ A passing test requires all of the following:
 7. total snapshot mass conserved across the gas-to-BH conversion;
 8. a snapshot after the first seeded snapshot in which the seeded BH ID still exists.
 
-If no halo seeds before z=20, that is a realization/test-threshold issue rather than evidence that the seeding transaction passed. Do not lower the threshold silently; inspect run.log first.
+If the deterministic test realization does not seed near z~47.72, that is a test failure or a changed realization/configuration. Do not lower the threshold silently; inspect run.log first.
 
 ## Why the boosted sigma8?
 

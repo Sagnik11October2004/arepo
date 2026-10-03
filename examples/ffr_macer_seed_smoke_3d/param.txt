@@ -1,6 +1,8 @@
 % FFR-MACER Iteration-4.5 FoF seeding smoke test
 % 1 cMpc/h, 128^3 DM + 128^3 gas after GENERATE_GAS_IN_ICS
-% z=49 -> z=19; sigma8=2 is TEST-ONLY to force early halo formation.
+% Short z=49 smoke run; sigma8=2 is TEST-ONLY to force an early seed.
+% The deterministic test realization seeds near a=0.020526 (z~47.72), so
+% TimeMax leaves several post-seed synchronization points for survival checks.
 
 %---- Files
 InitCondFile                            ./ics
@@ -20,11 +22,11 @@ ResubmitOn                              0
 ResubmitCommand                         none
 
 %---- Memory per MPI rank [MB]
-MaxMemSize                              3000
+MaxMemSize                              1500
 
 %---- Cosmological interval
 TimeBegin                               0.0200000000000000
-TimeMax                                 0.0500000000000000
+TimeMax                                 0.0207000000000000
 
 ComovingIntegrationOn                   1
 PeriodicBoundariesOn                    1
