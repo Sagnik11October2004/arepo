@@ -84,6 +84,45 @@ void domain_rearrange_particle_sequence(void)
     }
 #endif /* #if defined(USE_SFR) */
 
+#ifdef BLACKHOLE_FFR
+  /* FFR BH mergers leave a zero-mass, zero-ID collisionless tombstone after
+   * removing the loser from TimeBinsGravity. Unlike derefined gas cleanup,
+   * the public smoke build does not require REFINEMENT_MERGE_CELLS, so compact
+   * these records unconditionally at the normal domain-rearrangement stage.
+   *
+   * Gas occupies [0, NumGas), hence an FFR merger tombstone is always in the
+   * collisionless tail. Replacing it with P[NumPart-1] therefore preserves the
+   * gas/collisionless split. Timebins are reconstructed later in the same
+   * domain decomposition, and the loser was already removed from its old bin
+   * at merger time. */
+  int bh_ffr_count_elim = 0;
+
+  for(int i = NumGas; i < NumPart; i++)
+    if(P[i].Mass == 0 && P[i].ID == 0)
+      {
+        const int last = NumPart - 1;
+
+        if(i != last)
+          {
+            P[i] = P[last];
+            Key[i] = Key[last];
+          }
+
+        NumPart--;
+        i--;
+        bh_ffr_count_elim++;
+      }
+
+  int bh_ffr_tot_elim = 0;
+  MPI_Allreduce(&bh_ffr_count_elim, &bh_ffr_tot_elim, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+  if(bh_ffr_tot_elim > 0)
+    {
+      All.TotNumPart -= bh_ffr_tot_elim;
+      mpi_printf("DOMAIN: Eliminated %d FFR black-hole merger tombstones.\n", bh_ffr_tot_elim);
+    }
+#endif /* BLACKHOLE_FFR */
+
 #if defined(REFINEMENT_MERGE_CELLS)
   int i, count_elim, count_gaselim;
 

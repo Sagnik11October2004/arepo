@@ -7,6 +7,8 @@
 #include "blackhole_ffr.h"
 #include "../main/proto.h"
 
+#define BH_FFR_MERGER_TOMBSTONE_TYPE 3
+
 /*
  * Iteration 11: simple unresolved BH mergers.
  *
@@ -108,6 +110,19 @@ static int bh_ffr_local_particle_from_id(MyIDType id)
     if(P[i].Type == BH_FFR_PARTICLE_TYPE && P[i].ID == id)
       return i;
   return -1;
+}
+
+static void bh_ffr_remove_active_gravity_particle(int p)
+{
+  for(int idx = 0; idx < TimeBinsGravity.NActiveParticles; idx++)
+    if(TimeBinsGravity.ActiveParticleList[idx] == p)
+      {
+        timebin_remove_particle(&TimeBinsGravity, idx, -1);
+        return;
+      }
+
+  terminate("BH_FFR: merger loser particle=%d ID=%llu was not present in active gravity list",
+            p, (unsigned long long)P[p].ID);
 }
 
 static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, const int *parent, int root, int nall,
@@ -340,10 +355,16 @@ void bh_ffr_merge_close_black_holes(void)
                 const double dz0 = nearest_z(all[i].Pos[2] - all[root].Pos[2]);
                 const double separation = sqrt(dx0 * dx0 + dy0 * dy0 + dz0 * dz0) * a;
 
+                /* The loser is active by construction. Remove it from the
+                 * gravity timebin before turning it into a tombstone. It must
+                 * NOT be retyped as DM: otherwise the transient zero-mass
+                 * record can enter FoF/DM logic before domain compaction. */
+                bh_ffr_remove_active_gravity_particle(pl);
+
                 P[pl].Mass = 0.0;
                 P[pl].ID = 0;
                 P[pl].BHDataIndex = -1;
-                P[pl].Type = BH_FFR_DM_PARTICLE_TYPE;
+                P[pl].Type = BH_FFR_MERGER_TOMBSTONE_TYPE;
                 for(int k = 0; k < 3; k++)
                   P[pl].Vel[k] = 0.0;
 
