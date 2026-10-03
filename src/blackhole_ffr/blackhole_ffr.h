@@ -52,8 +52,8 @@ struct bh_ffr_particle_data
   MyDouble JetEnergyBuffer;
 
   MyDouble MdotSupply;
-  /* Iteration 5: candidate processable reservoir rate. No reservoir mass
-   * is committed to an inner-flow channel until Iteration 6. */
+  /* Exact finite-step reservoir processing rate. Iteration 6 partitions
+   * this rate conservatively into MdotHorizon + MdotWind. */
   MyDouble MdotProcessed;
   MyDouble MdotEddington;
   MyDouble ProcessedEddingtonRatio;
@@ -121,6 +121,8 @@ double bh_ffr_truncation_to_hot_radius_ratio(double processed_edd_ratio);
 int bh_ffr_classify_accretion_state(int previous_state, double processed_edd_ratio, double rtr_over_rhot);
 void bh_ffr_update_reservoir_state(int p, double dt_myr, double dt_code);
 void bh_ffr_reservoir_self_test(void);
+void bh_ffr_apply_inner_flow(int p, double processable_mass, double dt_code);
+void bh_ffr_inner_self_test(void);
 int bh_ffr_seed_from_fof(void);
 double bh_ffr_integer_interval_to_physical_myr(integertime ti0, integertime ti1);
 double bh_ffr_integer_interval_to_physical_code_time(integertime ti0, integertime ti1);

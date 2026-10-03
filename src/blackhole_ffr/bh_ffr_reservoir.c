@@ -4,13 +4,10 @@
 #include "blackhole_ffr.h"
 #include "../main/proto.h"
 
-/* Iteration 5: exact finite-step reservoir processing candidate and
- * hysteretic ADIOS/truncated/cold state classification.
- *
- * IMPORTANT: this iteration does not subtract the candidate processed mass
- * from ReservoirMass. Until Iteration 6 partitions that mass into horizon
- * growth and wind, subtracting it would violate P.Mass =
- * BHMass + ReservoirMass + WindMassBuffer. */
+/* Exact finite-step reservoir processing plus hysteretic
+ * ADIOS/truncated/cold state classification.  Iteration 6 now commits the
+ * candidate only after bh_ffr_apply_inner_flow() has partitioned it exactly
+ * into horizon and wind channels. */
 
 static double bh_ffr_eddington_rate_cgs(double mass_g, double efficiency)
 {
@@ -158,16 +155,6 @@ void bh_ffr_update_reservoir_state(int p, double dt_myr, double dt_code)
   if((dt_myr == 0) != (dt_code == 0))
     terminate("BH_FFR: inconsistent zero timestep dt_myr=%g dt_code=%g", dt_myr, dt_code);
 
-  /* Iteration 5 is deliberately diagnostic: snapshot the conserved state so
-   * an accidental early drain/growth change cannot silently enter this stage. */
-  const double reservoir_before = BHP[b].ReservoirMass;
-  const double bhmass_before = BHP[b].BHMass;
-  const double windmass_before = BHP[b].WindMassBuffer;
-  const double dynmass_before = P[p].Mass;
-  double coherence_before[3];
-  for(int k = 0; k < 3; k++)
-    coherence_before[k] = BHP[b].Coherence[k];
-
   const double processable = bh_ffr_reservoir_processable_mass(BHP[b].ReservoirMass, dt_myr, All.BHDiskTimeMyr);
   const double mdot_processed = (dt_code > 0) ? processable / dt_code : 0.0;
   const double mdot_edd = bh_ffr_eddington_rate_code(BHP[b].BHMass);
@@ -177,23 +164,16 @@ void bh_ffr_update_reservoir_state(int p, double dt_myr, double dt_code)
 
   if(!isfinite(mdot_processed) || mdot_processed < 0 || !isfinite(mdot_edd) || mdot_edd < 0 ||
      !isfinite(processed_edd_ratio) || processed_edd_ratio < 0)
-    terminate("BH_FFR: invalid Iteration-5 diagnostics for particle ID=%llu", (unsigned long long)P[p].ID);
+    terminate("BH_FFR: invalid reservoir/inner-flow diagnostics for particle ID=%llu", (unsigned long long)P[p].ID);
 
   BHP[b].MdotProcessed = mdot_processed;
   BHP[b].MdotEddington = mdot_edd;
   BHP[b].ProcessedEddingtonRatio = processed_edd_ratio;
   BHP[b].AccretionState = state;
 
-  if(BHP[b].ReservoirMass != reservoir_before || BHP[b].BHMass != bhmass_before ||
-     BHP[b].WindMassBuffer != windmass_before || P[p].Mass != dynmass_before)
-    terminate("BH_FFR: Iteration 5 modified conserved mass state for particle ID=%llu", (unsigned long long)P[p].ID);
-  for(int k = 0; k < 3; k++)
-    if(BHP[b].Coherence[k] != coherence_before[k])
-      terminate("BH_FFR: Iteration 5 modified reservoir coherence for particle ID=%llu", (unsigned long long)P[p].ID);
-
-  /* No ReservoirMass, Coherence, P.Mass, BHMass, or wind-buffer mutation here.
-   * That transaction belongs to Iteration 6, where processable mass can be
-   * partitioned without creating a temporary mass sink. */
+  /* The transaction is atomic at the sub-grid level: no reservoir mass is
+   * removed unless the same call assigns it to the horizon or wind channel. */
+  bh_ffr_apply_inner_flow(p, processable, dt_code);
 }
 
 void bh_ffr_reservoir_self_test(void)

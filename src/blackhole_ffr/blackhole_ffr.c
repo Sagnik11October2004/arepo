@@ -177,12 +177,23 @@ void bh_ffr_validate_state(const char *where)
              BHP[b].MdotSupply < 0 || !isfinite(BHP[b].MdotProcessed) || BHP[b].MdotProcessed < 0 ||
              !isfinite(BHP[b].MdotEddington) || BHP[b].MdotEddington < 0 ||
              !isfinite(BHP[b].ProcessedEddingtonRatio) || BHP[b].ProcessedEddingtonRatio < 0 ||
+             !isfinite(BHP[b].MdotHorizon) || BHP[b].MdotHorizon < 0 ||
+             !isfinite(BHP[b].MdotWind) || BHP[b].MdotWind < 0 ||
+             !isfinite(BHP[b].BolometricLuminosity) || BHP[b].BolometricLuminosity < 0 ||
+             !isfinite(BHP[b].WindPower) || BHP[b].WindPower < 0 ||
+             !isfinite(BHP[b].JetPower) || BHP[b].JetPower < 0 ||
              !isfinite(BHP[b].ColdBlendWeight) || BHP[b].ColdBlendWeight < 0 || BHP[b].ColdBlendWeight > 1)
-            terminate("BH_FFR: invalid mass/rate/state buffer for particle ID=%llu in %s", (unsigned long long)P[i].ID, where);
+            terminate("BH_FFR: invalid mass/rate/energetics buffer for particle ID=%llu in %s",
+                      (unsigned long long)P[i].ID, where);
 
           if(BHP[b].AccretionState < BH_FFR_STATE_UNINITIALIZED || BHP[b].AccretionState > BH_FFR_STATE_COLD)
             terminate("BH_FFR: invalid accretion state=%d for particle ID=%llu in %s", BHP[b].AccretionState,
                       (unsigned long long)P[i].ID, where);
+
+          const double inner_rate_scale = fmax(1.0, BHP[b].MdotProcessed);
+          if(fabs(BHP[b].MdotProcessed - (BHP[b].MdotHorizon + BHP[b].MdotWind)) > 2.0e-10 * inner_rate_scale)
+            terminate("BH_FFR: inner-flow rate partition mismatch for particle ID=%llu in %s: proc=%g H=%g wind=%g",
+                      (unsigned long long)P[i].ID, where, BHP[b].MdotProcessed, BHP[b].MdotHorizon, BHP[b].MdotWind);
 
           const double expected_dyn_mass = BHP[b].BHMass + BHP[b].ReservoirMass + BHP[b].WindMassBuffer;
           const double dyn_scale = dmax(1.0, dmax(fabs(expected_dyn_mass), fabs(P[i].Mass)));

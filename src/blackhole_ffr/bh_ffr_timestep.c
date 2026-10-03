@@ -130,6 +130,7 @@ void bh_ffr_step(void)
   if(!reservoir_self_test_done)
     {
       bh_ffr_reservoir_self_test();
+      bh_ffr_inner_self_test();
       reservoir_self_test_done = 1;
     }
 
@@ -149,10 +150,9 @@ void bh_ffr_step(void)
       if(BHP[b].LastProcessedTi != All.Ti_Current && (!(dt_myr > 0) || !(dt_code > 0)))
         terminate("BH_FFR: non-positive elapsed physical timestep for active particle ID=%llu", (unsigned long long)P[p].ID);
 
-      /* Iteration 5 computes the exact finite-step processable reservoir mass
-       * and state diagnostics, but deliberately does not drain ReservoirMass.
-       * Iteration 6 will atomically partition this candidate into horizon and
-       * wind mass before committing the reservoir transaction. */
+      /* Exact reservoir processing and Iteration-6 inner-flow partition are
+       * committed together.  The update drains only the analytically
+       * processable mass and assigns it exactly to horizon + wind channels. */
       bh_ffr_update_reservoir_state(p, dt_myr, dt_code);
 
       BHP[b].LastProcessedTi = All.Ti_Current;
