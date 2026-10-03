@@ -53,6 +53,7 @@
 #include "../main/proto.h"
 
 #include "../domain/domain.h"
+#include "../mesh/voronoi/voronoi.h"
 #include "../subfind/subfind.h"
 #include "fof.h"
 
@@ -341,11 +342,21 @@ void fof_fof(int num)
 
 #ifdef BLACKHOLE_FFR
   /* A successful seed conversion changes NumGas and the gas-block ordering.
-   * Keep the old neighbour tree alive while FoF owns PS and its other arena
-   * allocations, then rebuild only after all FoF scratch storage is gone. */
+   * Keep the old neighbour tree and Voronoi connectivity alive while FoF owns
+   * PS and its other arena allocations. Once FoF scratch storage is gone,
+   * discard both structures: the P/SphP compaction invalidates gas indices in
+   * the persistent DC graph, so the next create_mesh() must rebuild the
+   * connectivity from scratch rather than dynamically update stale indices. */
   if(bh_ffr_seeded_this_pass > 0)
     {
       ngb_treefree();
+
+      if(DC == NULL)
+        terminate("BH_FFR: missing Voronoi connectivity while finalizing FoF seed conversion");
+      myfree_movable(DC);
+      DC = NULL;
+      voronoi_init_connectivity(&Mesh);
+
       ngb_treeallocate();
       ngb_treebuild(NumGas);
     }
