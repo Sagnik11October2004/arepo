@@ -331,15 +331,35 @@ void bh_ffr_merge_close_black_holes(void)
             if(parent[i] == root)
               old_total_mass += all[i].DynMass;
 
+          double pre_momentum[3] = {0, 0, 0};
+          for(int i = 0; i < nall; i++)
+            if(parent[i] == root)
+              for(int k = 0; k < 3; k++)
+                pre_momentum[k] += all[i].DynMass * all[i].Vel[k];
+
           BHP[bs] = merged;
           P[ps].Mass = old_total_mass;
           for(int k = 0; k < 3; k++)
             P[ps].Vel[k] = merged_vel[k];
 
+          double dp2 = 0.0, p2 = 0.0;
+          for(int k = 0; k < 3; k++)
+            {
+              const double pnew = P[ps].Mass * P[ps].Vel[k];
+              const double dp = pnew - pre_momentum[k];
+              dp2 += dp * dp;
+              p2 += pre_momentum[k] * pre_momentum[k];
+            }
+          const double pbal = sqrt(dp2) / fmax(sqrt(p2), 1.0e-30);
+
+          if(!isfinite(pbal) || pbal > 2.0e-12)
+            terminate("BH_FFR: merger momentum closure failed for ID=%llu pbal=%g",
+                      (unsigned long long)survivor_id, pbal);
+
           printf("BH_FFR: merger survivor ID=%llu task=%d members=%d Mdyn=%g MBH=%g Mres=%g Mwindbuf=%g "
-                 "Vx=%g Vy=%g Vz=%g\n",
+                 "Vx=%g Vy=%g Vz=%g pbal=%g\n",
                  (unsigned long long)survivor_id, ThisTask, nmembers, P[ps].Mass, BHP[bs].BHMass,
-                 BHP[bs].ReservoirMass, BHP[bs].WindMassBuffer, P[ps].Vel[0], P[ps].Vel[1], P[ps].Vel[2]);
+                 BHP[bs].ReservoirMass, BHP[bs].WindMassBuffer, P[ps].Vel[0], P[ps].Vel[1], P[ps].Vel[2], pbal);
           fflush(stdout);
         }
 
