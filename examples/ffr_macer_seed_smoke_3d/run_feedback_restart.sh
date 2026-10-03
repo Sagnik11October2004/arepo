@@ -37,6 +37,9 @@ PY
 cp "$HERE/param.txt" "$PARAM"
 sed -i 's|OutputDir                               ./output|OutputDir                               ./output_feedback|' "$PARAM"
 sed -i 's|BHFreeFallA                             0.0|BHFreeFallA                             1.0e-3|' "$PARAM"
+# This helper is a regression for an earlier iteration; disable Iteration-9
+# internal accuracy limiting so its historical runtime/sampling stays stable.
+sed -i 's|BHInternalTimestepFactor                1.0|BHInternalTimestepFactor                1.0e30|' "$PARAM"
 
 # A larger feedback aperture gives both wind lobes many synchronized gas
 # targets in the intentionally coarse smoke box. The smaller burst factor

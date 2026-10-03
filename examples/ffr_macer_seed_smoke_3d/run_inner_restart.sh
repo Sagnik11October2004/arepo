@@ -37,6 +37,9 @@ PY
 cp "$HERE/param.txt" "$PARAM"
 sed -i 's|OutputDir                               ./output|OutputDir                               ./output_inner|' "$PARAM"
 sed -i 's|BHFreeFallA                             0.0|BHFreeFallA                             1.0e-3|' "$PARAM"
+# This helper is a regression for an earlier iteration; disable Iteration-9
+# internal accuracy limiting so its historical runtime/sampling stays stable.
+sed -i 's|BHInternalTimestepFactor                1.0|BHInternalTimestepFactor                1.0e30|' "$PARAM"
 # Keep the Iteration-6 regression isolated from Iteration-7 feedback.
 sed -i 's|BHWindBurstFactor                       0.01|BHWindBurstFactor                       1.0e30|' "$PARAM"
 sed -i 's|BHJetBurstFactor                        0.10|BHJetBurstFactor                        1.0e30|' "$PARAM"

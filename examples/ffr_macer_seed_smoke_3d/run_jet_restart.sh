@@ -37,6 +37,9 @@ PY
 cp "$HERE/param.txt" "$PARAM"
 sed -i 's|OutputDir                               ./output|OutputDir                               ./output_jet|' "$PARAM"
 sed -i 's|BHFreeFallA                             0.0|BHFreeFallA                             1.0e-3|' "$PARAM"
+# This helper is a regression for an earlier iteration; disable Iteration-9
+# internal accuracy limiting so its historical runtime/sampling stays stable.
+sed -i 's|BHInternalTimestepFactor                1.0|BHInternalTimestepFactor                1.0e30|' "$PARAM"
 
 # Jet-only Iteration-8 regression.  The large feedback aperture gives the
 # narrow 15-degree bicone enough cells in this intentionally coarse smoke box.

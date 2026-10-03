@@ -122,6 +122,8 @@ static integertime bh_ffr_limit_integer_step_by_physical_myr(integertime ti_step
         break;
 
       limited >>= 1;
+      if(limited < 2)
+        limited = 2;
     }
 
   return limited;
@@ -149,7 +151,8 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
    * maps are stable without this restriction; this controls coefficient and
    * burst-threshold evolution over one BH step.  Energy/power ratios are in
    * physical code time and are converted to Myr before timeline limiting. */
-  double dt_limit_myr = All.BHInternalTimestepFactor * All.BHDiskTimeMyr;
+  const double reservoir_limit_myr = All.BHInternalTimestepFactor * All.BHDiskTimeMyr;
+  double dt_limit_myr = reservoir_limit_myr;
   double wind_limit_myr = HUGE_VAL;
   double jet_limit_myr = HUGE_VAL;
 
@@ -207,7 +210,7 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
       printf("BH_FFR: timestep limit ID=%llu task=%d raw=%lld limited=%lld gasbin=%d fint=%g "
              "dtintMyr=%g dtwindMyr=%g dtjetMyr=%g windBacklog=%g jetBacklog=%g backlog=%d\n",
              (unsigned long long)P[p].ID, ThisTask, (long long)raw_step, (long long)limited, gas_bin,
-             All.BHInternalTimestepFactor, dt_limit_myr, wind_limit_myr, jet_limit_myr, wind_ratio, jet_ratio, backlog);
+             All.BHInternalTimestepFactor, reservoir_limit_myr, wind_limit_myr, jet_limit_myr, wind_ratio, jet_ratio, backlog);
       fflush(stdout);
     }
 
