@@ -52,7 +52,7 @@ NumFilesWrittenInParallel               1
 TypeOfTimestepCriterion                 0
 ErrTolIntAccuracy                       0.012
 CourantFac                              0.3
-MaxSizeTimestep                         0.001
+MaxSizeTimestep                         0.0001
 MinSizeTimestep                         1.0e-8
 
 %---- Gas initialization / floors
