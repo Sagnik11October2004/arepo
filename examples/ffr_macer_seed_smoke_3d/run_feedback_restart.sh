@@ -4,8 +4,8 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 CHECKPOINT="${CHECKPOINT:-$HERE/output/snap_001.hdf5}"
-PARAM="$HERE/param_inner.txt"
-OUT="$HERE/output_inner"
+PARAM="$HERE/param_feedback.txt"
+OUT="$HERE/output_feedback"
 NTASKS="${NTASKS:-16}"
 
 if [[ ! -x "$ROOT/ArepoSeedTest" ]]; then
@@ -15,7 +15,7 @@ fi
 
 if [[ ! -f "$CHECKPOINT" ]]; then
   echo "Missing pre-seed checkpoint: $CHECKPOINT" >&2
-  echo "Set CHECKPOINT=/path/to/snap_001.hdf5 if needed." >&2
+  echo "Set CHECKPOINT=/path/to/preseed snapshot if needed." >&2
   exit 1
 fi
 
@@ -35,16 +35,20 @@ print(f"Using BH-free checkpoint: a={a:.9f}, z={z:.6f}, N_BH={nbh}")
 PY
 
 cp "$HERE/param.txt" "$PARAM"
-sed -i 's|OutputDir                               ./output|OutputDir                               ./output_inner|' "$PARAM"
+sed -i 's|OutputDir                               ./output|OutputDir                               ./output_feedback|' "$PARAM"
 sed -i 's|BHFreeFallA                             0.0|BHFreeFallA                             1.0e-3|' "$PARAM"
-# Keep the Iteration-6 regression isolated from Iteration-7 feedback.
-sed -i 's|BHWindBurstFactor                       0.01|BHWindBurstFactor                       1.0e30|' "$PARAM"
-sed -i 's|BHJetBurstFactor                        0.10|BHJetBurstFactor                        1.0e30|' "$PARAM"
+
+# A larger feedback aperture gives both wind lobes many synchronized gas
+# targets in the intentionally coarse smoke box. The smaller burst factor
+# guarantees at least one packet over the short post-seed interval.
+sed -i 's|BHFeedbackRadius                        0.20|BHFeedbackRadius                        1.00|' "$PARAM"
+sed -i 's|BHWindBurstFactor                       0.01|BHWindBurstFactor                       0.001|' "$PARAM"
+sed -i 's|BHMinActiveTargetMassFrac               0.5|BHMinActiveTargetMassFrac               0.10|' "$PARAM"
 
 rm -rf "$OUT"
 mkdir -p "$OUT"
 cp "$CHECKPOINT" "$OUT/snap_001.hdf5"
-rm -f "$HERE/run_inner.log"
+rm -f "$HERE/run_feedback.log"
 
 cd "$HERE"
-mpirun -np "$NTASKS" "$ROOT/ArepoSeedTest" "$PARAM" 2 1 2>&1 | tee "$HERE/run_inner.log"
+mpirun -np "$NTASKS" "$ROOT/ArepoSeedTest" "$PARAM" 2 1 2>&1 | tee "$HERE/run_feedback.log"

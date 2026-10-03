@@ -42,6 +42,8 @@ FIELDS = [
     "BH_PWind",
     "BH_PJet",
     "BH_SigmaDM",
+    "BH_EthWind",
+    "BH_EthJet",
 ]
 
 
@@ -96,7 +98,7 @@ for path in SNAPS:
                     print(f"    {name:16s}: {val * RATE_TO_MSUN_YR:.9e} Msun/yr{suffix}")
 
             for name in ("BH_ProcessedEddRatio", "BH_Mode", "BH_Coherence", "BH_EWind", "BH_EJet",
-                         "BH_Lbol", "BH_PWind", "BH_PJet", "BH_SigmaDM"):
+                         "BH_Lbol", "BH_PWind", "BH_PJet", "BH_SigmaDM", "BH_EthWind", "BH_EthJet"):
                 val = scalar(g, name, i)
                 if val is not None:
                     print(f"    {name:16s}: {val}")

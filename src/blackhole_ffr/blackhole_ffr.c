@@ -182,6 +182,8 @@ void bh_ffr_validate_state(const char *where)
              !isfinite(BHP[b].BolometricLuminosity) || BHP[b].BolometricLuminosity < 0 ||
              !isfinite(BHP[b].WindPower) || BHP[b].WindPower < 0 ||
              !isfinite(BHP[b].JetPower) || BHP[b].JetPower < 0 ||
+             !isfinite(BHP[b].WindThresholdEnergy) || BHP[b].WindThresholdEnergy < 0 ||
+             !isfinite(BHP[b].JetThresholdEnergy) || BHP[b].JetThresholdEnergy < 0 ||
              !isfinite(BHP[b].ColdBlendWeight) || BHP[b].ColdBlendWeight < 0 || BHP[b].ColdBlendWeight > 1)
             terminate("BH_FFR: invalid mass/rate/energetics buffer for particle ID=%llu in %s",
                       (unsigned long long)P[i].ID, where);

@@ -1,6 +1,6 @@
 # FFR-MACER FoF seeding smoke test
 
-This is a runtime/conservation test for FFR-MACER FoF seeding plus the Iteration-6 inner accretion/energetics model. It is not a production cosmology calculation.
+This is a runtime/conservation test for FFR-MACER FoF seeding, Iteration-6 inner accretion/energetics, and Iteration-7 resolved bipolar wind feedback. It is not a production cosmology calculation.
 
 ## Test design
 
@@ -101,11 +101,23 @@ The Iteration-6 verifier checks the conservative inner-flow identity
 
     BH_MdotFeed = BH_MdotHorizon + BH_MdotWind
 
-along with the dynamical-mass ledger, hot-flow retention, hot wind/jet powers, radiative luminosity, cold Gofford closure when sampled, and monotonic accumulation of wind/jet buffers. Mechanical feedback is not injected into resolved gas in Iteration 6.
+along with the dynamical-mass ledger, hot-flow retention, hot wind/jet powers, radiative luminosity, cold Gofford closure when sampled, and monotonic accumulation of wind/jet buffers. The helper raises the wind/jet burst factors to 1e30 so this regression remains an isolated Iteration-6 test even after feedback is implemented.
 
 If the checkpoint was copied elsewhere, use for example:
 
     CHECKPOINT=checkpoints/preseed_a0.0204956088_z47.790939.hdf5 NTASKS=16 ./run_inner_restart.sh
+
+## 8. Iteration-7 bipolar wind-feedback regression
+
+The wind-feedback test uses the same BH-free checkpoint, enables capture, enlarges the feedback aperture to 1 proper code-length unit so both lobes contain many cells in this coarse smoke box, and lowers the wind burst factor to exercise actual packet release:
+
+    NTASKS=16 ./run_feedback_restart.sh
+    python3 verify_feedback.py
+    python3 inspect_bh.py output_feedback
+
+The runtime kernel checks each fired packet for exact returned wind mass, zero net bipolar kick momentum, and the requested kinetic-energy increment. The verifier additionally requires both lobes to satisfy BHMinTargetsPerLobe and confirms that JetEnergyBuffer remains untouched. Narrow jet injection is deliberately deferred to the next separately validated iteration.
+
+A copied checkpoint can be supplied with CHECKPOINT in the same way as the inner-flow helper.
 
 ## Why the boosted sigma8?
 
