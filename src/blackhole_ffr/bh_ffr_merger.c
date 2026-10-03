@@ -62,6 +62,13 @@ static int bh_ffr_merge_find(int *parent, int x)
   return r;
 }
 
+static int bh_ffr_merge_find_const(const int *parent, int x)
+{
+  while(parent[x] != x)
+    x = parent[x];
+  return x;
+}
+
 static void bh_ffr_merge_union(int *parent, int a, int b)
 {
   a = bh_ffr_merge_find(parent, a);
@@ -120,7 +127,7 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
   double sigma_weight = 0.0;
 
   for(int i = 0; i < nall; i++)
-    if(bh_ffr_merge_find((int *)parent, i) == root)
+    if(bh_ffr_merge_find_const(parent, i) == root)
       {
         const struct bh_ffr_particle_data *s = &all[i].State;
         const double w = all[i].DynMass;

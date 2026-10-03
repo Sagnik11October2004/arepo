@@ -458,7 +458,7 @@ static void bh_ffr_apply_dynamical_friction(int p, const struct bh_ffr_dm_result
     return;
 
   const double v = sqrt(v2);
-  const double x = v / (M_SQRT2 * sigma);
+  const double x = v / (sqrt(2.0) * sigma);
   double fx;
 
   if(x < 1.0e-3)
