@@ -24,16 +24,6 @@
 #define BH_FFR_HOT_WIND_VK_FACTOR 0.2
 #define BH_FFR_HOT_JET_EFFICIENCY 0.125
 
-static double bh_ffr_rate_code_to_cgs(double rate_code)
-{
-  if(!isfinite(rate_code) || rate_code < 0)
-    terminate("BH_FFR: invalid code mass rate=%g", rate_code);
-  if(!(All.UnitMass_in_g > 0) || !(All.UnitTime_in_s > 0))
-    terminate("BH_FFR: invalid mass/time units M=%g T=%g", All.UnitMass_in_g, All.UnitTime_in_s);
-
-  return rate_code * All.UnitMass_in_g / All.UnitTime_in_s;
-}
-
 static double bh_ffr_rate_cgs_to_code(double rate_cgs)
 {
   if(!isfinite(rate_cgs) || rate_cgs < 0)

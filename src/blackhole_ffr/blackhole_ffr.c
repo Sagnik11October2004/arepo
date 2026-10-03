@@ -190,10 +190,17 @@ void bh_ffr_validate_state(const char *where)
             terminate("BH_FFR: invalid accretion state=%d for particle ID=%llu in %s", BHP[b].AccretionState,
                       (unsigned long long)P[i].ID, where);
 
-          const double inner_rate_scale = fmax(1.0, BHP[b].MdotProcessed);
-          if(fabs(BHP[b].MdotProcessed - (BHP[b].MdotHorizon + BHP[b].MdotWind)) > 2.0e-10 * inner_rate_scale)
-            terminate("BH_FFR: inner-flow rate partition mismatch for particle ID=%llu in %s: proc=%g H=%g wind=%g",
-                      (unsigned long long)P[i].ID, where, BHP[b].MdotProcessed, BHP[b].MdotHorizon, BHP[b].MdotWind);
+          /* Old Iteration-5 native restarts can legitimately contain a
+           * diagnostic MdotProcessed with zero horizon/wind rates.  Enforce
+           * the Iteration-6 partition once either inner channel is populated;
+           * the live transaction itself checks exact closure unconditionally. */
+          if(BHP[b].MdotHorizon > 0 || BHP[b].MdotWind > 0)
+            {
+              const double inner_rate_scale = fmax(1.0, BHP[b].MdotProcessed);
+              if(fabs(BHP[b].MdotProcessed - (BHP[b].MdotHorizon + BHP[b].MdotWind)) > 2.0e-10 * inner_rate_scale)
+                terminate("BH_FFR: inner-flow rate partition mismatch for particle ID=%llu in %s: proc=%g H=%g wind=%g",
+                          (unsigned long long)P[i].ID, where, BHP[b].MdotProcessed, BHP[b].MdotHorizon, BHP[b].MdotWind);
+            }
 
           const double expected_dyn_mass = BHP[b].BHMass + BHP[b].ReservoirMass + BHP[b].WindMassBuffer;
           const double dyn_scale = dmax(1.0, dmax(fabs(expected_dyn_mass), fabs(P[i].Mass)));
