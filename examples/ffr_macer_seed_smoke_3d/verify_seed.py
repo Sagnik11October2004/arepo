@@ -148,11 +148,11 @@ for isnap, path in enumerate(snaps):
             if np.any(np.abs(disk) > 1.0e-12):
                 fail(f"{os.path.basename(path)}: non-zero reservoir mass although BHFreeFallA=0")
             if np.any(np.abs(windbuf) > 1.0e-12):
-                fail(f"{os.path.basename(path)}: non-zero wind buffer before Iteration 6")
+                fail(f"{os.path.basename(path)}: non-zero wind buffer with empty reservoir/capture disabled")
             if np.any(np.abs(mdot) > 1.0e-12):
                 fail(f"{os.path.basename(path)}: non-zero supply rate although BHFreeFallA=0")
             if np.any(np.abs(mdot_feed) > 1.0e-12):
-                fail(f"{os.path.basename(path)}: non-zero candidate feed rate for an empty reservoir")
+                fail(f"{os.path.basename(path)}: non-zero processed reservoir rate for an empty reservoir")
             if np.any(~np.isfinite(mdot_edd)) or np.any(mdot_edd <= 0.0):
                 fail(f"{os.path.basename(path)}: invalid BH_MdotEdd for seeded BH")
             if np.any(np.abs(edd_ratio) > 1.0e-12):
@@ -163,7 +163,7 @@ for isnap, path in enumerate(snaps):
             for name in ("BH_MdotHorizon", "BH_MdotWind", "BH_Lbol", "BH_PWind", "BH_PJet"):
                 arr = np.asarray(g[name][:], dtype=np.float64)
                 if np.any(np.abs(arr) > 1.0e-12):
-                    fail(f"{os.path.basename(path)}: {name} became non-zero before Iteration 6+")
+                    fail(f"{os.path.basename(path)}: {name} became non-zero despite an empty reservoir")
 
         records.append((os.path.basename(path), a, z, n0, n1, n5, total_mass))
 
@@ -204,6 +204,6 @@ print("  gas/BH conversion  : N_gas + N_BH stayed exactly 128^3")
 print("  DM count           : stayed exactly 128^3")
 print("  seed mass          : 1.0e5 Msun")
 print("  reservoir/supply   : zero as required for BHFreeFallA=0")
-print("  Iteration-5 state  : empty reservoir -> zero candidate feed, ADIOS mode")
-print("  later-stage physics: horizon/wind/radiation/feedback remain zero")
+print("  reservoir state    : empty reservoir -> zero processed feed, ADIOS mode")
+print("  Iteration-6 channels: horizon/wind/radiative/mechanical powers remain zero")
 print("  post-seed survival : seeded BH IDs persist to the final snapshot")

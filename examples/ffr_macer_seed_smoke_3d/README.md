@@ -1,6 +1,6 @@
 # FFR-MACER FoF seeding smoke test
 
-This is a runtime/conservation test for FFR-MACER FoF seeding plus the Iteration-5 empty-reservoir state selector. It is not a production cosmology calculation.
+This is a runtime/conservation test for FFR-MACER FoF seeding plus the Iteration-6 inner accretion/energetics model. It is not a production cosmology calculation.
 
 ## Test design
 
@@ -18,7 +18,8 @@ This is a runtime/conservation test for FFR-MACER FoF seeding plus the Iteration
 - BH seed mass: 1e5 Msun
 - seed redshift condition: z>20
 - maximum donor removal fraction: 0.5
-- resolved post-seed gas capture is disabled with BHFreeFallA=0
+- the canonical zero-capture regression keeps BHFreeFallA=0
+- the Iteration-6 inner-flow regression restarts from the BH-free checkpoint and enables capture with BHFreeFallA=1e-3
 
 The expected mass resolution is approximately 5.10e4 Msun per Type-1 DM particle and 9.34e3 Msun per gas cell. A 2e6 Msun halo is therefore close to the minimum resolved FoF scale and is intentionally chosen to make this a cheap software test.
 
@@ -82,9 +83,29 @@ A passing test requires all of the following:
 8. a dedicated checkpoint near a=0.02050 (z~47.7805) that contains no Type-5 BH and has z greater than the first seed redshift;
 9. a snapshot after the first seeded snapshot in which the seeded BH ID still exists;
 10. for the deliberately empty reservoir, BH_MdotFeed = BH_ProcessedEddRatio = 0, BH_MdotEdd is positive, and BH_Mode = 0 (ADIOS);
-11. BH_MdotHorizon, BH_MdotWind, BH_Lbol, BH_PWind, and BH_PJet remain zero, confirming that Iteration-6+ physics has not leaked into Iteration 5.
+11. with an empty reservoir, BH_MdotHorizon, BH_MdotWind, BH_Lbol, BH_PWind, and BH_PJet remain exactly zero.
 
 If the deterministic test realization does not seed near z~47.72, that is a test failure or a changed realization/configuration. Do not lower the threshold silently; inspect run.log first.
+
+## 7. Iteration-6 inner-flow regression
+
+After the canonical run has produced the BH-free `output/snap_001.hdf5`, rebuild with the current branch and run:
+
+    NTASKS=16 ./run_inner_restart.sh
+    python3 verify_inner.py
+    python3 inspect_bh.py output_inner
+
+The helper copies the BH-free checkpoint into `output_inner/`, sets `BHFreeFallA=1e-3`, and restarts with RestartFlag=2 from snapshot 001. It therefore begins near z=47.79 rather than repeating the z=49 evolution.
+
+The Iteration-6 verifier checks the conservative inner-flow identity
+
+    BH_MdotFeed = BH_MdotHorizon + BH_MdotWind
+
+along with the dynamical-mass ledger, hot-flow retention, hot wind/jet powers, radiative luminosity, cold Gofford closure when sampled, and monotonic accumulation of wind/jet buffers. Mechanical feedback is not injected into resolved gas in Iteration 6.
+
+If the checkpoint was copied elsewhere, use for example:
+
+    CHECKPOINT=checkpoints/preseed_a0.0204956088_z47.790939.hdf5 NTASKS=16 ./run_inner_restart.sh
 
 ## Why the boosted sigma8?
 

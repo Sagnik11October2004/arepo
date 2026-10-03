@@ -9,7 +9,10 @@ import h5py
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SNAPS = sorted(glob.glob(os.path.join(HERE, "output", "snap_*.hdf5")))
+OUTPUT = sys.argv[1] if len(sys.argv) > 1 else "output"
+if not os.path.isabs(OUTPUT):
+    OUTPUT = os.path.join(HERE, OUTPUT)
+SNAPS = sorted(glob.glob(os.path.join(OUTPUT, "snap_*.hdf5")))
 
 HUBBLE = 0.68
 UNIT_MASS_MSUN = 1.0e10
@@ -50,7 +53,7 @@ def scalar(group, name, i):
 
 
 if not SNAPS:
-    sys.exit("No output/snap_*.hdf5 files found.")
+    sys.exit(f"No snapshots found in {OUTPUT}.")
 
 history = {}
 
@@ -89,7 +92,7 @@ for path in SNAPS:
             for name in ("BH_MdotSupply", "BH_MdotFeed", "BH_MdotEdd", "BH_MdotHorizon", "BH_MdotWind"):
                 val = scalar(g, name, i)
                 if val is not None:
-                    suffix = " (candidate; not yet drained)" if name == "BH_MdotFeed" else ""
+                    suffix = " (processed reservoir rate)" if name == "BH_MdotFeed" else ""
                     print(f"    {name:16s}: {val * RATE_TO_MSUN_YR:.9e} Msun/yr{suffix}")
 
             for name in ("BH_ProcessedEddRatio", "BH_Mode", "BH_Coherence", "BH_EWind", "BH_EJet",
@@ -125,8 +128,7 @@ for pid, recs in sorted(history.items()):
     print(f"    Delta M_reservoir = {ddisk:.9e} Msun")
     print(f"    Delta M_windbuf   = {dwbuf:.9e} Msun")
 
-    tol = 0.1
-    if abs(dm) <= tol and abs(ddisk) <= tol and abs(dwbuf) <= tol:
-        print("    RESULT            = no post-seed mass growth detected")
+    if abs(dm) <= 0.1 and abs(ddisk) <= 0.1 and abs(dwbuf) <= 0.1:
+        print("    RESULT            = no measurable inner mass transfer")
     else:
-        print("    RESULT            = post-seed mass evolution detected; inspect above")
+        print("    RESULT            = inner-flow mass transfer detected; verify with verify_inner.py")
