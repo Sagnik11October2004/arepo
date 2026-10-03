@@ -57,6 +57,10 @@ struct bh_ffr_particle_data
   MyDouble MdotProcessed;
   MyDouble MdotEddington;
   MyDouble ProcessedEddingtonRatio;
+  /* Reserved Iteration-5 ABI slot. Cold blending is deferred to later
+   * feedback iterations; retain this member so native restart files written
+   * by the first Iteration-5 implementation keep the same BHP layout. */
+  MyDouble ColdBlendWeight;
   MyDouble MdotHorizon;
   MyDouble MdotWind;
   MyDouble BolometricLuminosity;
