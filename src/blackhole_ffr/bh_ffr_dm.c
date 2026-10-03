@@ -31,9 +31,16 @@
 #define BH_FFR_DM_MAX_NEIGHBOURS 256
 #define BH_FFR_GAS_PARTICLE_TYPE 0
 
+/* Iteration-11 deliberately keeps these simple and compile-time. They can be
+ * promoted to runtime parameters after physical convergence tests without
+ * changing the persistent BHP restart layout. */
+#define BH_FFR_DF_COULOMB_LOG 3.0
+#define BH_FFR_DF_MAX_DAMPING_FRACTION 0.5
+
 struct bh_ffr_dm_candidate
 {
   MyDouble R2;
+  MyDouble Mass;
   MyFloat Vel[3];
 };
 
@@ -90,14 +97,14 @@ static void particle2in(data_in *in, int target, int firstnode)
   in->Firstnode = firstnode;
 }
 
-static void bh_ffr_dm_insert(struct bh_ffr_dm_result *res, double r2, const MyFloat vel[3])
+static void bh_ffr_dm_insert(struct bh_ffr_dm_result *res, double r2, double mass, const MyFloat vel[3])
 {
   const int want = All.BHDMNeighbours;
   if(want < 1 || want > BH_FFR_DM_MAX_NEIGHBOURS)
     terminate("BH_FFR: BHDMNeighbours=%d outside supported [1,%d]", want, BH_FFR_DM_MAX_NEIGHBOURS);
 
-  if(!isfinite(r2) || r2 < 0)
-    terminate("BH_FFR: invalid DM-neighbour r2=%g", r2);
+  if(!isfinite(r2) || r2 < 0 || !isfinite(mass) || mass < 0)
+    terminate("BH_FFR: invalid DM-neighbour r2=%g mass=%g", r2, mass);
 
   int pos;
 
@@ -113,6 +120,7 @@ static void bh_ffr_dm_insert(struct bh_ffr_dm_result *res, double r2, const MyFl
     }
 
   res->C[pos].R2 = r2;
+  res->C[pos].Mass = mass;
   for(int k = 0; k < 3; k++)
     {
       if(!isfinite(vel[k]))
@@ -135,7 +143,7 @@ static void bh_ffr_dm_merge(struct bh_ffr_dm_result *dst, const data_out *src)
     terminate("BH_FFR: invalid imported DM-neighbour count=%d", src->Count);
 
   for(int n = 0; n < src->Count; n++)
-    bh_ffr_dm_insert(dst, src->C[n].R2, src->C[n].Vel);
+    bh_ffr_dm_insert(dst, src->C[n].R2, src->C[n].Mass, src->C[n].Vel);
 }
 
 static void out2particle(data_out *out, int target, int mode)
@@ -205,7 +213,7 @@ static double bh_ffr_dm_node_min_r2(const struct NODE *node, const MyDouble pos[
 }
 
 static void bh_ffr_dm_consider(struct bh_ffr_dm_result *out, const MyDouble pos[3], const MyDouble particle_pos[3],
-                               const MyFloat stored_vel[3])
+                               double mass, const MyFloat stored_vel[3])
 {
   MyDouble xtmp, ytmp, ztmp;
   const double dx = GRAVITY_NEAREST_X(particle_pos[0] - pos[0]);
@@ -221,7 +229,7 @@ static void bh_ffr_dm_consider(struct bh_ffr_dm_result *out, const MyDouble pos[
   for(int k = 0; k < 3; k++)
     vel[k] = stored_vel[k] / a;
 
-  bh_ffr_dm_insert(out, r2, vel);
+  bh_ffr_dm_insert(out, r2, mass, vel);
 }
 
 static int bh_ffr_dm_evaluate(int target, int mode, int threadid)
@@ -268,7 +276,7 @@ static int bh_ffr_dm_evaluate(int target, int mode, int threadid)
                 continue;
 
               MyFloat vel[3] = {P[p].Vel[0], P[p].Vel[1], P[p].Vel[2]};
-              bh_ffr_dm_consider(&tmp, in->Pos, &Tree_Pos_list[3 * p], vel);
+              bh_ffr_dm_consider(&tmp, in->Pos, &Tree_Pos_list[3 * p], P[p].Mass, vel);
             }
           else if(no < Tree_MaxPart + Tree_MaxNodes)
             {
@@ -301,7 +309,7 @@ static int bh_ffr_dm_evaluate(int target, int mode, int threadid)
               if(Tree_Points[n].Type != DMQueryType || !(Tree_Points[n].Mass > 0))
                 continue;
 
-              bh_ffr_dm_consider(&tmp, in->Pos, Tree_Points[n].Pos, Tree_Points[n].Vel);
+              bh_ffr_dm_consider(&tmp, in->Pos, Tree_Points[n].Pos, Tree_Points[n].Mass, Tree_Points[n].Vel);
             }
           else
             {
@@ -378,6 +386,129 @@ static double bh_ffr_dm_sigma_1d(const struct bh_ffr_dm_result *res)
   return sqrt(sigma2);
 }
 
+static void bh_ffr_dm_mean_velocity(const struct bh_ffr_dm_result *res, double mean[3])
+{
+  for(int k = 0; k < 3; k++)
+    mean[k] = 0.0;
+
+  if(res->Count <= 0)
+    return;
+
+  for(int n = 0; n < res->Count; n++)
+    for(int k = 0; k < 3; k++)
+      mean[k] += res->C[n].Vel[k];
+
+  for(int k = 0; k < 3; k++)
+    mean[k] /= res->Count;
+}
+
+static double bh_ffr_dm_density_code(const struct bh_ffr_dm_result *res)
+{
+  if(res->Count < 2)
+    return 0.0;
+
+  const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+  const double r = sqrt(res->C[res->Count - 1].R2) * a;
+  if(!isfinite(r) || !(r > 0))
+    return 0.0;
+
+  double mass = 0.0;
+  for(int n = 0; n < res->Count; n++)
+    mass += res->C[n].Mass;
+
+  const double volume = (4.0 * M_PI / 3.0) * r * r * r;
+  const double rho = mass / volume;
+
+  if(!isfinite(rho) || rho < 0)
+    terminate("BH_FFR: invalid local DM density=%g from mass=%g r=%g", rho, mass, r);
+
+  return rho;
+}
+
+static void bh_ffr_apply_dynamical_friction(int p, const struct bh_ffr_dm_result *dm)
+{
+  if(dm->Count < 2 || P[p].Mass <= 0)
+    return;
+
+  const int b = P[p].BHDataIndex;
+  if(b < 0 || b >= NumBHFFR || BHP[b].ParticleID != P[p].ID)
+    terminate("BH_FFR: invalid BH state in dynamical friction for ID=%llu", (unsigned long long)P[p].ID);
+
+  const double dt = bh_ffr_get_elapsed_time_code_time(p);
+  if(dt <= 0)
+    return;
+
+  const double sigma = bh_ffr_dm_sigma_1d(dm);
+  const double rho = bh_ffr_dm_density_code(dm);
+  if(!(sigma > 0) || !(rho > 0))
+    return;
+
+  const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+  double mean[3], vrel[3];
+  bh_ffr_dm_mean_velocity(dm, mean);
+
+  double v2 = 0.0;
+  for(int k = 0; k < 3; k++)
+    {
+      vrel[k] = P[p].Vel[k] / a - mean[k];
+      v2 += vrel[k] * vrel[k];
+    }
+
+  if(!(v2 > 0) || !isfinite(v2))
+    return;
+
+  const double v = sqrt(v2);
+  const double x = v / (M_SQRT2 * sigma);
+  double fx;
+
+  if(x < 1.0e-3)
+    fx = 4.0 * x * x * x / (3.0 * sqrt(M_PI));
+  else
+    fx = erf(x) - 2.0 * x * exp(-x * x) / sqrt(M_PI);
+
+  if(fx < 0 && fx > -1.0e-14)
+    fx = 0.0;
+  if(!isfinite(fx) || fx < 0)
+    terminate("BH_FFR: invalid Chandrasekhar F(X)=%g for X=%g", fx, x);
+  if(fx == 0)
+    return;
+
+  const double adf = 4.0 * M_PI * All.G * All.G * P[p].Mass * rho * BH_FFR_DF_COULOMB_LOG * fx / v2;
+  if(!isfinite(adf) || adf < 0)
+    terminate("BH_FFR: invalid dynamical-friction acceleration=%g", adf);
+  if(adf == 0)
+    return;
+
+  const double tdf = v / adf;
+  double frac = -expm1(-dt / tdf);
+  if(frac > BH_FFR_DF_MAX_DAMPING_FRACTION)
+    frac = BH_FFR_DF_MAX_DAMPING_FRACTION;
+
+  if(!isfinite(frac) || frac < 0 || frac > BH_FFR_DF_MAX_DAMPING_FRACTION)
+    terminate("BH_FFR: invalid dynamical-friction damping fraction=%g", frac);
+
+  const double v_before = v;
+  for(int k = 0; k < 3; k++)
+    P[p].Vel[k] -= a * frac * vrel[k];
+
+  double vafter2 = 0.0;
+  for(int k = 0; k < 3; k++)
+    {
+      const double dv = P[p].Vel[k] / a - mean[k];
+      vafter2 += dv * dv;
+    }
+  const double v_after = sqrt(vafter2);
+
+  if(v_after > v_before * (1.0 + 2.0e-12))
+    terminate("BH_FFR: dynamical friction increased relative velocity for ID=%llu", (unsigned long long)P[p].ID);
+
+  printf("BH_FFR: dynamical friction ID=%llu task=%d rhoDM=%g sigmaDM=%g vrel0=%g vrel1=%g "
+         "tdfCode=%g dtCode=%g frac=%g lnLambda=%g\n",
+         (unsigned long long)P[p].ID, ThisTask, rho, sigma, v_before, v_after, tdf, dt, frac,
+         BH_FFR_DF_COULOMB_LOG);
+  fflush(stdout);
+}
+
 static void bh_ffr_dm_self_test(void)
 {
   struct bh_ffr_dm_result res;
@@ -387,9 +518,9 @@ static void bh_ffr_dm_self_test(void)
   const MyFloat v1[3] = {1, 0, 0};
   const MyFloat v2[3] = {0, 0, 0};
 
-  bh_ffr_dm_insert(&res, 4.0, v0);
-  bh_ffr_dm_insert(&res, 1.0, v1);
-  bh_ffr_dm_insert(&res, 2.0, v2);
+  bh_ffr_dm_insert(&res, 4.0, 1.0, v0);
+  bh_ffr_dm_insert(&res, 1.0, 1.0, v1);
+  bh_ffr_dm_insert(&res, 2.0, 1.0, v2);
 
   if(res.Count != 3 || res.C[0].R2 != 1.0 || res.C[1].R2 != 2.0 || res.C[2].R2 != 4.0)
     terminate("BH_FFR: DM nearest-neighbour ordering self-test failed");
@@ -476,6 +607,11 @@ void bh_ffr_prepare_dm_environment_search(void)
        * well-defined threshold in that situation. */
       if(use->Count >= 2)
         BHP[b].SigmaDM = sigma;
+
+      /* Dynamical friction is specifically a DM wake model, so do not apply
+       * it when SigmaDM had to fall back to gas. */
+      if(use == &dm[n] && dm[n].Count >= 2)
+        bh_ffr_apply_dynamical_friction(p, &dm[n]);
 
       if(!isfinite(BHP[b].SigmaDM) || BHP[b].SigmaDM < 0)
         terminate("BH_FFR: invalid cached SigmaDM=%g for ID=%llu", BHP[b].SigmaDM, (unsigned long long)P[p].ID);

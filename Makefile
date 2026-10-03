@@ -253,6 +253,7 @@ OBJS    += blackhole_ffr/blackhole_ffr.o \
            blackhole_ffr/bh_ffr_timestep.o \
            blackhole_ffr/bh_ffr_gas_search.o \
            blackhole_ffr/bh_ffr_dm.o \
+           blackhole_ffr/bh_ffr_merger.o \
            blackhole_ffr/bh_ffr_capture.o \
            blackhole_ffr/bh_ffr_reservoir.o \
            blackhole_ffr/bh_ffr_inner.o \

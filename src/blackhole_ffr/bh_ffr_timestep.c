@@ -288,4 +288,9 @@ void bh_ffr_step(void)
    * packet against the gas state left by the preceding channel. */
   bh_ffr_inject_wind_feedback();
   bh_ffr_inject_jet_feedback();
+
+  /* Iteration 11 merges synchronized BHs whose two proper accretion
+   * apertures overlap. This happens after each object's local sub-grid
+   * transaction/feedback for the current step. */
+  bh_ffr_merge_close_black_holes();
 }

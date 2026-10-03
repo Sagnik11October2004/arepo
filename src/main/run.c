@@ -367,10 +367,9 @@ void set_non_standard_physics_for_current_time(void)
 void calculate_non_standard_physics_with_valid_gravity_tree(void)
 {
 #ifdef BLACKHOLE_FFR
-  /* Iteration 10 refreshes the cached one-dimensional local DM velocity
-   * dispersion from the full gravity tree. With hierarchical gravity the
-   * FFR routine itself rejects partial-tree calls and updates only at a full
-   * synchronization point. */
+  /* Iteration 11 refreshes SigmaDM and applies a simple Chandrasekhar
+   * dynamical-friction kick from the same nearest-DM sample. With hierarchical
+   * gravity this remains restricted to full-tree synchronization points. */
   bh_ffr_prepare_dm_environment_search();
 #endif
 }
@@ -415,9 +414,9 @@ void calculate_non_standard_physics_end_of_step(void)
 {
 #ifdef BLACKHOLE_FFR
   /* FFR-MACER is operator-split here, after hydro closure and the second
-   * gravity half-kick. Iteration 10 additionally consumes the most recently
-   * cached full-tree SigmaDM in the existing wind/jet binding thresholds.
-   * Jets carry no independent rest-mass sink; radiation remains diagnostic. */
+   * gravity half-kick. Iteration 11 additionally performs deterministic
+   * merge-on-overlapping-accretion-apertures after the validated local
+   * accretion/feedback transaction. */
   bh_ffr_step();
 #endif
 
