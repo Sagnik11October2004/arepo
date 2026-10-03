@@ -179,11 +179,14 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
     }
 
   limited = bh_ffr_limit_integer_step_by_physical_myr(limited, dt_limit_myr);
+  const integertime accuracy_limited = limited;
 
   /* If a channel still stores at least as many full thresholds as can be
-   * released in one activation, force at least one finer existing gravity bin.
-   * This is independent of the current power, so a stale energetic backlog
-   * still gets revisited after a state transition drives P_x to zero. */
+   * released in one activation, request one bin finer than the timestep that
+   * would otherwise be chosen by gas+internal-accuracy limits.  Anchor this
+   * to accuracy_limited, not the particle's current bin: otherwise a persistent
+   * backlog recursively halves the BH bin on every activation until the
+   * minimum timeline step is reached. */
   int backlog = 0;
   if(BHP[b].WindThresholdEnergy > 0 &&
      BHP[b].WindEnergyBuffer >= All.BHMaxPacketsPerStep * BHP[b].WindThresholdEnergy)
@@ -192,11 +195,14 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
      BHP[b].JetEnergyBuffer >= All.BHMaxPacketsPerStep * BHP[b].JetThresholdEnergy)
     backlog = 1;
 
-  integertime backlog_limit = limited;
+  integertime backlog_limit = accuracy_limited;
   int backlog_applied = 0;
-  if(backlog && P[p].TimeBinGrav > 1)
+  if(backlog && accuracy_limited > 2)
     {
-      backlog_limit = ((integertime)1) << (P[p].TimeBinGrav - 1);
+      backlog_limit = accuracy_limited >> 1;
+      if(backlog_limit < 2)
+        backlog_limit = 2;
+
       if(backlog_limit < limited)
         {
           limited = backlog_limit;
@@ -212,10 +218,11 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
           BHP[b].JetThresholdEnergy > 0 ? BHP[b].JetEnergyBuffer / BHP[b].JetThresholdEnergy : 0.0;
 
       printf("BH_FFR: timestep limit ID=%llu task=%d raw=%lld limited=%lld gasbin=%d fint=%g "
-             "dtintMyr=%g dtwindMyr=%g dtjetMyr=%g windBacklog=%g jetBacklog=%g backlog=%d backlogApplied=%d\n",
+             "dtintMyr=%g dtwindMyr=%g dtjetMyr=%g accuracyLimited=%lld backlogLimit=%lld "
+             "windBacklog=%g jetBacklog=%g backlog=%d backlogApplied=%d\n",
              (unsigned long long)P[p].ID, ThisTask, (long long)raw_step, (long long)limited, gas_bin,
-             All.BHInternalTimestepFactor, reservoir_limit_myr, wind_limit_myr, jet_limit_myr, wind_ratio, jet_ratio, backlog,
-             backlog_applied);
+             All.BHInternalTimestepFactor, reservoir_limit_myr, wind_limit_myr, jet_limit_myr,
+             (long long)accuracy_limited, (long long)backlog_limit, wind_ratio, jet_ratio, backlog, backlog_applied);
       fflush(stdout);
     }
 

@@ -18,6 +18,7 @@ enum bh_ffr_capture_pass
 struct bh_ffr_capture_result
 {
   MyDouble CapturedMass;
+  MyDouble CapturedRate;
   MyDouble CapturedMomentum[3];
   MyDouble CoherenceIncrement[3];
   int MinHydroTimeBin;
@@ -46,6 +47,7 @@ static data_in *DataIn, *DataGet;
 typedef struct
 {
   MyDouble CapturedMass;
+  MyDouble CapturedRate;
   MyDouble CapturedMomentum[3];
   MyDouble CoherenceIncrement[3];
   int MinHydroTimeBin;
@@ -135,6 +137,7 @@ static void out2particle(data_out *out, int target, int mode)
   if(mode == MODE_LOCAL_PARTICLES)
     {
       res->CapturedMass = out->CapturedMass;
+      res->CapturedRate = out->CapturedRate;
       for(int k = 0; k < 3; k++)
         {
           res->CapturedMomentum[k] = out->CapturedMomentum[k];
@@ -145,6 +148,7 @@ static void out2particle(data_out *out, int target, int mode)
   else
     {
       res->CapturedMass += out->CapturedMass;
+      res->CapturedRate += out->CapturedRate;
       for(int k = 0; k < 3; k++)
         {
           res->CapturedMomentum[k] += out->CapturedMomentum[k];
@@ -157,6 +161,7 @@ static void out2particle(data_out *out, int target, int mode)
 
 #include "../utils/generic_comm_helpers2.h"
 
+static double bh_ffr_active_gas_timestep_code_time(int j);
 static int bh_ffr_capture_evaluate(int target, int mode, int threadid);
 
 static void kernel_local(void)
@@ -288,6 +293,13 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
         terminate("BH_FFR: invalid overlap share=%g sink=%g lambda=%g Lambda=%g", share, SinkMass[j], lambda, LambdaSink[j]);
 
       out.CapturedMass += share;
+
+      const double dt_gas = bh_ffr_active_gas_timestep_code_time(j);
+      if(!(dt_gas > 0) || !isfinite(dt_gas))
+        terminate("BH_FFR: invalid active gas timestep=%g for supply rate ID=%llu", dt_gas,
+                  (unsigned long long)P[j].ID);
+      out.CapturedRate += share / dt_gas;
+
       for(int k = 0; k < 3; k++)
         out.CapturedMomentum[k] += share * P[j].Vel[k];
 
@@ -480,8 +492,14 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
         for(int k = 0; k < 3; k++)
           BHP[b].DiscDir[k] = BHP[b].Coherence[k] / cnorm;
 
-      const double dt_bh = bh_ffr_get_elapsed_time_code_time(p);
-      BHP[b].MdotSupply = (dt_bh > 0) ? dm / dt_bh : 0.0;
+      if(!isfinite(res->CapturedRate) || res->CapturedRate < 0)
+        terminate("BH_FFR: invalid captured supply rate=%g for particle ID=%llu", res->CapturedRate,
+                  (unsigned long long)P[p].ID);
+
+      /* Each gas sink is integrated over that gas cell's own synchronized
+       * hydro step.  Summing dm_i/dt_i avoids spuriously dividing a gas-step
+       * capture event by a much shorter feedback-limited BH timestep. */
+      BHP[b].MdotSupply = res->CapturedRate;
 
       *local_captured_mass += dm;
       for(int k = 0; k < 3; k++)
