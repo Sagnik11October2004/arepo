@@ -517,9 +517,6 @@ void bh_ffr_capture_resolved_gas(void)
   if(NumActiveBHFFR <= 0)
     return;
 
-#if NUM_THREADS > 1
-  terminate("BH_FFR: Iteration-4 gas capture currently requires NUM_THREADS=1 to avoid gas-owned accumulator races");
-#endif
 #ifdef MHD
   terminate("BH_FFR: resolved gas capture is not yet enabled with MHD; a magnetic-flux sink policy is required first");
 #endif
