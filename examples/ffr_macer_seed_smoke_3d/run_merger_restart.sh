@@ -54,7 +54,14 @@ echo "Iteration-11 short restart: TimeMax=$TIME_MAX MaxSizeTimestep=$MAX_STEP"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 cp "$SYNTH" "$OUT/snap_003.hdf5"
-cp "${SYNTH%.hdf5}_expected.json" "$HERE/merge_source_expected.json"
+# make_merger_snapshot.py already writes the sidecar at
+# $HERE/merge_source_expected.json because SYNTH=$HERE/merge_source.hdf5.
+# Do not copy the file onto itself under 'set -e'.
+EXPECTED="${SYNTH%.hdf5}_expected.json"
+if [[ ! -f "$EXPECTED" ]]; then
+  echo "Missing merger expectation sidecar: $EXPECTED" >&2
+  exit 1
+fi
 rm -f "$HERE/run_merger.log"
 
 cd "$HERE"
