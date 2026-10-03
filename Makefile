@@ -5,7 +5,7 @@
 
 EXEC   = Arepo
 LIBRARY = arepo
-CONFIG   = Config.sh
+CONFIG   ?= Config_FFR_MACER.sh
 BUILD_DIR = build
 SRC_DIR = src
 
@@ -16,7 +16,7 @@ ifdef SYSTYPE
 SYSTYPE := "$(SYSTYPE)"
 -include Makefile.systype
 else
-include Makefile.systype
+-include Makefile.systype
 endif
 
 MAKEFILES = Makefile config-makefile
@@ -32,6 +32,7 @@ $(info )
 
 PYTHON = python
 PERL   = /usr/bin/perl
+PKG_CONFIG ?= pkg-config
 RESULT     := $(shell CONFIG=$(CONFIG) PERL=$(PERL) BUILD_DIR=$(BUILD_DIR) make -f config-makefile)
 CONFIGVARS := $(shell cat $(BUILD_DIR)/arepoconfig.h)
 RESULT     := $(shell SRC_DIR=$(SRC_DIR) BUILD_DIR=$(BUILD_DIR) ./git_version.sh)
@@ -77,6 +78,27 @@ FFTW_INCL = -I${FFTW_HOME}/include
 FFTW_LIBS = -L${FFTW_HOME}/lib
 HDF5_INCL = -I${HDF5_HOME}/include -DH5_USE_16_API
 HDF5_LIB  = -L${HDF5_HOME}/lib -lhdf5
+
+# On ordinary Linux installations the science branch should build without
+# requiring a machine-local Makefile.systype or command-line include/library
+# overrides. Explicit *_HOME settings still take precedence when supplied.
+ifeq ($(strip $(GSL_HOME)),)
+GSL_PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags gsl 2>/dev/null)
+GSL_PKG_LIBS   := $(shell $(PKG_CONFIG) --libs gsl 2>/dev/null)
+ifneq ($(strip $(GSL_PKG_LIBS)),)
+GSL_INCL = $(GSL_PKG_CFLAGS)
+GSL_LIB  = $(GSL_PKG_LIBS)
+endif
+endif
+
+ifeq ($(strip $(HDF5_HOME)),)
+HDF5_PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags hdf5 2>/dev/null)
+HDF5_PKG_LIBS   := $(shell $(PKG_CONFIG) --libs hdf5 2>/dev/null)
+ifneq ($(strip $(HDF5_PKG_LIBS)),)
+HDF5_INCL = $(HDF5_PKG_CFLAGS) -DH5_USE_16_API
+HDF5_LIB  = $(HDF5_PKG_LIBS)
+endif
+endif
 
 # END AREPOVTK
 
