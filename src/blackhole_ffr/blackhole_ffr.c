@@ -56,7 +56,7 @@ static void bh_ffr_initialize_record(struct bh_ffr_particle_data *bh, int p, int
 void bh_ffr_free_active_list(void)
 {
   if(BHFFRActiveParticleList != NULL)
-    myfree(BHFFRActiveParticleList);
+    free(BHFFRActiveParticleList);
 
   BHFFRActiveParticleList = NULL;
   NumActiveBHFFR = 0;
@@ -69,8 +69,14 @@ void bh_ffr_build_active_list(void)
   if(TimeBinsGravity.NActiveParticles <= 0)
     return;
 
+  /* The active list can remain live while FoF seeding reconstructs timebins
+   * and tears down/rebuilds the gas neighbour tree. It therefore must not
+   * occupy AREPO's LIFO mymalloc arena behind movable tree blocks. */
   BHFFRActiveParticleList =
-      (int *)mymalloc("BHFFRActiveParticleList", TimeBinsGravity.NActiveParticles * sizeof(int));
+      (int *)malloc(TimeBinsGravity.NActiveParticles * sizeof(int));
+  if(BHFFRActiveParticleList == NULL)
+    terminate("BH_FFR: failed to allocate active-particle list for %d gravity-active particles",
+              TimeBinsGravity.NActiveParticles);
 
   for(int n = 0; n < TimeBinsGravity.NActiveParticles; n++)
     {
