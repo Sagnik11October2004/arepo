@@ -212,8 +212,15 @@ void bh_ffr_apply_inner_flow(int p, double processable_mass, double dt_code)
 
   const double mdot_processed = BHP[b].MdotProcessed;
   const double mdot_edd = BHP[b].MdotEddington;
-  if((dt_code == 0) != (processable_mass == 0))
-    terminate("BH_FFR: inconsistent zero inner-flow transaction dMproc=%g dt=%g", processable_mass, dt_code);
+
+  /* An empty reservoir over a finite physical timestep is a valid no-op:
+   * dt>0 with dMproc=0 must not terminate. The forbidden case is the
+   * converse, a positive processed mass with zero elapsed time. */
+  if(dt_code == 0 && processable_mass > 0)
+    terminate("BH_FFR: positive inner-flow transaction dMproc=%g at zero dt", processable_mass);
+
+  if(processable_mass == 0 && mdot_processed != 0)
+    terminate("BH_FFR: zero processed mass with nonzero processed rate=%g at dt=%g", mdot_processed, dt_code);
 
   double mdot_h = 0.0;
   double wind_velocity_code = 0.0;
