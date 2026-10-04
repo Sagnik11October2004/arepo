@@ -15,6 +15,10 @@ DOUBLEPRECISION=1
 
 # FFR-MACER Type-5 black-hole subgrid model.
 BLACKHOLE_FFR
+# Optional for multimass zoom ICs: select every collisionless DM particle
+# species that should enter the SigmaDM/DF estimator. Default is Type 1.
+# Example for Types 1,2,3:
+# BH_FFR_DM_TYPEMASK=2+4+8
 
 # FoF is executed at full synchronization points for conservative BH seeding.
 # Type-1 dark matter defines the primary FoF groups; gas (Type 0) and FFR

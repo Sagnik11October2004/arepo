@@ -14,8 +14,8 @@
  *
  * The public neighbour tree is gas-only, so this module walks AREPO's full
  * gravity tree at synchronization points where that tree contains the complete
- * particle set.  It keeps the globally nearest BHDMNeighbours Type-1 dark
- * matter particles around every active BH and computes the one-dimensional
+ * particle set.  It keeps the globally nearest BHDMNeighbours configured dark-matter
+ * particles around every active BH and computes the one-dimensional
  * physical peculiar velocity dispersion about their local mean:
  *
  *   sigma_DM^2 = < |v - <v>|^2 > / 3 .
@@ -55,7 +55,7 @@ struct bh_ffr_dm_result
 
 static struct bh_ffr_dm_result *DMResults;
 static int DMNTargets;
-static int DMQueryType;
+static int DMQueryTypeMask;
 
 typedef struct bh_ffr_df_restart_entry bh_ffr_df_cache_entry;
 
@@ -280,7 +280,7 @@ static int bh_ffr_dm_evaluate(int target, int mode, int threadid)
               const int p = no;
               no = Nextnode[no];
 
-              if(P[p].Type != DMQueryType || P[p].ID == 0 || !(P[p].Mass > 0))
+              if(!((1 << P[p].Type) & DMQueryTypeMask) || P[p].ID == 0 || !(P[p].Mass > 0))
                 continue;
 
               MyFloat vel[3] = {P[p].Vel[0], P[p].Vel[1], P[p].Vel[2]};
@@ -314,7 +314,7 @@ static int bh_ffr_dm_evaluate(int target, int mode, int threadid)
               if(n < 0 || n >= Tree_NumPartImported)
                 terminate("BH_FFR: imported gravity point=%d outside [0,%d)", n, Tree_NumPartImported);
 
-              if(Tree_Points[n].Type != DMQueryType || !(Tree_Points[n].Mass > 0))
+              if(!((1 << Tree_Points[n].Type) & DMQueryTypeMask) || !(Tree_Points[n].Mass > 0))
                 continue;
 
               bh_ffr_dm_consider(&tmp, in->Pos, Tree_Points[n].Pos, Tree_Points[n].Mass, Tree_Points[n].Vel);
@@ -344,9 +344,12 @@ static int bh_ffr_dm_evaluate(int target, int mode, int threadid)
   return 0;
 }
 
-static void bh_ffr_dm_run_query(int particle_type, struct bh_ffr_dm_result *results)
+static void bh_ffr_dm_run_query(int particle_type_mask, struct bh_ffr_dm_result *results)
 {
-  DMQueryType = particle_type;
+  if(particle_type_mask <= 0)
+    terminate("BH_FFR: invalid empty gravity-tree particle-type mask=%d", particle_type_mask);
+
+  DMQueryTypeMask = particle_type_mask;
   DMResults = results;
   DMNTargets = NumActiveBHFFR;
 
@@ -795,6 +798,13 @@ void bh_ffr_prepare_dm_environment_search(void)
   if(All.BHDMNeighbours < 2 || All.BHDMNeighbours > BH_FFR_DM_MAX_NEIGHBOURS)
     terminate("BH_FFR: BHDMNeighbours=%d must lie in [2,%d]", All.BHDMNeighbours, BH_FFR_DM_MAX_NEIGHBOURS);
 
+  const unsigned int legal_type_mask = (1u << NTYPES) - 1u;
+  if(((unsigned int)BH_FFR_DM_TYPEMASK & ~legal_type_mask) != 0 ||
+     ((unsigned int)BH_FFR_DM_TYPEMASK & (1u << BH_FFR_GAS_PARTICLE_TYPE)) != 0 ||
+     ((unsigned int)BH_FFR_DM_TYPEMASK & (1u << BH_FFR_PARTICLE_TYPE)) != 0)
+    terminate("BH_FFR: BH_FFR_DM_TYPEMASK=%u must select only collisionless non-BH particle types within NTYPES=%d",
+              (unsigned int)BH_FFR_DM_TYPEMASK, NTYPES);
+
   static int self_test_done = 0;
   if(!self_test_done)
     {
@@ -818,7 +828,7 @@ void bh_ffr_prepare_dm_environment_search(void)
         terminate("BH_FFR: failed to allocate transient dynamical-friction cache for %d BHs", DFCacheCount);
     }
 
-  bh_ffr_dm_run_query(BH_FFR_DM_PARTICLE_TYPE, dm);
+  bh_ffr_dm_run_query(BH_FFR_DM_TYPEMASK, dm);
 
   int local_need_fallback = 0;
   for(int n = 0; n < NumActiveBHFFR; n++)
@@ -833,7 +843,7 @@ void bh_ffr_prepare_dm_environment_search(void)
     {
       gas = (struct bh_ffr_dm_result *)mymalloc(
           "BHFFRDMGasFallback", (NumActiveBHFFR > 0 ? NumActiveBHFFR : 1) * sizeof(*gas));
-      bh_ffr_dm_run_query(BH_FFR_GAS_PARTICLE_TYPE, gas);
+      bh_ffr_dm_run_query(1 << BH_FFR_GAS_PARTICLE_TYPE, gas);
     }
 
   const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;

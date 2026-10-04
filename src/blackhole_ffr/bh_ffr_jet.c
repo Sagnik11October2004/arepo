@@ -47,6 +47,7 @@ static int *JetPacketCount;
 static MyIDType *JetWinnerID;
 static int JetNTargets;
 static int JetPass;
+static int JetConflictRound;
 
 typedef struct
 {
@@ -368,6 +369,26 @@ static void kernel_imported(void)
     bh_ffr_jet_evaluate(target++, MODE_IMPORTED_PARTICLES, threadid);
 }
 
+static unsigned long long bh_ffr_jet_priority(MyIDType id)
+{
+  unsigned long long x = (unsigned long long)id;
+  x ^= (unsigned long long)All.Ti_Current + 0x9e3779b97f4a7c15ULL +
+       (unsigned long long)(JetConflictRound + 1) * 0xbf58476d1ce4e5b9ULL;
+  x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+  return x ^ (x >> 31);
+}
+
+static int bh_ffr_jet_candidate_wins(MyIDType candidate, MyIDType incumbent)
+{
+  if(incumbent == 0)
+    return 1;
+
+  const unsigned long long pc = bh_ffr_jet_priority(candidate);
+  const unsigned long long pi = bh_ffr_jet_priority(incumbent);
+  return pc < pi || (pc == pi && candidate < incumbent);
+}
+
 static int bh_ffr_jet_selected_lobe(const data_in *in, int j, double *r2_out)
 {
   double xtmp, ytmp, ztmp;
@@ -466,7 +487,7 @@ static int bh_ffr_jet_evaluate(int target, int mode, int threadid)
 
       if(JetPass == BH_FFR_JET_MARK)
         {
-          if(JetWinnerID[j] == 0 || in->BHID < JetWinnerID[j])
+          if(bh_ffr_jet_candidate_wins(in->BHID, JetWinnerID[j]))
             JetWinnerID[j] = in->BHID;
           continue;
         }
@@ -748,6 +769,7 @@ void bh_ffr_inject_jet_feedback(void)
 
   for(int round = 0; round < All.BHMaxPacketsPerStep; round++)
     {
+      JetConflictRound = round;
       bh_ffr_jet_comm_pass(BH_FFR_JET_STATS);
       bh_ffr_jet_prepare_candidates();
 

@@ -53,6 +53,7 @@ static int *FeedbackPacketCount;
 static MyIDType *FeedbackWinnerID;
 static int FeedbackNTargets;
 static int FeedbackPass;
+static int FeedbackConflictRound;
 
 typedef struct
 {
@@ -219,6 +220,28 @@ static void kernel_imported(void)
     bh_ffr_feedback_evaluate(target++, MODE_IMPORTED_PARTICLES, threadid);
 }
 
+static unsigned long long bh_ffr_feedback_priority(MyIDType id)
+{
+  /* Deterministic time-varying total order. This preserves conflict safety
+   * without permanently starving the higher-ID BH in a persistent overlap. */
+  unsigned long long x = (unsigned long long)id;
+  x ^= (unsigned long long)All.Ti_Current + 0x9e3779b97f4a7c15ULL +
+       (unsigned long long)(FeedbackConflictRound + 1) * 0xbf58476d1ce4e5b9ULL;
+  x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+  x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+  return x ^ (x >> 31);
+}
+
+static int bh_ffr_feedback_candidate_wins(MyIDType candidate, MyIDType incumbent)
+{
+  if(incumbent == 0)
+    return 1;
+
+  const unsigned long long pc = bh_ffr_feedback_priority(candidate);
+  const unsigned long long pi = bh_ffr_feedback_priority(incumbent);
+  return pc < pi || (pc == pi && candidate < incumbent);
+}
+
 static int bh_ffr_feedback_selected_lobe(const data_in *in, int j, double *r2_out)
 {
   double xtmp, ytmp, ztmp;
@@ -317,7 +340,7 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
 
       if(FeedbackPass == BH_FFR_FEEDBACK_MARK)
         {
-          if(FeedbackWinnerID[j] == 0 || in->BHID < FeedbackWinnerID[j])
+          if(bh_ffr_feedback_candidate_wins(in->BHID, FeedbackWinnerID[j]))
             FeedbackWinnerID[j] = in->BHID;
           continue;
         }
@@ -656,6 +679,7 @@ void bh_ffr_inject_wind_feedback(void)
 
   for(int round = 0; round < All.BHMaxPacketsPerStep; round++)
     {
+      FeedbackConflictRound = round;
       bh_ffr_feedback_comm_pass(BH_FFR_FEEDBACK_STATS);
       bh_ffr_feedback_prepare_candidates();
 

@@ -9,10 +9,13 @@
  * domain rearrangement. Snapshot I/O explicitly filters this exact
  * ID=0/Mass=0 tombstone signature. */
 #define BH_FFR_MERGER_TOMBSTONE_TYPE 3
-/* Version-1 cosmological DM selector. The current AREPO test/production
- * configuration uses Type-1 as dark matter. Keep this compile-time rather
- * than adding an All/BHP field so native restart layouts remain unchanged. */
-#define BH_FFR_DM_PARTICLE_TYPE 1
+/* Version-1 cosmological DM selector. The default is Type 1, but
+ * zoom ICs may place collisionless dark matter in several particle species.
+ * Override this compile-time bitmask in Config.sh without changing All/BHP
+ * restart layouts, e.g. BH_FFR_DM_TYPEMASK=2+4+8 for Types 1,2,3. */
+#ifndef BH_FFR_DM_TYPEMASK
+#define BH_FFR_DM_TYPEMASK (1 << 1)
+#endif
 
 /* Iteration-5 state-machine closures from the design specification. The
  * nominal physical boundaries are dotm=0.02 and Rtr/Rhot=1; the wider
