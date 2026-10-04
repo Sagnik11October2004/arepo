@@ -9,13 +9,14 @@ PARAM="$HERE/param_df.txt"
 OUT="$HERE/output_df"
 OUTLIST="$HERE/output_list_df.txt"
 NTASKS="${NTASKS:-16}"
+EXE="$ROOT/ArepoFFRSnapshotTest"
 
-if [[ ! -x "$ROOT/ArepoSeedTest" ]]; then
-  echo "Missing $ROOT/ArepoSeedTest; building the smoke-test executable now." >&2
-  "$HERE/build.sh"
+if [[ ! -x "$EXE" ]]; then
+  echo "Missing $EXE; building the snapshot-IC regression executable now." >&2
+  "$HERE/build_snapshot_ic.sh"
 fi
-if [[ ! -x "$ROOT/ArepoSeedTest" ]]; then
-  echo "Build completed without an executable at $ROOT/ArepoSeedTest." >&2
+if [[ ! -x "$EXE" ]]; then
+  echo "Build completed without an executable at $EXE." >&2
   exit 1
 fi
 if [[ ! -f "$SOURCE" ]]; then
@@ -70,7 +71,8 @@ mkdir -p "$OUT"
 rm -f "$HERE/run_df.log"
 
 cd "$HERE"
-# Start the one-BH source as a fresh IC at its own scale factor. Evolved
-# RestartFlag=2 FFR snapshots are intentionally rejected because they do not
-# contain a restart-complete persistent BHP state.
-mpirun -np "$NTASKS" "$ROOT/ArepoSeedTest" "$PARAM" 2>&1 | tee "$HERE/run_df.log"
+# Start the one-BH hydrodynamic snapshot as a deliberately fresh IC at its
+# own scale factor. This uses a dedicated executable without GENERATE_GAS_IN_ICS
+# because the source already contains gas. It is not an evolved RestartFlag=2
+# continuation and therefore does not bypass the production restart-safety guard.
+mpirun -np "$NTASKS" "$EXE" "$PARAM" 2>&1 | tee "$HERE/run_df.log"

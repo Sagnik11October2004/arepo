@@ -9,13 +9,14 @@ PARAM="$HERE/param_merger.txt"
 OUT="$HERE/output_merger"
 OUTLIST="$HERE/output_list_merger.txt"
 NTASKS="${NTASKS:-16}"
+EXE="$ROOT/ArepoFFRSnapshotTest"
 
-if [[ ! -x "$ROOT/ArepoSeedTest" ]]; then
-  echo "Missing $ROOT/ArepoSeedTest; building the smoke-test executable now." >&2
-  "$HERE/build.sh"
+if [[ ! -x "$EXE" ]]; then
+  echo "Missing $EXE; building the snapshot-IC regression executable now." >&2
+  "$HERE/build_snapshot_ic.sh"
 fi
-if [[ ! -x "$ROOT/ArepoSeedTest" ]]; then
-  echo "Build completed without an executable at $ROOT/ArepoSeedTest." >&2
+if [[ ! -x "$EXE" ]]; then
+  echo "Build completed without an executable at $EXE." >&2
   exit 1
 fi
 if [[ ! -f "$SOURCE" ]]; then
@@ -75,7 +76,7 @@ fi
 rm -f "$HERE/run_merger.log"
 
 cd "$HERE"
-# Deliberately start the synthetic two-BH file as fresh IC state. The
-# production code now refuses RestartFlag=2 for evolved Type-5 snapshots,
-# because output snapshots do not contain a restart-complete FFR state.
-mpirun -np "$NTASKS" "$ROOT/ArepoSeedTest" "$PARAM" 2>&1 | tee "$HERE/run_merger.log"
+# Deliberately start the synthetic two-BH hydrodynamic file as fresh IC state
+# with the dedicated snapshot-IC executable (no GENERATE_GAS_IN_ICS). The
+# production RestartFlag=2 guard remains intact for true evolved continuations.
+mpirun -np "$NTASKS" "$EXE" "$PARAM" 2>&1 | tee "$HERE/run_merger.log"

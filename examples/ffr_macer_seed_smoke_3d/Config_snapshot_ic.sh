@@ -1,0 +1,38 @@
+#!/bin/bash
+
+# FFR-MACER snapshot-IC regression configuration.
+# Same physics as the cosmological smoke test, but inputs already contain gas.
+# Deliberately separate from both Config.sh and the production Config_FFR_MACER.sh.
+
+SELFGRAVITY
+
+PMGRID=128
+RCUT=5.0
+
+NSOFTTYPES=2
+MULTIPLE_NODE_SOFTENING
+ADAPTIVE_HYDRO_SOFTENING
+
+TREE_BASED_TIMESTEPS
+
+REGULARIZE_MESH_CM_DRIFT
+REGULARIZE_MESH_CM_DRIFT_USE_SOUNDSPEED
+
+DOUBLEPRECISION=1
+DOUBLEPRECISION_FFTW
+OUTPUT_COORDINATES_IN_DOUBLEPRECISION
+NGB_TREE_DOUBLEPRECISION
+
+HAVE_HDF5
+
+BLACKHOLE_FFR
+
+FOF
+FOF_PRIMARY_LINK_TYPES=2
+FOF_SECONDARY_LINK_TYPES=1+32
+
+# Intentionally no GENERATE_GAS_IN_ICS: DF/merger synthetic ICs are made
+# from hydrodynamic AREPO snapshots and already contain Type-0 gas.
+
+PROCESS_TIMES_OF_OUTPUTLIST
+REDUCE_FLUSH
