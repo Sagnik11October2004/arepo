@@ -156,6 +156,13 @@ void loadrestart(void)
   /* However, during the run, some variables in the parameter
      file are allowed to be changed, if desired. These are copied here. */
   reread_params_after_loading_restart();
+
+#ifdef BLACKHOLE_FFR
+  /* Each restart file stores only the DF-cache entries owned by its rank.
+   * Rebuild the replicated ID-addressable cache after all ranks have finished
+   * loading so later domain migration remains transparent to the DF model. */
+  bh_ffr_df_restart_replicate();
+#endif
 }
 
 /*! \brief This function takes from the parameter file values that are allowed
@@ -1202,20 +1209,24 @@ static void contents_restart_file(int modus)
    * restart stream. Restart files written by an older FFR binary without this
    * marker must be resumed with that matching binary. */
   int ffr_restart_magic = 0x46465231; /* ASCII "FFR1" */
-  int ffr_restart_version = 1;
+  int ffr_restart_version = 2;
   int ffr_restart_record_size = (int)sizeof(struct bh_ffr_particle_data);
+  int ffr_df_restart_record_size = (int)sizeof(struct bh_ffr_df_restart_entry);
 
   in(&ffr_restart_magic, modus);
   in(&ffr_restart_version, modus);
   in(&ffr_restart_record_size, modus);
+  in(&ffr_df_restart_record_size, modus);
 
   if(modus == MODUS_READ)
-    if(ffr_restart_magic != 0x46465231 || ffr_restart_version != 1 ||
-       ffr_restart_record_size != (int)sizeof(struct bh_ffr_particle_data))
-      terminate("BH_FFR: incompatible native restart state magic=0x%x version=%d record_size=%d; expected magic=0x%x version=1 record_size=%zu. "
-                "Resume with the binary that wrote this restart or regenerate a compatible restart.",
-                ffr_restart_magic, ffr_restart_version, ffr_restart_record_size, 0x46465231,
-                sizeof(struct bh_ffr_particle_data));
+    if(ffr_restart_magic != 0x46465231 || ffr_restart_version != 2 ||
+       ffr_restart_record_size != (int)sizeof(struct bh_ffr_particle_data) ||
+       ffr_df_restart_record_size != (int)sizeof(struct bh_ffr_df_restart_entry))
+      terminate("BH_FFR: incompatible native restart state magic=0x%x version=%d BHP_size=%d DF_size=%d; "
+                "expected magic=0x%x version=2 BHP_size=%zu DF_size=%zu. Resume with the binary that wrote this restart "
+                "or regenerate a compatible restart.",
+                ffr_restart_magic, ffr_restart_version, ffr_restart_record_size, ffr_df_restart_record_size,
+                0x46465231, sizeof(struct bh_ffr_particle_data), sizeof(struct bh_ffr_df_restart_entry));
 
   if(modus == MODUS_WRITE)
     bh_ffr_validate_state("restart-write");
@@ -1226,6 +1237,36 @@ static void contents_restart_file(int modus)
 
   if(NumBHFFR > 0)
     byten(&BHP[0], NumBHFFR * sizeof(struct bh_ffr_particle_data), modus);
+
+  /* Preserve the transient DF environment too, but store only entries owned
+   * by this restart rank. The global replicated cache is rebuilt after all
+   * rank-local restart files have been loaded. For READCHECK/CHECK, the live
+   * state still supplies the same count used by the just-written file. */
+  int ffr_df_count = (modus == MODUS_READ) ? 0 : bh_ffr_df_restart_local_count();
+  in(&ffr_df_count, modus);
+
+  struct bh_ffr_df_restart_entry *ffr_df_records = NULL;
+  if(ffr_df_count < 0 || ffr_df_count > NumBHFFR)
+    terminate("BH_FFR: invalid native-restart local DF-cache count=%d NumBHFFR=%d", ffr_df_count, NumBHFFR);
+
+  if(ffr_df_count > 0)
+    {
+      ffr_df_records = malloc(ffr_df_count * sizeof(*ffr_df_records));
+      if(ffr_df_records == NULL)
+        terminate("BH_FFR: failed to allocate %d native-restart DF-cache records", ffr_df_count);
+
+      if(modus != MODUS_READ)
+        bh_ffr_df_restart_export_local(ffr_df_records, ffr_df_count);
+
+      byten(ffr_df_records, ffr_df_count * sizeof(*ffr_df_records), modus);
+
+      if(modus == MODUS_READ)
+        bh_ffr_df_restart_import_local(ffr_df_records, ffr_df_count);
+
+      free(ffr_df_records);
+    }
+  else if(modus == MODUS_READ)
+    bh_ffr_df_restart_import_local(NULL, 0);
 
   if(modus == MODUS_READ)
     bh_ffr_validate_state("restart-read");

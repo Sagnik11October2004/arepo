@@ -57,18 +57,9 @@ static struct bh_ffr_dm_result *DMResults;
 static int DMNTargets;
 static int DMQueryType;
 
-struct bh_ffr_df_cache_entry
-{
-  MyIDType ID;
-  integertime Ti;
-  MyDouble Pos[3];
-  double RhoDM;
-  double SigmaDM;
-  double MeanVel[3];
-  int Valid;
-};
+typedef struct bh_ffr_df_restart_entry bh_ffr_df_cache_entry;
 
-static struct bh_ffr_df_cache_entry *DFCache = NULL;
+static bh_ffr_df_cache_entry *DFCache = NULL;
 static int DFCacheCount = 0;
 
 typedef struct
@@ -450,7 +441,7 @@ static double bh_ffr_dm_density_code(const struct bh_ffr_dm_result *res)
   return rho;
 }
 
-static int bh_ffr_df_cache_is_usable(const struct bh_ffr_df_cache_entry *env, int p)
+static int bh_ffr_df_cache_is_usable(const bh_ffr_df_cache_entry *env, int p)
 {
   if(env == NULL || !env->Valid || env->ID != P[p].ID || env->Ti > All.Ti_Current)
     return 0;
@@ -477,7 +468,7 @@ static int bh_ffr_df_cache_is_usable(const struct bh_ffr_df_cache_entry *env, in
   return 1;
 }
 
-static double bh_ffr_df_timescale_from_environment(int p, const struct bh_ffr_df_cache_entry *env)
+static double bh_ffr_df_timescale_from_environment(int p, const bh_ffr_df_cache_entry *env)
 {
   if(!bh_ffr_df_cache_is_usable(env, p) || P[p].Mass <= 0 || !(env->SigmaDM > 0) || !(env->RhoDM > 0))
     return HUGE_VAL;
@@ -618,6 +609,92 @@ void bh_ffr_apply_cached_dynamical_friction(int p, double dt_code)
       }
 }
 
+static int bh_ffr_local_has_bh_id(MyIDType id)
+{
+  if(id == 0)
+    return 0;
+
+  for(int b = 0; b < NumBHFFR; b++)
+    if(BHP[b].ParticleID == id)
+      return 1;
+
+  return 0;
+}
+
+static void bh_ffr_validate_df_restart_entry(const bh_ffr_df_cache_entry *env, const char *where)
+{
+  if(env == NULL || env->ID == 0 || env->Ti < 0 || env->Ti > All.Ti_Current ||
+     (env->Valid != 0 && env->Valid != 1) || !isfinite(env->RhoDM) || env->RhoDM < 0 ||
+     !isfinite(env->SigmaDM) || env->SigmaDM < 0)
+    terminate("BH_FFR: invalid DF restart cache record in %s", where);
+
+  for(int k = 0; k < 3; k++)
+    if(!isfinite(env->Pos[k]) || !isfinite(env->MeanVel[k]))
+      terminate("BH_FFR: non-finite DF restart cache vector for ID=%llu in %s",
+                (unsigned long long)env->ID, where);
+}
+
+int bh_ffr_df_restart_local_count(void)
+{
+  int count = 0;
+
+  for(int n = 0; n < DFCacheCount; n++)
+    if(DFCache[n].Valid && bh_ffr_local_has_bh_id(DFCache[n].ID))
+      count++;
+
+  return count;
+}
+
+void bh_ffr_df_restart_export_local(struct bh_ffr_df_restart_entry *out, int count)
+{
+  if(count < 0 || (count > 0 && out == NULL))
+    terminate("BH_FFR: invalid DF restart export buffer count=%d", count);
+
+  int nout = 0;
+  for(int n = 0; n < DFCacheCount; n++)
+    if(DFCache[n].Valid && bh_ffr_local_has_bh_id(DFCache[n].ID))
+      {
+        if(nout >= count)
+          terminate("BH_FFR: DF restart export count changed while serializing");
+        bh_ffr_validate_df_restart_entry(&DFCache[n], "restart-export");
+        out[nout++] = DFCache[n];
+      }
+
+  if(nout != count)
+    terminate("BH_FFR: DF restart export count mismatch got=%d expected=%d", nout, count);
+}
+
+void bh_ffr_df_restart_import_local(const struct bh_ffr_df_restart_entry *in, int count)
+{
+  if(count < 0 || (count > 0 && in == NULL))
+    terminate("BH_FFR: invalid DF restart import buffer count=%d", count);
+
+  free(DFCache);
+  DFCache = NULL;
+  DFCacheCount = count;
+
+  if(count == 0)
+    return;
+
+  DFCache = calloc(count, sizeof(*DFCache));
+  if(DFCache == NULL)
+    terminate("BH_FFR: failed to allocate %d restored DF cache records", count);
+
+  for(int n = 0; n < count; n++)
+    {
+      bh_ffr_validate_df_restart_entry(&in[n], "restart-import");
+      if(!bh_ffr_local_has_bh_id(in[n].ID))
+        terminate("BH_FFR: restored DF cache ID=%llu is not a local Type-%d BH",
+                  (unsigned long long)in[n].ID, BH_FFR_PARTICLE_TYPE);
+
+      for(int j = 0; j < n; j++)
+        if(in[j].ID == in[n].ID)
+          terminate("BH_FFR: duplicate restored DF cache ID=%llu", (unsigned long long)in[n].ID);
+
+      DFCache[n] = in[n];
+    }
+}
+
 static void bh_ffr_replicate_df_cache_global(void)
 {
   const int local_count = DFCacheCount;
@@ -634,21 +711,21 @@ static void bh_ffr_replicate_df_cache_global(void)
   int total = 0;
   for(int task = 0; task < NTask; task++)
     {
-      if(counts[task] < 0 || counts[task] > INT_MAX / (int)sizeof(struct bh_ffr_df_cache_entry))
+      if(counts[task] < 0 || counts[task] > INT_MAX / (int)sizeof(bh_ffr_df_cache_entry))
         terminate("BH_FFR: invalid DF-cache count=%d on task=%d", counts[task], task);
 
       displs[task] = total;
       total += counts[task];
-      byte_counts[task] = counts[task] * (int)sizeof(struct bh_ffr_df_cache_entry);
-      byte_displs[task] = displs[task] * (int)sizeof(struct bh_ffr_df_cache_entry);
+      byte_counts[task] = counts[task] * (int)sizeof(bh_ffr_df_cache_entry);
+      byte_displs[task] = displs[task] * (int)sizeof(bh_ffr_df_cache_entry);
     }
 
-  struct bh_ffr_df_cache_entry *all =
-      calloc((total > 0 ? total : 1), sizeof(struct bh_ffr_df_cache_entry));
+  bh_ffr_df_cache_entry *all =
+      calloc((total > 0 ? total : 1), sizeof(bh_ffr_df_cache_entry));
   if(all == NULL)
     terminate("BH_FFR: failed to allocate replicated DF cache for %d BHs", total);
 
-  MPI_Allgatherv(DFCache, local_count * (int)sizeof(struct bh_ffr_df_cache_entry), MPI_BYTE,
+  MPI_Allgatherv(DFCache, local_count * (int)sizeof(bh_ffr_df_cache_entry), MPI_BYTE,
                  all, byte_counts, byte_displs, MPI_BYTE, MPI_COMM_WORLD);
 
   free(DFCache);
@@ -659,6 +736,11 @@ static void bh_ffr_replicate_df_cache_global(void)
   free(byte_counts);
   free(displs);
   free(counts);
+}
+
+void bh_ffr_df_restart_replicate(void)
+{
+  bh_ffr_replicate_df_cache_global();
 }
 
 static void bh_ffr_dm_self_test(void)

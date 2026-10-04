@@ -109,6 +109,24 @@ struct bh_ffr_domain_exchange_context
   int NumReceived;
 };
 
+/*! Restart record for the transient dynamical-friction environment.
+ *
+ * This is intentionally separate from bh_ffr_particle_data so the frozen BHP
+ * ABI remains unchanged. Native RestartFlag=1 stores only cache entries owned
+ * by the local rank, then reconstructs the replicated ID-addressable cache
+ * once all rank-local restart files have been read.
+ */
+struct bh_ffr_df_restart_entry
+{
+  MyIDType ID;
+  integertime Ti;
+  MyDouble Pos[3];
+  double RhoDM;
+  double SigmaDM;
+  double MeanVel[3];
+  int Valid;
+};
+
 void bh_ffr_allocate_state(int count);
 void bh_ffr_free_state(void);
 void bh_ffr_initialize_particles(void);
@@ -124,6 +142,10 @@ void bh_ffr_refresh_gas_neighbour_cache(void);
 void bh_ffr_prepare_dm_environment_search(void);
 void bh_ffr_apply_cached_dynamical_friction(int p, double dt_code);
 double bh_ffr_get_cached_dynamical_friction_timescale_code(int p);
+int bh_ffr_df_restart_local_count(void);
+void bh_ffr_df_restart_export_local(struct bh_ffr_df_restart_entry *out, int count);
+void bh_ffr_df_restart_import_local(const struct bh_ffr_df_restart_entry *in, int count);
+void bh_ffr_df_restart_replicate(void);
 void bh_ffr_merge_close_black_holes(void);
 void bh_ffr_capture_resolved_gas(void);
 void bh_ffr_capture_self_test(void);
