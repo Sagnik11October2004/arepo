@@ -20,6 +20,7 @@ struct bh_ffr_capture_result
   MyDouble CapturedMass;
   MyDouble CapturedRate;
   MyDouble CapturedMomentum[3];
+  MyDouble CapturedKineticEnergy;
   MyDouble CoherenceIncrement[3];
   int MinHydroTimeBin;
 };
@@ -49,6 +50,7 @@ typedef struct
   MyDouble CapturedMass;
   MyDouble CapturedRate;
   MyDouble CapturedMomentum[3];
+  MyDouble CapturedKineticEnergy;
   MyDouble CoherenceIncrement[3];
   int MinHydroTimeBin;
 } data_out;
@@ -141,6 +143,7 @@ static void out2particle(data_out *out, int target, int mode)
     {
       res->CapturedMass = out->CapturedMass;
       res->CapturedRate = out->CapturedRate;
+      res->CapturedKineticEnergy = out->CapturedKineticEnergy;
       for(int k = 0; k < 3; k++)
         {
           res->CapturedMomentum[k] = out->CapturedMomentum[k];
@@ -152,6 +155,7 @@ static void out2particle(data_out *out, int target, int mode)
     {
       res->CapturedMass += out->CapturedMass;
       res->CapturedRate += out->CapturedRate;
+      res->CapturedKineticEnergy += out->CapturedKineticEnergy;
       for(int k = 0; k < 3; k++)
         {
           res->CapturedMomentum[k] += out->CapturedMomentum[k];
@@ -303,8 +307,15 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
                   (unsigned long long)P[j].ID);
       out.CapturedRate += share / dt_gas;
 
+      double vphys2 = 0.0;
+      const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
       for(int k = 0; k < 3; k++)
-        out.CapturedMomentum[k] += share * P[j].Vel[k];
+        {
+          out.CapturedMomentum[k] += share * P[j].Vel[k];
+          const double vphys = P[j].Vel[k] / a;
+          vphys2 += vphys * vphys;
+        }
+      out.CapturedKineticEnergy += 0.5 * share * vphys2;
 
       double xtmp, ytmp, ztmp;
       double dr[3] = {NEAREST_X(P[j].Pos[0] - bh->Pos[0]), NEAREST_Y(P[j].Pos[1] - bh->Pos[1]),
@@ -466,9 +477,16 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
                   P[p].Mass, expected_dyn_mass);
 
       const double old_dyn_mass = P[p].Mass;
+      const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
       double old_momentum[3];
+      double old_vphys2 = 0.0;
       for(int k = 0; k < 3; k++)
-        old_momentum[k] = old_dyn_mass * P[p].Vel[k];
+        {
+          old_momentum[k] = old_dyn_mass * P[p].Vel[k];
+          const double vphys = P[p].Vel[k] / a;
+          old_vphys2 += vphys * vphys;
+        }
+      const double old_bh_kinetic = 0.5 * old_dyn_mass * old_vphys2;
 
       BHP[b].ReservoirMass += dm;
       for(int k = 0; k < 3; k++)
@@ -478,8 +496,31 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
       if(!(P[p].Mass > 0) || !isfinite(P[p].Mass))
         terminate("BH_FFR: invalid post-capture dynamical mass for ID=%llu", (unsigned long long)P[p].ID);
 
+      double new_vphys2 = 0.0;
       for(int k = 0; k < 3; k++)
-        P[p].Vel[k] = (old_momentum[k] + res->CapturedMomentum[k]) / P[p].Mass;
+        {
+          P[p].Vel[k] = (old_momentum[k] + res->CapturedMomentum[k]) / P[p].Mass;
+          const double vphys = P[p].Vel[k] / a;
+          new_vphys2 += vphys * vphys;
+        }
+
+      const double new_bh_kinetic = 0.5 * P[p].Mass * new_vphys2;
+      double capture_dissipation = old_bh_kinetic + res->CapturedKineticEnergy - new_bh_kinetic;
+      const double kinetic_scale =
+          fmax(fabs(old_bh_kinetic) + fabs(res->CapturedKineticEnergy) + fabs(new_bh_kinetic), 1.0e-30);
+      if(capture_dissipation < 0 && capture_dissipation > -5.0e-8 * kinetic_scale)
+        capture_dissipation = 0.0;
+      if(!isfinite(capture_dissipation) || capture_dissipation < 0)
+        terminate("BH_FFR: negative/non-finite unresolved capture dissipation ID=%llu Ediss=%g scale=%g",
+                  (unsigned long long)P[p].ID, capture_dissipation, kinetic_scale);
+
+      if(dm > 0)
+        {
+          const double eerg = capture_dissipation * All.UnitEnergy_in_cgs / All.HubbleParam;
+          printf("BH_FFR: capture dissipation ID=%llu task=%d dM=%g Ediss=%g erg\n",
+                 (unsigned long long)P[p].ID, ThisTask, dm, eerg);
+          fflush(stdout);
+        }
 
       double cnorm2 = 0;
       for(int k = 0; k < 3; k++)
