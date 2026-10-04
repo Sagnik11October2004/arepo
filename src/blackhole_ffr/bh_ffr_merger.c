@@ -7,8 +7,6 @@
 #include "blackhole_ffr.h"
 #include "../main/proto.h"
 
-#define BH_FFR_MERGER_TOMBSTONE_TYPE 3
-
 /*
  * Iteration 11: simple unresolved BH mergers.
  *

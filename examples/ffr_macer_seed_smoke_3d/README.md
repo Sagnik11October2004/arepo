@@ -168,20 +168,20 @@ from runtime diagnostics. If fewer than BHDMNeighbours dark-matter particles exi
 
 Iteration 11 adds a deliberately simple orbital sub-grid layer without changing the persistent BHP layout.
 
-The dynamical-friction term reuses the exact nearest-DM sample from Iteration 10. It estimates the local DM density from the outermost sampled neighbour, evaluates the standard Chandrasekhar factor with a fixed Coulomb logarithm lnLambda=3, and damps the BH velocity relative to the local mean DM velocity. The exact finite-step damping is capped at 50 percent per full-tree refresh so the kick cannot overshoot the local streaming velocity.
+The dynamical-friction term reuses the exact nearest-DM sample from Iteration 10. The local mean and one-dimensional dispersion are mass-weighted, so multimass zoom particles do not bias the estimate. The transient DM environment is cached by BH ID, remains usable between full-tree refreshes while the BH has moved less than 0.25 Rfb, and is replicated across MPI ranks so domain migration does not silently disable drag. The gravity timestep also resolves BHInternalTimestepFactor times the cached Chandrasekhar damping time; the 50 percent kick cap remains only an emergency safeguard.
 
     NTASKS=16 ./run_df_restart.sh
     python3 verify_df.py
 
-The merger rule is intentionally simple: synchronized BHs merge whenever their two proper accretion apertures overlap, d < 2 R_acc. The lowest particle ID survives. Dynamical mass and linear momentum are conserved; BH mass, reservoir mass, wind mass/momentum/energy buffer, jet energy buffer and coherence are combined. Instantaneous rates/powers are reset and recomputed on the following step. The loser uses AREPO's normal deleted-particle marker (ID=0, Mass=0).
+The merger rule is intentionally simple: on full synchronization points, all live BHs are considered and disjoint nearest pairs merge whenever their two proper accretion apertures overlap, d < 2 R_acc. The lowest particle ID survives. Dynamical mass and linear momentum are conserved; BH mass, reservoir mass, wind mass/momentum/energy buffer, jet energy buffer and coherence are combined. Disc/jet directions fall back to the more massive progenitor when the merged directional vectors nearly cancel. Coalescence occurs after each progenitor's elapsed reservoir/DF update but before resolved wind/jet packets. The loser uses a temporary ID=0, Mass=0 Type-3 tombstone, which snapshot I/O excludes and the next normal domain rearrangement physically compacts.
 
-The synthetic merger helper duplicates the one-BH Iteration-10 snapshot at a 0.05 proper separation and restarts from it:
+The synthetic merger helper duplicates the one-BH Iteration-10 snapshot at a 0.05 proper separation and launches the result as a fresh HDF5 IC at that scale factor. This is deliberate: evolved Type-5 HDF5 snapshots are not restart-complete for FFR state and RestartFlag=2 now refuses them rather than silently destroying reservoir/buffer/directional state:
 
     NTASKS=16 ./run_merger_restart.sh
     python3 verify_merger.py
     python3 inspect_bh.py output_merger
 
-The version-1 merger deliberately has no boundness, relative-velocity, binary-hardening, gravitational-wave delay or recoil criterion.
+The version-1 merger deliberately has no boundness, relative-velocity, binary-hardening, gravitational-wave delay or recoil criterion. Native RestartFlag=1 remains the supported continuation path for evolved FFR-MACER simulations; RestartFlag=2 is reserved for BH-free/pre-seed snapshots or deliberately fresh synthetic IC tests.
 
 ## Why the boosted sigma8?
 

@@ -81,6 +81,10 @@
 #include "../gitversion/version.h"
 #include "../mesh/voronoi/voronoi.h"
 
+#ifdef BLACKHOLE_FFR
+#include "../blackhole_ffr/blackhole_ffr.h"
+#endif
+
 #ifdef HAVE_HDF5
 #include <hdf5.h>
 void write_header_attributes_in_hdf5(hid_t handle);
@@ -96,6 +100,14 @@ static char alternative_fname[MAXLEN_PATH];
 static int n_type[NTYPES]; /**< contains the local (for a single task) number of particles of each type in the snapshot file */
 static long long ntot_type_all[NTYPES]; /**< contains the global number of particles of each type in the snapshot file */
 static int subbox_dump = 0;
+
+#ifdef BLACKHOLE_FFR
+static int io_is_ffr_merger_tombstone(int p)
+{
+  return p >= 0 && p < NumPart && P[p].Type == BH_FFR_MERGER_TOMBSTONE_TYPE &&
+         P[p].ID == 0 && P[p].Mass == 0;
+}
+#endif
 
 /*! \brief Function for registering an output field.
  *
@@ -412,6 +424,10 @@ void savepositions(int num, int subbox_flag)
 
           for(n = 0; n < NumPart; n++)
             {
+#ifdef BLACKHOLE_FFR
+              if(io_is_ffr_merger_tombstone(n))
+                continue;
+#endif
               n_type[P[n].Type]++;
             }
 
@@ -597,7 +613,11 @@ void fill_write_buffer(void *buffer, enum iofields blocknr, int *startindex, int
       /* SUBBOX_SNAPSHOTS specialized output */
 
       /* normal particle output */
-      if(P[pindex].Type == type)
+      if(P[pindex].Type == type
+#ifdef BLACKHOLE_FFR
+         && !io_is_ffr_merger_tombstone(pindex)
+#endif
+        )
         {
           if(IO_Fields[field].io_func)
             {

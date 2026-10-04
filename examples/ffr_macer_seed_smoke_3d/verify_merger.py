@@ -105,11 +105,19 @@ for path,n in post:
         if not math.isclose(mass, exp["merged_mass"], rel_tol=8e-6, abs_tol=1e-12):
             raise SystemExit(f"FAIL: post-merger mass {mass} != expected {exp['merged_mass']}")
 
+        for key in f:
+            if not key.startswith("PartType") or "ParticleIDs" not in f[key]:
+                continue
+            ids = np.asarray(f[key]["ParticleIDs"][:], dtype=np.uint64)
+            masses = np.asarray(f[key]["Masses"][:], dtype=float)
+            if np.any((ids == 0) & (masses == 0)):
+                raise SystemExit(f"FAIL: {path} leaked an FFR merger tombstone into {key}")
+
 print()
 print("PASS: FFR-MACER Iteration-11 merger test")
 print("  two overlapping BHs collapsed to one deterministic survivor")
 print("  merger radius is exactly 2 * BHAccretionRadius")
 print("  dynamical mass is conserved")
 print("  linear momentum is conserved at the runtime merger transaction")
-print("  consumed BH tombstone is physically compacted before the next FoF pass")
+print("  consumed BH tombstone is excluded from snapshots and physically compacted later")
 print("  post-merger BHP dynamical-mass ledger closes")

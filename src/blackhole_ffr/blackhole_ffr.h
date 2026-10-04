@@ -4,6 +4,11 @@
 #include "../main/allvars.h"
 
 #define BH_FFR_PARTICLE_TYPE 5
+/* Merger losers are temporarily retyped to a collisionless species so they
+ * leave the live Type-5 set immediately, then compacted at the next normal
+ * domain rearrangement. Snapshot I/O explicitly filters this exact
+ * ID=0/Mass=0 tombstone signature. */
+#define BH_FFR_MERGER_TOMBSTONE_TYPE 3
 /* Version-1 cosmological DM selector. The current AREPO test/production
  * configuration uses Type-1 as dark matter. Keep this compile-time rather
  * than adding an All/BHP field so native restart layouts remain unchanged. */
