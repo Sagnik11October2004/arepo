@@ -48,7 +48,13 @@ import h5py, math, sys
 with h5py.File(sys.argv[1],"r") as f:
     a=float(f['Header'].attrs['Time'])
 tmax=a+8.0e-6
-maxstep=0.1*math.log(tmax/a)
+# Satisfy both the cosmological dln(a) timeline and AREPO's startup check
+# MaxSizeTimestep < TimeMax-TimeBegin, which compares the raw parameter values.
+dloga=math.log(tmax/a)
+da=tmax-a
+maxstep=0.1*min(dloga, da)
+if not (0.0 < maxstep < da):
+    raise SystemExit(f"invalid short-run MaxSizeTimestep={maxstep} for da={da}")
 print(f"{a:.15f} {tmax:.15f} {maxstep:.15e}")
 PY
 )"
