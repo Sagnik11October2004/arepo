@@ -57,6 +57,8 @@
 #USE_SFR                       # Star formation model, turning dense gas into collisionless partices
 #SFR_KEEP_CELLS                # Do not distroy cell out of which a star has formed
 #BLACKHOLE_FFR                 # FFR-MACER Type-5 black-hole accretion/feedback module
+#BH_FFR_DM_TYPEMASK=2          # FFR DM particle-type bitmask; default is Type 1 only (=2). Example Types 1+2+3: 2+4+8
+#BH_FFR_DM_MAX_NEIGHBOURS=64  # Compile-time maximum nearest-DM sample/payload; runtime BHDMNeighbours must not exceed this
 
 #--------------------------------------- Gravity treatment; default: no gravity
 #SELFGRAVITY                   # gravitational intraction between simulation particles/cells
