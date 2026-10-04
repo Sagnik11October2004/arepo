@@ -44,6 +44,10 @@
 #include "../mesh/voronoi/voronoi.h"
 #include "domain.h"
 
+#ifdef BLACKHOLE_FFR
+#include "../blackhole_ffr/blackhole_ffr.h"
+#endif
+
 /*! \brief Gets rid of inactive/eliminated cells and particles.
  *
  *  Cells that were de-refined or turned into star particles are kept in the
@@ -98,7 +102,7 @@ void domain_rearrange_particle_sequence(void)
   int bh_ffr_count_elim = 0;
 
   for(int i = NumGas; i < NumPart; i++)
-    if(P[i].Mass == 0 && P[i].ID == 0)
+    if(P[i].Type == BH_FFR_MERGER_TOMBSTONE_TYPE && P[i].Mass == 0 && P[i].ID == 0)
       {
         const int last = NumPart - 1;
 

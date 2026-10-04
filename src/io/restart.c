@@ -1196,6 +1196,27 @@ static void contents_restart_file(int modus)
   byten(&P[0], NumPart * sizeof(struct particle_data), modus);
 
 #ifdef BLACKHOLE_FFR
+  /* BHP is intentionally raw-serialized for exact native RestartFlag=1
+   * continuation. Guard that ABI explicitly so a future field/type/layout
+   * change fails cleanly instead of silently shifting the remainder of the
+   * restart stream. Restart files written by an older FFR binary without this
+   * marker must be resumed with that matching binary. */
+  int ffr_restart_magic = 0x46465231; /* ASCII "FFR1" */
+  int ffr_restart_version = 1;
+  int ffr_restart_record_size = (int)sizeof(struct bh_ffr_particle_data);
+
+  in(&ffr_restart_magic, modus);
+  in(&ffr_restart_version, modus);
+  in(&ffr_restart_record_size, modus);
+
+  if(modus == MODUS_READ)
+    if(ffr_restart_magic != 0x46465231 || ffr_restart_version != 1 ||
+       ffr_restart_record_size != (int)sizeof(struct bh_ffr_particle_data))
+      terminate("BH_FFR: incompatible native restart state magic=0x%x version=%d record_size=%d; expected magic=0x%x version=1 record_size=%zu. "
+                "Resume with the binary that wrote this restart or regenerate a compatible restart.",
+                ffr_restart_magic, ffr_restart_version, ffr_restart_record_size, 0x46465231,
+                sizeof(struct bh_ffr_particle_data));
+
   if(modus == MODUS_WRITE)
     bh_ffr_validate_state("restart-write");
 

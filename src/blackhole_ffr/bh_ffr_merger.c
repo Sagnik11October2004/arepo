@@ -19,7 +19,7 @@
  * Disjoint deterministic nearest pairs are collapsed onto the lower particle
  * ID; overlap chains are not merged transitively. The survivor keeps its
  * position, while its velocity is
- * the exact dynamical-mass-weighted mean. Persistent unresolved mass/energy
+ * the exact dynamical-mass-weighted mean and its position is moved to the\n * periodic dynamical-mass center of mass. Persistent unresolved mass/energy
  * reservoirs are summed. The loser is marked with AREPO's standard deleted
  * particle convention (ID=0, Mass=0) and removed from the gravity timebin.
  *
@@ -108,7 +108,7 @@ static void bh_ffr_remove_active_gravity_particle(int p)
 }
 
 static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, const int *parent, int root, int nall,
-                                      struct bh_ffr_particle_data *merged, double vel[3], int *nmembers)
+                                      struct bh_ffr_particle_data *merged, double pos[3], double vel[3], int *nmembers)
 {
   memset(merged, 0, sizeof(*merged));
   *nmembers = 0;
@@ -120,6 +120,7 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
   merged->AccretionState = BH_FFR_STATE_UNINITIALIZED;
 
   double dynmass = 0.0;
+  double pos_offset[3] = {0, 0, 0};
   double jetvec[3] = {0, 0, 0};
   double jet_weight = 0.0;
   double sigma_weight = 0.0;
@@ -165,9 +166,15 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
            (!(merged->JetThresholdEnergy > 0) || s->JetThresholdEnergy < merged->JetThresholdEnergy))
           merged->JetThresholdEnergy = s->JetThresholdEnergy;
 
+        MyDouble xtmp, ytmp, ztmp;
+        const double dr[3] = {NEAREST_X(all[i].Pos[0] - survivor->Pos[0]),
+                              NEAREST_Y(all[i].Pos[1] - survivor->Pos[1]),
+                              NEAREST_Z(all[i].Pos[2] - survivor->Pos[2])};
+
         for(int k = 0; k < 3; k++)
           {
             merged->Coherence[k] += s->Coherence[k];
+            pos_offset[k] += w * dr[k];
             vel[k] += w * all[i].Vel[k];
             jetvec[k] += s->BHMass * s->JetDir[k];
           }
@@ -186,7 +193,15 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
     terminate("BH_FFR: invalid merged dynamical mass=%g", dynmass);
 
   for(int k = 0; k < 3; k++)
-    vel[k] /= dynmass;
+    {
+      pos[k] = survivor->Pos[k] + pos_offset[k] / dynmass;
+      vel[k] /= dynmass;
+    }
+
+  MyDouble xtmp, ytmp, ztmp;
+  pos[0] = WRAP_X(pos[0]);
+  pos[1] = WRAP_Y(pos[1]);
+  pos[2] = WRAP_Z(pos[2]);
 
   const double ledger = merged->BHMass + merged->ReservoirMass + merged->WindMassBuffer;
   if(fabs(ledger - dynmass) > 2.0e-10 * fmax(fabs(dynmass), 1.0e-30))
@@ -369,9 +384,10 @@ void bh_ffr_merge_close_black_holes(void)
       global_mergers += nmembers - 1;
 
       struct bh_ffr_particle_data merged;
+      double merged_pos[3] = {0, 0, 0};
       double merged_vel[3] = {0, 0, 0};
       int checked_members = 0;
-      bh_ffr_build_merged_state(all, parent, root, nall, &merged, merged_vel, &checked_members);
+      bh_ffr_build_merged_state(all, parent, root, nall, &merged, merged_pos, merged_vel, &checked_members);
       if(checked_members != nmembers)
         terminate("BH_FFR: merger component count mismatch %d != %d", checked_members, nmembers);
 
@@ -403,7 +419,10 @@ void bh_ffr_merge_close_black_holes(void)
           BHP[bs] = merged;
           P[ps].Mass = old_total_mass;
           for(int k = 0; k < 3; k++)
-            P[ps].Vel[k] = merged_vel[k];
+            {
+              P[ps].Pos[k] = merged_pos[k];
+              P[ps].Vel[k] = merged_vel[k];
+            }
 
           double dp2 = 0.0;
           for(int k = 0; k < 3; k++)

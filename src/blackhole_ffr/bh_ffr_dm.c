@@ -462,10 +462,19 @@ static int bh_ffr_df_cache_is_usable(const struct bh_ffr_df_cache_entry *env, in
   const double dz = GRAVITY_NEAREST_Z(P[p].Pos[2] - env->Pos[2]);
   const double displacement = sqrt(dx * dx + dy * dy + dz * dz) * a;
 
-  if(!isfinite(displacement))
+  if(!isfinite(displacement) || displacement > 0.25 * All.BHFeedbackRadius)
     return 0;
 
-  return displacement <= 0.25 * All.BHFeedbackRadius;
+  /* A stationary BH can otherwise reuse an arbitrarily old environment.
+   * Use the same exposed internal-accuracy factor that limits the reservoir,
+   * feedback and DF timesteps to bound cache age without adding persistent
+   * state or a new calibration parameter. */
+  const double age_myr = bh_ffr_integer_interval_to_physical_myr(env->Ti, All.Ti_Current);
+  const double max_age_myr = All.BHInternalTimestepFactor * All.BHDiskTimeMyr;
+  if(!isfinite(age_myr) || !isfinite(max_age_myr) || !(max_age_myr > 0) || age_myr > max_age_myr)
+    return 0;
+
+  return 1;
 }
 
 static double bh_ffr_df_timescale_from_environment(int p, const struct bh_ffr_df_cache_entry *env)
