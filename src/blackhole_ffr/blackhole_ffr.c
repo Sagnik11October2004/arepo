@@ -198,14 +198,14 @@ void bh_ffr_validate_state(const char *where)
            * the live transaction itself checks exact closure unconditionally. */
           if(BHP[b].MdotHorizon > 0 || BHP[b].MdotWind > 0)
             {
-              const double inner_rate_scale = fmax(1.0, BHP[b].MdotProcessed);
+              const double inner_rate_scale = fmax(fabs(BHP[b].MdotProcessed), 1.0e-30);
               if(fabs(BHP[b].MdotProcessed - (BHP[b].MdotHorizon + BHP[b].MdotWind)) > 2.0e-10 * inner_rate_scale)
                 terminate("BH_FFR: inner-flow rate partition mismatch for particle ID=%llu in %s: proc=%g H=%g wind=%g",
                           (unsigned long long)P[i].ID, where, BHP[b].MdotProcessed, BHP[b].MdotHorizon, BHP[b].MdotWind);
             }
 
           const double expected_dyn_mass = BHP[b].BHMass + BHP[b].ReservoirMass + BHP[b].WindMassBuffer;
-          const double dyn_scale = dmax(1.0, dmax(fabs(expected_dyn_mass), fabs(P[i].Mass)));
+          const double dyn_scale = dmax(1.0e-30, dmax(fabs(expected_dyn_mass), fabs(P[i].Mass)));
           if(!isfinite(P[i].Mass) || P[i].Mass < 0 || fabs(P[i].Mass - expected_dyn_mass) > 1.0e-10 * dyn_scale)
             terminate("BH_FFR: dynamical-mass mismatch for particle ID=%llu in %s: P.Mass=%g components=%g",
                       (unsigned long long)P[i].ID, where, P[i].Mass, expected_dyn_mass);

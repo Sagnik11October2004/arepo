@@ -606,11 +606,11 @@ static void bh_ffr_feedback_commit_packets(void)
       BHP[b].WindMassBuffer = ev->MassBefore - ev->PacketMass;
       BHP[b].WindMomentumBuffer = ev->MomentumBefore - ev->PacketMomentum;
 
-      if(BHP[b].WindEnergyBuffer < 0 && BHP[b].WindEnergyBuffer > -3.0e-12 * fmax(1.0, ev->EnergyBefore))
+      if(BHP[b].WindEnergyBuffer < 0 && BHP[b].WindEnergyBuffer > -3.0e-12 * fmax(fabs(ev->EnergyBefore), 1.0e-30))
         BHP[b].WindEnergyBuffer = 0.0;
-      if(BHP[b].WindMassBuffer < 0 && BHP[b].WindMassBuffer > -3.0e-12 * fmax(1.0, ev->MassBefore))
+      if(BHP[b].WindMassBuffer < 0 && BHP[b].WindMassBuffer > -3.0e-12 * fmax(fabs(ev->MassBefore), 1.0e-30))
         BHP[b].WindMassBuffer = 0.0;
-      if(BHP[b].WindMomentumBuffer < 0 && BHP[b].WindMomentumBuffer > -3.0e-12 * fmax(1.0, ev->MomentumBefore))
+      if(BHP[b].WindMomentumBuffer < 0 && BHP[b].WindMomentumBuffer > -3.0e-12 * fmax(fabs(ev->MomentumBefore), 1.0e-30))
         BHP[b].WindMomentumBuffer = 0.0;
 
       if(BHP[b].WindEnergyBuffer < 0 || BHP[b].WindMassBuffer < 0 || BHP[b].WindMomentumBuffer < 0)

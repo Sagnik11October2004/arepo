@@ -681,7 +681,7 @@ static void bh_ffr_jet_commit_packets(void)
                   pnorm, ev->Q);
 
       BHP[b].JetEnergyBuffer = ev->EnergyBefore - ev->PacketEnergy;
-      if(BHP[b].JetEnergyBuffer < 0 && BHP[b].JetEnergyBuffer > -3.0e-12 * fmax(1.0, ev->EnergyBefore))
+      if(BHP[b].JetEnergyBuffer < 0 && BHP[b].JetEnergyBuffer > -3.0e-12 * fmax(fabs(ev->EnergyBefore), 1.0e-30))
         BHP[b].JetEnergyBuffer = 0.0;
       if(BHP[b].JetEnergyBuffer < 0)
         terminate("BH_FFR: negative jet buffer after packet for ID=%llu", (unsigned long long)P[p].ID);

@@ -429,13 +429,13 @@ static void bh_ffr_check_capture_ledger(double local_removed_mass, const double 
   double out[8];
   MPI_Allreduce(in, out, 8, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-  const double mass_scale = dmax(1.0, dmax(fabs(out[0]), fabs(out[1])));
+  const double mass_scale = dmax(1.0e-30, dmax(fabs(out[0]), fabs(out[1])));
   if(fabs(out[0] - out[1]) > 1.0e-9 * mass_scale)
     terminate("BH_FFR: capture mass ledger failed removed=%g captured=%g", out[0], out[1]);
 
   for(int k = 0; k < 3; k++)
     {
-      const double pscale = dmax(1.0, dmax(fabs(out[2 + k]), fabs(out[5 + k])));
+      const double pscale = dmax(1.0e-30, dmax(fabs(out[2 + k]), fabs(out[5 + k])));
       if(fabs(out[2 + k] - out[5 + k]) > 1.0e-9 * pscale)
         terminate("BH_FFR: capture momentum ledger failed component=%d removed=%g captured=%g", k, out[2 + k], out[5 + k]);
     }
@@ -460,7 +460,7 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
         terminate("BH_FFR: invalid captured mass=%g for particle ID=%llu", dm, (unsigned long long)P[p].ID);
 
       const double expected_dyn_mass = BHP[b].BHMass + BHP[b].ReservoirMass + BHP[b].WindMassBuffer;
-      const double dyn_scale = dmax(1.0, dmax(fabs(expected_dyn_mass), fabs(P[p].Mass)));
+      const double dyn_scale = dmax(1.0e-30, dmax(fabs(expected_dyn_mass), fabs(P[p].Mass)));
       if(fabs(P[p].Mass - expected_dyn_mass) > 1.0e-10 * dyn_scale)
         terminate("BH_FFR: pre-capture dynamical-mass mismatch ID=%llu P.Mass=%g components=%g", (unsigned long long)P[p].ID,
                   P[p].Mass, expected_dyn_mass);

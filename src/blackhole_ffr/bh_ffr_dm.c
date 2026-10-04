@@ -1,3 +1,4 @@
+#include <limits.h>
 #include <math.h>
 #include <mpi.h>
 #include <stdio.h>
@@ -19,8 +20,10 @@
  *
  *   sigma_DM^2 = < |v - <v>|^2 > / 3 .
  *
- * SigmaDM is then cached in BHP[] until the next full-tree update.  No extra
- * persistent cache metadata is added, preserving the native BHP restart ABI.
+ * SigmaDM is then cached in BHP[] until the next full-tree update. The
+ * transient DF environment is replicated by particle ID after each full-tree
+ * refresh so later domain migration does not disable drag. No extra persistent
+ * cache metadata is added, preserving the native BHP restart ABI.
  *
  * If fewer than BHDMNeighbours DM particles exist globally for a target, the
  * same gravity-tree query is repeated for gas and its nearest sample is used
@@ -606,6 +609,49 @@ void bh_ffr_apply_cached_dynamical_friction(int p, double dt_code)
       }
 }
 
+static void bh_ffr_replicate_df_cache_global(void)
+{
+  const int local_count = DFCacheCount;
+
+  int *counts = malloc(NTask * sizeof(int));
+  int *displs = malloc(NTask * sizeof(int));
+  int *byte_counts = malloc(NTask * sizeof(int));
+  int *byte_displs = malloc(NTask * sizeof(int));
+  if(counts == NULL || displs == NULL || byte_counts == NULL || byte_displs == NULL)
+    terminate("BH_FFR: failed to allocate DF-cache MPI counts");
+
+  MPI_Allgather(&local_count, 1, MPI_INT, counts, 1, MPI_INT, MPI_COMM_WORLD);
+
+  int total = 0;
+  for(int task = 0; task < NTask; task++)
+    {
+      if(counts[task] < 0 || counts[task] > INT_MAX / (int)sizeof(struct bh_ffr_df_cache_entry))
+        terminate("BH_FFR: invalid DF-cache count=%d on task=%d", counts[task], task);
+
+      displs[task] = total;
+      total += counts[task];
+      byte_counts[task] = counts[task] * (int)sizeof(struct bh_ffr_df_cache_entry);
+      byte_displs[task] = displs[task] * (int)sizeof(struct bh_ffr_df_cache_entry);
+    }
+
+  struct bh_ffr_df_cache_entry *all =
+      calloc((total > 0 ? total : 1), sizeof(struct bh_ffr_df_cache_entry));
+  if(all == NULL)
+    terminate("BH_FFR: failed to allocate replicated DF cache for %d BHs", total);
+
+  MPI_Allgatherv(DFCache, local_count * (int)sizeof(struct bh_ffr_df_cache_entry), MPI_BYTE,
+                 all, byte_counts, byte_displs, MPI_BYTE, MPI_COMM_WORLD);
+
+  free(DFCache);
+  DFCache = all;
+  DFCacheCount = total;
+
+  free(byte_displs);
+  free(byte_counts);
+  free(displs);
+  free(counts);
+}
+
 static void bh_ffr_dm_self_test(void)
 {
   struct bh_ffr_dm_result res;
@@ -752,6 +798,12 @@ void bh_ffr_prepare_dm_environment_search(void)
              (unsigned long long)P[p].ID, ThisTask, source, use->Count, All.BHDMNeighbours, BHP[b].SigmaDM, rmax_proper);
       fflush(stdout);
     }
+
+  /* Make the transient environment ID-addressable on every rank. A BH may
+   * migrate at a later domain decomposition before the next full gravity-tree
+   * refresh; replicated cache entries preserve the same DF environment
+   * without adding restart-persistent fields to BHP[]. */
+  bh_ffr_replicate_df_cache_global();
 
   if(gas != NULL)
     myfree(gas);

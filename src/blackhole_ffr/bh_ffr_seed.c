@@ -263,7 +263,7 @@ static int bh_ffr_seed_one_candidate(const struct bh_ffr_seed_candidate *candida
   MPI_Allreduce(&local_available, &available, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(&local_r2max, &r2max, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD);
 
-  const double mass_tol = 1.0e-12 * dmax(1.0, seed_mass_code);
+  const double mass_tol = 1.0e-12 * dmax(fabs(seed_mass_code), 1.0e-30);
   if(available + mass_tol < need)
     {
       myfree(donors);
@@ -375,7 +375,7 @@ static int bh_ffr_seed_one_candidate(const struct bh_ffr_seed_candidate *candida
   MPI_Allreduce(&local_removed_mass, &removed_mass, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(local_removed_momentum, removed_momentum, 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
-  if(fabs(removed_mass - seed_mass_code) > 1.0e-9 * dmax(1.0, seed_mass_code))
+  if(fabs(removed_mass - seed_mass_code) > 1.0e-9 * dmax(fabs(seed_mass_code), 1.0e-30))
     terminate("BH_FFR: seed mass ledger failed group=%d removed=%g target=%g", candidate->GrNr, removed_mass, seed_mass_code);
 
   if(ThisTask == central.Task)

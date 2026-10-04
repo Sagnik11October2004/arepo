@@ -242,7 +242,7 @@ void bh_ffr_apply_inner_flow(int p, double processable_mass, double dt_code)
         terminate("BH_FFR: unphysical accretion state=%d in inner-flow update", BHP[b].AccretionState);
     }
 
-  if(mdot_h < 0 && mdot_h > -1.0e-14 * fmax(1.0, mdot_processed))
+  if(mdot_h < 0 && mdot_h > -1.0e-14 * fmax(fabs(mdot_processed), 1.0e-30))
     mdot_h = 0.0;
   if(mdot_h > mdot_processed && mdot_h < mdot_processed * (1.0 + 1.0e-13))
     mdot_h = mdot_processed;
@@ -267,7 +267,7 @@ void bh_ffr_apply_inner_flow(int p, double processable_mass, double dt_code)
   double delta_h = 0.0;
   if(mdot_processed > 0)
     delta_h = processable_mass * (mdot_h / mdot_processed);
-  if(delta_h < 0 && delta_h > -1.0e-14 * fmax(1.0, processable_mass))
+  if(delta_h < 0 && delta_h > -1.0e-14 * fmax(fabs(processable_mass), 1.0e-30))
     delta_h = 0.0;
   if(delta_h > processable_mass && delta_h < processable_mass * (1.0 + 1.0e-13))
     delta_h = processable_mass;
@@ -279,7 +279,7 @@ void bh_ffr_apply_inner_flow(int p, double processable_mass, double dt_code)
   const double reservoir_before = BHP[b].ReservoirMass;
 
   BHP[b].ReservoirMass = reservoir_before - processable_mass;
-  if(BHP[b].ReservoirMass < 0 && BHP[b].ReservoirMass > -1.0e-13 * fmax(1.0, reservoir_before))
+  if(BHP[b].ReservoirMass < 0 && BHP[b].ReservoirMass > -1.0e-13 * fmax(fabs(reservoir_before), 1.0e-30))
     BHP[b].ReservoirMass = 0.0;
 
   /* Removing a representative fraction of the unresolved reservoir should
@@ -305,12 +305,12 @@ void bh_ffr_apply_inner_flow(int p, double processable_mass, double dt_code)
    * and are not subtracted a second time from BHMass. */
   P[p].Mass = BHP[b].BHMass + BHP[b].ReservoirMass + BHP[b].WindMassBuffer;
 
-  const double partition_scale = fmax(1.0, processable_mass);
+  const double partition_scale = fmax(fabs(processable_mass), 1.0e-30);
   if(fabs((delta_h + delta_w) - processable_mass) > 2.0e-12 * partition_scale)
     terminate("BH_FFR: Iteration-6 mass partition failed dMH+dMw=%g dMproc=%g", delta_h + delta_w, processable_mass);
 
   const double expected_dyn = BHP[b].BHMass + BHP[b].ReservoirMass + BHP[b].WindMassBuffer;
-  if(!isfinite(P[p].Mass) || P[p].Mass < 0 || fabs(P[p].Mass - expected_dyn) > 1.0e-12 * fmax(1.0, expected_dyn))
+  if(!isfinite(P[p].Mass) || P[p].Mass < 0 || fabs(P[p].Mass - expected_dyn) > 1.0e-12 * fmax(fabs(expected_dyn), 1.0e-30))
     terminate("BH_FFR: Iteration-6 dynamical-mass ledger failed for particle ID=%llu", (unsigned long long)P[p].ID);
 }
 
