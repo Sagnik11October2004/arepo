@@ -19,7 +19,8 @@
  * Disjoint deterministic nearest pairs are collapsed onto the lower particle
  * ID; overlap chains are not merged transitively. The survivor keeps its
  * position, while its velocity is
- * the exact dynamical-mass-weighted mean and its position is moved to the\n * periodic dynamical-mass center of mass. Persistent unresolved mass/energy
+ * the exact dynamical-mass-weighted mean and its position is moved to the
+ * periodic dynamical-mass center of mass. Persistent unresolved mass/energy
  * reservoirs are summed. The loser is marked with AREPO's standard deleted
  * particle convention (ID=0, Mass=0) and removed from the gravity timebin.
  *

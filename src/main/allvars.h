@@ -801,10 +801,12 @@ extern unsigned long long *Tree_IntPos_list;
 extern struct treepoint_data
 {
   MyDouble Pos[3];
+#ifdef BLACKHOLE_FFR
   /* Physical-velocity diagnostics such as FFR SigmaDM need velocities for
    * gravity points temporarily imported to a different tree-owning task.
    * This is transient force-tree storage and is not restart-persistent. */
   MyFloat Vel[3];
+#endif
   unsigned long long IntPos[3];
   MyDouble Mass;
   float OldAcc;
