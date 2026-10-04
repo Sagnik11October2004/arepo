@@ -178,6 +178,22 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
         dt_limit_myr = jet_limit_myr;
     }
 
+  /* Dynamical friction is not an impulsive stability source term: the
+   * exponential kick is bounded.  Nevertheless, resolving a fraction of the
+   * local Chandrasekhar damping time prevents the emergency 50% kick cap from
+   * becoming the normal integration scheme. Reuse the existing internal
+   * accuracy factor rather than introducing another calibration parameter. */
+  const double df_tcode = bh_ffr_get_cached_dynamical_friction_timescale_code(p);
+  if(isfinite(df_tcode) && df_tcode > 0)
+    {
+      const double df_limit_myr = All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(df_tcode);
+      if(!isfinite(df_limit_myr) || !(df_limit_myr > 0))
+        terminate("BH_FFR: invalid dynamical-friction timestep limit=%g Myr for ID=%llu", df_limit_myr,
+                  (unsigned long long)P[p].ID);
+      if(df_limit_myr < dt_limit_myr)
+        dt_limit_myr = df_limit_myr;
+    }
+
   limited = bh_ffr_limit_integer_step_by_physical_myr(limited, dt_limit_myr);
   const integertime accuracy_limited = limited;
 

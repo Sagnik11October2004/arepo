@@ -58,6 +58,7 @@ struct bh_ffr_df_cache_entry
 {
   MyIDType ID;
   integertime Ti;
+  MyDouble Pos[3];
   double RhoDM;
   double SigmaDM;
   double MeanVel[3];
@@ -368,51 +369,59 @@ static void bh_ffr_dm_run_query(int particle_type, struct bh_ffr_dm_result *resu
   DMNTargets = 0;
 }
 
-static double bh_ffr_dm_sigma_1d(const struct bh_ffr_dm_result *res)
-{
-  if(res->Count < 2)
-    return 0.0;
-
-  double mean[3] = {0, 0, 0};
-  for(int n = 0; n < res->Count; n++)
-    for(int k = 0; k < 3; k++)
-      mean[k] += res->C[n].Vel[k];
-
-  for(int k = 0; k < 3; k++)
-    mean[k] /= res->Count;
-
-  double sum2 = 0.0;
-  for(int n = 0; n < res->Count; n++)
-    for(int k = 0; k < 3; k++)
-      {
-        const double dv = res->C[n].Vel[k] - mean[k];
-        sum2 += dv * dv;
-      }
-
-  double sigma2 = sum2 / (3.0 * res->Count);
-  if(sigma2 < 0 && sigma2 > -1.0e-14 * fmax(1.0, sum2))
-    sigma2 = 0;
-
-  if(!isfinite(sigma2) || sigma2 < 0)
-    terminate("BH_FFR: invalid local velocity variance=%g", sigma2);
-
-  return sqrt(sigma2);
-}
-
 static void bh_ffr_dm_mean_velocity(const struct bh_ffr_dm_result *res, double mean[3])
 {
   for(int k = 0; k < 3; k++)
     mean[k] = 0.0;
 
-  if(res->Count <= 0)
+  double mtot = 0.0;
+  for(int n = 0; n < res->Count; n++)
+    if(res->C[n].Mass > 0)
+      {
+        mtot += res->C[n].Mass;
+        for(int k = 0; k < 3; k++)
+          mean[k] += res->C[n].Mass * res->C[n].Vel[k];
+      }
+
+  if(!(mtot > 0))
     return;
 
-  for(int n = 0; n < res->Count; n++)
-    for(int k = 0; k < 3; k++)
-      mean[k] += res->C[n].Vel[k];
-
   for(int k = 0; k < 3; k++)
-    mean[k] /= res->Count;
+    mean[k] /= mtot;
+}
+
+static double bh_ffr_dm_sigma_1d(const struct bh_ffr_dm_result *res)
+{
+  if(res->Count < 2)
+    return 0.0;
+
+  double mean[3];
+  bh_ffr_dm_mean_velocity(res, mean);
+
+  double mtot = 0.0;
+  double sum2 = 0.0;
+  for(int n = 0; n < res->Count; n++)
+    if(res->C[n].Mass > 0)
+      {
+        mtot += res->C[n].Mass;
+        for(int k = 0; k < 3; k++)
+          {
+            const double dv = res->C[n].Vel[k] - mean[k];
+            sum2 += res->C[n].Mass * dv * dv;
+          }
+      }
+
+  if(!(mtot > 0))
+    return 0.0;
+
+  double sigma2 = sum2 / (3.0 * mtot);
+  if(sigma2 < 0 && sigma2 > -1.0e-14 * fmax(sum2 / mtot, 1.0e-30))
+    sigma2 = 0;
+
+  if(!isfinite(sigma2) || sigma2 < 0)
+    terminate("BH_FFR: invalid mass-weighted local velocity variance=%g", sigma2);
+
+  return sqrt(sigma2);
 }
 
 static double bh_ffr_dm_density_code(const struct bh_ffr_dm_result *res)
@@ -436,6 +445,73 @@ static double bh_ffr_dm_density_code(const struct bh_ffr_dm_result *res)
     terminate("BH_FFR: invalid local DM density=%g from mass=%g r=%g", rho, mass, r);
 
   return rho;
+}
+
+static int bh_ffr_df_cache_is_usable(const struct bh_ffr_df_cache_entry *env, int p)
+{
+  if(env == NULL || !env->Valid || env->ID != P[p].ID || env->Ti > All.Ti_Current)
+    return 0;
+
+  const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+  MyDouble xtmp, ytmp, ztmp;
+  const double dx = GRAVITY_NEAREST_X(P[p].Pos[0] - env->Pos[0]);
+  const double dy = GRAVITY_NEAREST_Y(P[p].Pos[1] - env->Pos[1]);
+  const double dz = GRAVITY_NEAREST_Z(P[p].Pos[2] - env->Pos[2]);
+  const double displacement = sqrt(dx * dx + dy * dy + dz * dz) * a;
+
+  if(!isfinite(displacement))
+    return 0;
+
+  return displacement <= 0.25 * All.BHFeedbackRadius;
+}
+
+static double bh_ffr_df_timescale_from_environment(int p, const struct bh_ffr_df_cache_entry *env)
+{
+  if(!bh_ffr_df_cache_is_usable(env, p) || P[p].Mass <= 0 || !(env->SigmaDM > 0) || !(env->RhoDM > 0))
+    return HUGE_VAL;
+
+  const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+  double v2 = 0.0;
+  for(int k = 0; k < 3; k++)
+    {
+      const double dv = P[p].Vel[k] / a - env->MeanVel[k];
+      v2 += dv * dv;
+    }
+
+  if(!(v2 > 0) || !isfinite(v2))
+    return HUGE_VAL;
+
+  const double v = sqrt(v2);
+  const double x = v / (sqrt(2.0) * env->SigmaDM);
+  double fx;
+
+  if(x < 1.0e-3)
+    fx = 4.0 * x * x * x / (3.0 * sqrt(M_PI));
+  else
+    fx = erf(x) - 2.0 * x * exp(-x * x) / sqrt(M_PI);
+
+  if(!(fx > 0) || !isfinite(fx))
+    return HUGE_VAL;
+
+  const double adf =
+      4.0 * M_PI * All.G * All.G * P[p].Mass * env->RhoDM * BH_FFR_DF_COULOMB_LOG * fx / v2;
+  if(!(adf > 0) || !isfinite(adf))
+    return HUGE_VAL;
+
+  const double tdf = v / adf;
+  return (isfinite(tdf) && tdf > 0) ? tdf : HUGE_VAL;
+}
+
+double bh_ffr_get_cached_dynamical_friction_timescale_code(int p)
+{
+  if(p < 0 || p >= NumPart || P[p].Type != BH_FFR_PARTICLE_TYPE || P[p].ID == 0 || P[p].Mass <= 0)
+    return HUGE_VAL;
+
+  for(int n = 0; n < DFCacheCount; n++)
+    if(DFCache[n].ID == P[p].ID)
+      return bh_ffr_df_timescale_from_environment(p, &DFCache[n]);
+
+  return HUGE_VAL;
 }
 
 static void bh_ffr_apply_dynamical_friction_environment(int p, double dt, double rho, double sigma,
@@ -522,7 +598,7 @@ void bh_ffr_apply_cached_dynamical_friction(int p, double dt_code)
     return;
 
   for(int n = 0; n < DFCacheCount; n++)
-    if(DFCache[n].Valid && DFCache[n].ID == P[p].ID && DFCache[n].Ti == All.Ti_Current)
+    if(DFCache[n].ID == P[p].ID && bh_ffr_df_cache_is_usable(&DFCache[n], p))
       {
         bh_ffr_apply_dynamical_friction_environment(p, dt_code, DFCache[n].RhoDM, DFCache[n].SigmaDM,
                                                     DFCache[n].MeanVel);
@@ -550,6 +626,13 @@ static void bh_ffr_dm_self_test(void)
   const double expected = sqrt(2.0 / 9.0);
   if(fabs(sigma - expected) > 1.0e-13)
     terminate("BH_FFR: DM dispersion self-test failed sigma=%g expected=%g", sigma, expected);
+
+  memset(&res, 0, sizeof(res));
+  bh_ffr_dm_insert(&res, 1.0, 1.0, v0);
+  bh_ffr_dm_insert(&res, 2.0, 3.0, v1);
+  const double weighted_sigma = bh_ffr_dm_sigma_1d(&res);
+  if(fabs(weighted_sigma - 0.5) > 1.0e-13)
+    terminate("BH_FFR: mass-weighted DM dispersion self-test failed sigma=%g expected=0.5", weighted_sigma);
 }
 
 void bh_ffr_prepare_dm_environment_search(void)
@@ -647,6 +730,8 @@ void bh_ffr_prepare_dm_environment_search(void)
        * populate the drag cache. */
       DFCache[n].ID = P[p].ID;
       DFCache[n].Ti = All.Ti_Current;
+      for(int k = 0; k < 3; k++)
+        DFCache[n].Pos[k] = P[p].Pos[k];
       DFCache[n].Valid = 0;
       if(use == &dm[n] && dm[n].Count >= 2)
         {

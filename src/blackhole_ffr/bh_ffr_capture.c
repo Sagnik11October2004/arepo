@@ -110,7 +110,10 @@ static void particle2in(data_in *in, int target, int firstnode)
     }
 
   in->AccretionRadius = bh_ffr_proper_radius_to_coordinate_radius(All.BHAccretionRadius);
-  in->CentralMass = BHP[b].BHMass + BHP[b].ReservoirMass;
+  /* Use the same unresolved point mass that gravity sees. This avoids the
+   * previous hybrid Mcen=M_BH+M_res choice, which silently omitted wind mass
+   * still stored on the collisionless particle. */
+  in->CentralMass = P[p].Mass;
 
   const double c_internal = CLIGHT / All.UnitVelocity_in_cm_per_s;
   in->SchwarzschildRadius =

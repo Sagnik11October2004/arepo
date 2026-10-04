@@ -339,6 +339,24 @@ int init(void)
 #endif /* #ifdef ADDBACKGROUNDGRID */
 
 #ifdef BLACKHOLE_FFR
+  /* FFR persistent state is not currently reconstructed from snapshot
+   * fields. RestartFlag=2 is therefore safe only for BH-free/pre-seed
+   * snapshots. Refuse evolved Type-5 snapshots rather than silently replacing
+   * BHMass/reservoir/buffer/directional state with a fresh record. */
+  if(RestartFlag == 2)
+    {
+      long long local_existing_bh = 0, global_existing_bh = 0;
+      for(i = 0; i < NumPart; i++)
+        if(P[i].Type == BH_FFR_PARTICLE_TYPE && P[i].ID != 0 && P[i].Mass > 0)
+          local_existing_bh++;
+
+      MPI_Allreduce(&local_existing_bh, &global_existing_bh, 1, MPI_LONG_LONG_INT, MPI_SUM, MPI_COMM_WORLD);
+      if(global_existing_bh > 0)
+        terminate("BH_FFR: RestartFlag=2 from a snapshot containing %lld Type-%d BH particle(s) is not state-safe. "
+                  "Use native RestartFlag=1 for evolved FFR-MACER runs; RestartFlag=2 is allowed only for BH-free/pre-seed snapshots.",
+                  global_existing_bh, BH_FFR_PARTICLE_TYPE);
+    }
+
   /* Build compact Type-5 state before the first domain exchange so the
    * initial decomposition can migrate BH records conservatively. */
   bh_ffr_initialize_particles();

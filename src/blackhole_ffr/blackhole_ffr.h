@@ -118,6 +118,7 @@ void bh_ffr_collect_gas_environment(struct bh_ffr_gas_search_result *results);
 void bh_ffr_refresh_gas_neighbour_cache(void);
 void bh_ffr_prepare_dm_environment_search(void);
 void bh_ffr_apply_cached_dynamical_friction(int p, double dt_code);
+double bh_ffr_get_cached_dynamical_friction_timescale_code(int p);
 void bh_ffr_merge_close_black_holes(void);
 void bh_ffr_capture_resolved_gas(void);
 void bh_ffr_capture_self_test(void);
