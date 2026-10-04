@@ -391,10 +391,13 @@ void calculate_non_standard_physics_prior_mesh_construction(void)
 {
 #if defined(BLACKHOLE_FFR) && defined(FOF)
   /* FFR-MACER seeding is tied to the FoF cadence itself. Run the no-output
-   * FoF catalogue only on full synchronization points, when every occupied
-   * time bin is active. bh_ffr_seed_from_fof() is invoked from fof_fof(-1)
-   * after global group properties and particle group numbers are known. */
-  if(All.HighestActiveTimeBin == All.HighestOccupiedTimeBin)
+   * catalogue only on full synchronization points and only while the current
+   * redshift is inside the configured seeding window; otherwise a complete
+   * FoF decomposition would be paid for merely to return immediately.
+   * bh_ffr_seed_from_fof() is invoked from fof_fof(-1) after global group
+   * properties and particle group numbers are known. */
+  if(All.ComovingIntegrationOn && All.HighestActiveTimeBin == All.HighestOccupiedTimeBin &&
+     All.cf_redshift > All.BHSeedMinRedshift)
     fof_fof(-1);
 #endif
 

@@ -835,6 +835,20 @@ void check_parameters()
     mpi_terminate("Softening invalid!");
 
 #ifdef BLACKHOLE_FFR
+  if(!isfinite(All.BHAccretionRadius) || !isfinite(All.BHFeedbackRadius) ||
+     !isfinite(All.BHSeedHaloMassMsun) || !isfinite(All.BHSeedMassMsun) ||
+     !isfinite(All.BHSeedMinRedshift) || !isfinite(All.BHSeedMaxDonorFraction) ||
+     !isfinite(All.BHFreeFallA) || !isfinite(All.BHFreeFallAlpha) ||
+     !isfinite(All.BHMaxSinkFraction) || !isfinite(All.BHDiskTimeMyr) ||
+     !isfinite(All.BHRHotMaxInRs) || !isfinite(All.BHRadiativeEfficiency) ||
+     !isfinite(All.BHWindBurstFactor) || !isfinite(All.BHJetBurstFactor) ||
+     !isfinite(All.BHWindConeAngleDeg) || !isfinite(All.BHJetConeAngleDeg) ||
+     !isfinite(All.BHMinCoherence) || !isfinite(All.BHJetDirectionTimeFactor) ||
+     !isfinite(All.BHMinActiveTargetMassFrac) || !isfinite(All.BHInternalTimestepFactor))
+    mpi_terminate("BLACKHOLE_FFR floating-point parameters must all be finite.\n");
+  if(All.BHSeedHaloMassMsun <= 0 || All.BHSeedMassMsun <= 0 || All.BHSeedMinRedshift < 0 ||
+     All.BHSeedMaxDonorFraction <= 0 || All.BHSeedMaxDonorFraction >= 1)
+    mpi_terminate("BH seed parameters require positive halo/seed masses, zmin>=0 and donor fraction in (0,1).\n");
   if(All.BHAccretionRadius <= 0 || All.BHFeedbackRadius <= 0)
     mpi_terminate("BLACKHOLE_FFR requires positive BHAccretionRadius and BHFeedbackRadius.\n");
   if(All.BHFreeFallA < 0)

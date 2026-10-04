@@ -304,14 +304,15 @@ void bh_ffr_step(void)
       BHP[b].LastProcessedTi = All.Ti_Current;
     }
 
+  /* At a full synchronization point, coalesce overlapping BHs after each
+   * progenitor has completed its elapsed reservoir/DF transaction but before
+   * either can fire a separate resolved feedback packet. The merger routine
+   * rebuilds the active-BH cache if it actually removes particles. */
+  bh_ffr_merge_close_black_holes();
+
   /* Wind and jet channels use independent burst reservoirs and geometries.
    * They are applied sequentially so each channel solves its exact kinetic
    * packet against the gas state left by the preceding channel. */
   bh_ffr_inject_wind_feedback();
   bh_ffr_inject_jet_feedback();
-
-  /* Iteration 11 merges synchronized BHs whose two proper accretion
-   * apertures overlap. This happens after each object's local sub-grid
-   * transaction/feedback for the current step. */
-  bh_ffr_merge_close_black_holes();
 }

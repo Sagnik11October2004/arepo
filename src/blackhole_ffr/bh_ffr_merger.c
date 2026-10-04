@@ -12,13 +12,15 @@
 /*
  * Iteration 11: simple unresolved BH mergers.
  *
- * Only gravity-active BHs at the current synchronization point participate.
- * Two BHs are linked when their proper accretion apertures overlap:
+ * Coalescence is evaluated on full synchronization points, where every live
+ * BH is gravity-active. Two BHs are paired when their proper accretion
+ * apertures overlap:
  *
  *      d < 2 R_acc .
  *
- * Every connected overlap component is collapsed deterministically onto the
- * lowest particle ID. The survivor keeps its position, while its velocity is
+ * Disjoint deterministic nearest pairs are collapsed onto the lower particle
+ * ID; overlap chains are not merged transitively. The survivor keeps its
+ * position, while its velocity is
  * the exact dynamical-mass-weighted mean. Persistent unresolved mass/energy
  * reservoirs are summed. The loser is marked with AREPO's standard deleted
  * particle convention (ID=0, Mass=0) and removed from the gravity timebin.
@@ -139,7 +141,10 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
 
   double dynmass = 0.0;
   double jetvec[3] = {0, 0, 0};
+  double jet_weight = 0.0;
   double sigma_weight = 0.0;
+  int dominant = root;
+  double dominant_bh_mass = -1.0;
 
   for(int i = 0; i < nall; i++)
     if(bh_ffr_merge_find_const(parent, i) == root)
@@ -157,6 +162,29 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
         merged->WindEnergyBuffer += s->WindEnergyBuffer;
         merged->JetEnergyBuffer += s->JetEnergyBuffer;
 
+        /* These are rates/powers already evaluated for the same synchronization
+         * point before the merger. Their sums are the best conservative
+         * instantaneous representation of the newly combined source and,
+         * critically, keep the next feedback/timestep limiter informed. */
+        merged->MdotSupply += s->MdotSupply;
+        merged->MdotProcessed += s->MdotProcessed;
+        merged->MdotHorizon += s->MdotHorizon;
+        merged->MdotWind += s->MdotWind;
+        merged->BolometricLuminosity += s->BolometricLuminosity;
+        merged->WindPower += s->WindPower;
+        merged->JetPower += s->JetPower;
+
+        if(s->MinNeighbourHydroTimeBin > 0 &&
+           (merged->MinNeighbourHydroTimeBin < 0 || s->MinNeighbourHydroTimeBin < merged->MinNeighbourHydroTimeBin))
+          merged->MinNeighbourHydroTimeBin = s->MinNeighbourHydroTimeBin;
+
+        if(s->WindThresholdEnergy > 0 &&
+           (!(merged->WindThresholdEnergy > 0) || s->WindThresholdEnergy < merged->WindThresholdEnergy))
+          merged->WindThresholdEnergy = s->WindThresholdEnergy;
+        if(s->JetThresholdEnergy > 0 &&
+           (!(merged->JetThresholdEnergy > 0) || s->JetThresholdEnergy < merged->JetThresholdEnergy))
+          merged->JetThresholdEnergy = s->JetThresholdEnergy;
+
         for(int k = 0; k < 3; k++)
           {
             merged->Coherence[k] += s->Coherence[k];
@@ -164,7 +192,14 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
             jetvec[k] += s->BHMass * s->JetDir[k];
           }
 
+        jet_weight += s->BHMass;
         sigma_weight += w * s->SigmaDM;
+
+        if(s->BHMass > dominant_bh_mass)
+          {
+            dominant_bh_mass = s->BHMass;
+            dominant = i;
+          }
       }
 
   if(!(dynmass > 0) || !isfinite(dynmass))
@@ -174,43 +209,61 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
     vel[k] /= dynmass;
 
   const double ledger = merged->BHMass + merged->ReservoirMass + merged->WindMassBuffer;
-  if(fabs(ledger - dynmass) > 2.0e-10 * fmax(1.0, dynmass))
+  if(fabs(ledger - dynmass) > 2.0e-10 * fmax(fabs(dynmass), 1.0e-30))
     terminate("BH_FFR: merger mass ledger mismatch components=%g particle-sum=%g", ledger, dynmass);
 
-  double survivor_disc[3], survivor_jet[3];
+  double dominant_disc[3], dominant_jet[3];
+  double coherence_norm2 = 0.0, jet_norm2 = 0.0;
   for(int k = 0; k < 3; k++)
     {
-      survivor_disc[k] = survivor->State.DiscDir[k];
-      survivor_jet[k] = survivor->State.JetDir[k];
-      merged->DiscDir[k] = merged->Coherence[k];
-      merged->JetDir[k] = jetvec[k];
+      dominant_disc[k] = all[dominant].State.DiscDir[k];
+      dominant_jet[k] = all[dominant].State.JetDir[k];
+      coherence_norm2 += merged->Coherence[k] * merged->Coherence[k];
+      jet_norm2 += jetvec[k] * jetvec[k];
     }
 
-  bh_ffr_normalize_axis(merged->DiscDir, survivor_disc);
-  bh_ffr_normalize_axis(merged->JetDir, survivor_jet);
+  const double coherence_norm = sqrt(coherence_norm2);
+  const double coherence =
+      merged->ReservoirMass > 0 ? coherence_norm / merged->ReservoirMass : 0.0;
+
+  if(coherence >= All.BHMinCoherence && coherence_norm > 0)
+    for(int k = 0; k < 3; k++)
+      merged->DiscDir[k] = merged->Coherence[k] / coherence_norm;
+  else
+    for(int k = 0; k < 3; k++)
+      merged->DiscDir[k] = dominant_disc[k];
+
+  const double jet_norm = sqrt(jet_norm2);
+  if(jet_weight > 0 && jet_norm > All.BHMinCoherence * jet_weight)
+    for(int k = 0; k < 3; k++)
+      merged->JetDir[k] = jetvec[k] / jet_norm;
+  else
+    for(int k = 0; k < 3; k++)
+      merged->JetDir[k] = dominant_jet[k];
 
   merged->SigmaDM = sigma_weight / dynmass;
   merged->MdotEddington = bh_ffr_eddington_rate_code(merged->BHMass);
-
-  /* Instantaneous rates/powers are reset because they refer to the two
-   * pre-merger objects. Conserved unresolved mass/energy buffers above are
-   * retained exactly and will continue from the merged object next step. */
-  merged->MdotSupply = 0.0;
-  merged->MdotProcessed = 0.0;
-  merged->ProcessedEddingtonRatio = 0.0;
+  merged->ProcessedEddingtonRatio =
+      merged->MdotEddington > 0 ? merged->MdotProcessed / merged->MdotEddington : 0.0;
   merged->ColdBlendWeight = 0.0;
-  merged->MdotHorizon = 0.0;
-  merged->MdotWind = 0.0;
-  merged->BolometricLuminosity = 0.0;
-  merged->WindPower = 0.0;
-  merged->JetPower = 0.0;
-  merged->WindThresholdEnergy = 0.0;
-  merged->JetThresholdEnergy = 0.0;
+
+  const double rtr_over_rhot = bh_ffr_truncation_to_hot_radius_ratio(merged->ProcessedEddingtonRatio);
+  merged->AccretionState =
+      bh_ffr_classify_accretion_state(BH_FFR_STATE_UNINITIALIZED, merged->ProcessedEddingtonRatio, rtr_over_rhot);
 }
 
 void bh_ffr_merge_close_black_holes(void)
 {
+  /* Coalescence is intentionally evaluated only on full synchronization
+   * points. Then every live BH is gravity-active, so no inactive particle has
+   * to be deleted out of an open timebin and no close pair is omitted merely
+   * because the two BHs occupy different gravity bins. */
+  if(All.HighestActiveTimeBin != All.HighestOccupiedTimeBin)
+    return;
+
   const int local_n = NumActiveBHFFR;
+  if(local_n != NumBHFFR)
+    terminate("BH_FFR: full-sync merger sees %d active BHs but %d live local BH records", local_n, NumBHFFR);
 
   int *counts = malloc(NTask * sizeof(int));
   int *displs = malloc(NTask * sizeof(int));
@@ -280,18 +333,40 @@ void bh_ffr_merge_close_black_holes(void)
   const double rmerge = 2.0 * All.BHAccretionRadius / a;
   const double rmerge2 = rmerge * rmerge;
 
+  /* Merge disjoint pairs, not transitive overlap chains. For each
+   * lowest-ID unmatched BH choose its nearest unmatched partner inside the
+   * aperture-overlap threshold. A-B and B-C proximity therefore cannot
+   * collapse A+B+C in one instantaneous sub-grid event. */
   for(int i = 0; i < nall; i++)
-    for(int j = i + 1; j < nall; j++)
-      {
-        MyDouble xtmp, ytmp, ztmp;
-        const double dx = NEAREST_X(all[j].Pos[0] - all[i].Pos[0]);
-        const double dy = NEAREST_Y(all[j].Pos[1] - all[i].Pos[1]);
-        const double dz = NEAREST_Z(all[j].Pos[2] - all[i].Pos[2]);
-        const double r2 = dx * dx + dy * dy + dz * dz;
+    {
+      if(parent[i] != i)
+        continue;
 
-        if(r2 <= rmerge2)
-          bh_ffr_merge_union(parent, i, j);
-      }
+      int best = -1;
+      double best_r2 = rmerge2;
+
+      for(int j = i + 1; j < nall; j++)
+        {
+          if(parent[j] != j)
+            continue;
+
+          MyDouble xtmp, ytmp, ztmp;
+          const double dx = NEAREST_X(all[j].Pos[0] - all[i].Pos[0]);
+          const double dy = NEAREST_Y(all[j].Pos[1] - all[i].Pos[1]);
+          const double dz = NEAREST_Z(all[j].Pos[2] - all[i].Pos[2]);
+          const double r2 = dx * dx + dy * dy + dz * dz;
+
+          if(r2 <= rmerge2 &&
+             (best < 0 || r2 < best_r2 || (r2 == best_r2 && all[j].ID < all[best].ID)))
+            {
+              best = j;
+              best_r2 = r2;
+            }
+        }
+
+      if(best >= 0)
+        bh_ffr_merge_union(parent, i, best);
+    }
 
   for(int i = 0; i < nall; i++)
     parent[i] = bh_ffr_merge_find(parent, i);
@@ -332,25 +407,32 @@ void bh_ffr_merge_close_black_holes(void)
               old_total_mass += all[i].DynMass;
 
           double pre_momentum[3] = {0, 0, 0};
+          double momentum_scale = 0.0;
           for(int i = 0; i < nall; i++)
             if(parent[i] == root)
-              for(int k = 0; k < 3; k++)
-                pre_momentum[k] += all[i].DynMass * all[i].Vel[k];
+              {
+                double v2 = 0.0;
+                for(int k = 0; k < 3; k++)
+                  {
+                    pre_momentum[k] += all[i].DynMass * all[i].Vel[k];
+                    v2 += all[i].Vel[k] * all[i].Vel[k];
+                  }
+                momentum_scale += all[i].DynMass * sqrt(v2);
+              }
 
           BHP[bs] = merged;
           P[ps].Mass = old_total_mass;
           for(int k = 0; k < 3; k++)
             P[ps].Vel[k] = merged_vel[k];
 
-          double dp2 = 0.0, p2 = 0.0;
+          double dp2 = 0.0;
           for(int k = 0; k < 3; k++)
             {
               const double pnew = P[ps].Mass * P[ps].Vel[k];
               const double dp = pnew - pre_momentum[k];
               dp2 += dp * dp;
-              p2 += pre_momentum[k] * pre_momentum[k];
             }
-          const double pbal = sqrt(dp2) / fmax(sqrt(p2), 1.0e-30);
+          const double pbal = sqrt(dp2) / fmax(momentum_scale, 1.0e-30);
 
           if(!isfinite(pbal) || pbal > 2.0e-12)
             terminate("BH_FFR: merger momentum closure failed for ID=%llu pbal=%g",
@@ -400,6 +482,7 @@ void bh_ffr_merge_close_black_holes(void)
     {
       timebin_cleanup_list_of_active_particles(&TimeBinsGravity);
       bh_ffr_rebuild_state_after_particle_changes();
+      bh_ffr_build_active_list();
       bh_ffr_validate_state("post-BH-merger");
     }
 
