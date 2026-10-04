@@ -250,15 +250,16 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
 
 void bh_ffr_merge_close_black_holes(void)
 {
-  /* Coalescence is intentionally evaluated only on full synchronization
-   * points. Then every live BH is gravity-active, so no inactive particle has
-   * to be deleted out of an open timebin and no close pair is omitted merely
-   * because the two BHs occupy different gravity bins. */
-  if(All.HighestActiveTimeBin != All.HighestOccupiedTimeBin)
-    return;
-
+  /* On a full synchronization point every live BH participates, giving a
+   * complete overlap sweep. On intermediate points, consider only the BHs
+   * that are already gravity-active and therefore drifted to Ti_Current.
+   * This safely catches many fast co-active encounters earlier without ever
+   * drifting or deleting an inactive collisionless particle out of its open
+   * gravity step. */
+  const int full_sync = (All.HighestActiveTimeBin == All.HighestOccupiedTimeBin);
   const int local_n = NumActiveBHFFR;
-  if(local_n != NumBHFFR)
+
+  if(full_sync && local_n != NumBHFFR)
     terminate("BH_FFR: full-sync merger sees %d active BHs but %d live local BH records", local_n, NumBHFFR);
 
   int *counts = malloc(NTask * sizeof(int));
