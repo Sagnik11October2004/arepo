@@ -32,7 +32,6 @@
  * flag is added because the current BHP layout is restart-frozen.
  */
 
-#define BH_FFR_DM_MAX_NEIGHBOURS 256
 #define BH_FFR_GAS_PARTICLE_TYPE 0
 
 /* Iteration-11 deliberately keeps these simple and compile-time. They can be

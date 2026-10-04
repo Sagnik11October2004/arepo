@@ -193,6 +193,8 @@ For multimass zoom ICs, set BH_FFR_DM_TYPEMASK at compile time to the sum of the
 
     BH_FFR_DM_TYPEMASK=2+4+8
 
+The nearest-neighbour communication payload now defaults to 64 entries, which covers the fiducial 40-neighbour estimator and the 64-neighbour smoke test without carrying the previous 256-candidate result structure for every exported BH. Runs that deliberately need a larger sample can set `BH_FFR_DM_MAX_NEIGHBOURS=<N>` in Config.sh; parameter validation uses the compiled capacity.
+
 The current native restart format is FFR restart version 2. It stores the frozen BHP record size and the separate DF-cache record size and fails explicitly on an incompatible layout rather than interpreting shifted bytes as valid state. Restart files written by older FFR binaries should be resumed with the binary that wrote them.
 
 After rebuilding, rerun the existing regression chain before coupled validation:

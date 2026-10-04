@@ -17,6 +17,19 @@
 #define BH_FFR_DM_TYPEMASK (1 << 1)
 #endif
 
+/* Maximum nearest-neighbour payload carried by the SigmaDM gravity-tree
+ * communication.  The model default needs O(40) particles, so 64 avoids the
+ * previous 256-entry result structure on every exported BH while retaining
+ * headroom for convergence tests.  Larger experiments can override this in
+ * Config.sh without changing any persistent restart structure. */
+#ifndef BH_FFR_DM_MAX_NEIGHBOURS
+#define BH_FFR_DM_MAX_NEIGHBOURS 64
+#endif
+
+#if BH_FFR_DM_MAX_NEIGHBOURS < 2
+#error "BH_FFR_DM_MAX_NEIGHBOURS must be at least 2"
+#endif
+
 /* Iteration-5 state-machine closures from the design specification. The
  * nominal physical boundaries are dotm=0.02 and Rtr/Rhot=1; the wider
  * entry/exit values provide hysteresis against state chatter. */
