@@ -88,24 +88,6 @@ static void bh_ffr_merge_union(int *parent, int a, int b)
     parent[a] = b;
 }
 
-static void bh_ffr_normalize_axis(double v[3], const double fallback[3])
-{
-  double n2 = 0.0;
-  for(int k = 0; k < 3; k++)
-    n2 += v[k] * v[k];
-
-  if(n2 <= 1.0e-30)
-    {
-      for(int k = 0; k < 3; k++)
-        v[k] = fallback[k];
-      return;
-    }
-
-  const double inv = 1.0 / sqrt(n2);
-  for(int k = 0; k < 3; k++)
-    v[k] *= inv;
-}
-
 static int bh_ffr_local_particle_from_id(MyIDType id)
 {
   for(int i = 0; i < NumPart; i++)

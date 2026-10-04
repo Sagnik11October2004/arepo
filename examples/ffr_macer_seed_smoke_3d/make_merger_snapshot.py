@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create a deterministic two-BH snapshot for the Iteration-11 merger test."""
+"""Create a deterministic two-BH HDF5 IC for the Iteration-11 merger test."""
 
 import json
 import os
@@ -75,7 +75,8 @@ with h5py.File(dst, "r+") as f:
     g["Masses"][1] = np.array(m0, dtype=g["Masses"].dtype)
 
     # Keep output-only BH mass visually consistent in the synthetic file if
-    # present. RestartFlag=2 still reconstructs FFR state from Masses.
+    # present. The regression now starts this file as fresh IC state; evolved
+    # RestartFlag=2 FFR snapshots are intentionally rejected by the solver.
     if "BH_Mass" in g:
         g["BH_Mass"][1] = np.array(m0, dtype=g["BH_Mass"].dtype)
     for name in ("BH_DiskMass", "BH_WindBufferMass", "BH_EWind", "BH_EJet"):
