@@ -148,7 +148,7 @@ Earlier Iteration-6/7/8 helpers set BHInternalTimestepFactor to a huge value int
 
 ## 11. Iteration-10 full-tree DM-dispersion regression
 
-The production estimator runs only at valid full-gravity-tree synchronization points. It selects the globally nearest BHDMNeighbours Type-1 particles, computes the one-dimensional physical peculiar velocity dispersion about their local mean, and caches it in BH_SigmaDM between full-tree updates. Transient imported gravity points carry velocity solely for this query; the persistent BHP/native-restart layout is unchanged.
+The production estimator runs only at valid full-gravity-tree synchronization points. By default it selects the globally nearest BHDMNeighbours Type-1 particles, computes the one-dimensional physical peculiar velocity dispersion about their mass-weighted local mean, and caches it in BH_SigmaDM between full-tree updates. Multimass zooms can override the compile-time BH_FFR_DM_TYPEMASK without changing All/BHP restart layouts. Transient imported gravity points carry velocity only when BLACKHOLE_FFR is compiled.
 
 The isolated regression leaves BHFreeFallA=0 and disables the central binding term. Therefore the BH generates no wind/jet energy, while any positive burst threshold must come exclusively from SigmaDM:
 
@@ -173,7 +173,7 @@ The dynamical-friction term reuses the exact nearest-DM sample from Iteration 10
     NTASKS=16 ./run_df_restart.sh
     python3 verify_df.py
 
-The merger rule is intentionally simple: on full synchronization points, all live BHs are considered and disjoint nearest pairs merge whenever their two proper accretion apertures overlap, d < 2 R_acc. The lowest particle ID survives. Dynamical mass and linear momentum are conserved; BH mass, reservoir mass, wind mass/momentum/energy buffer, jet energy buffer and coherence are combined. Disc/jet directions fall back to the more massive progenitor when the merged directional vectors nearly cancel. Coalescence occurs after each progenitor's elapsed reservoir/DF update but before resolved wind/jet packets. The loser uses a temporary ID=0, Mass=0 Type-3 tombstone, which snapshot I/O excludes and the next normal domain rearrangement physically compacts.
+The merger rule is intentionally simple: on full synchronization points, all live BHs are considered and disjoint nearest pairs merge whenever their two proper accretion apertures overlap, d < 2 R_acc. The lowest particle ID survives, but the surviving particle is moved to the periodic dynamical-mass center of mass. Dynamical mass and linear momentum are conserved; BH mass, reservoir mass, wind mass/momentum/energy buffer, jet energy buffer and coherence are combined. Disc/jet directions fall back to the more massive progenitor when the merged directional vectors nearly cancel. Coalescence occurs after each progenitor's elapsed reservoir/DF update but before resolved wind/jet packets. The loser uses a temporary ID=0, Mass=0 Type-3 tombstone, which snapshot I/O excludes and the next normal domain rearrangement physically compacts.
 
 The synthetic merger helper duplicates the one-BH Iteration-10 snapshot at a 0.05 proper separation and launches the result as a fresh HDF5 IC at that scale factor. This is deliberate: evolved Type-5 HDF5 snapshots are not restart-complete for FFR state and RestartFlag=2 now refuses them rather than silently destroying reservoir/buffer/directional state:
 
@@ -182,6 +182,25 @@ The synthetic merger helper duplicates the one-BH Iteration-10 snapshot at a 0.0
     python3 inspect_bh.py output_merger
 
 The version-1 merger deliberately has no boundness, relative-velocity, binary-hardening, gravitational-wave delay or recoil criterion. Native RestartFlag=1 remains the supported continuation path for evolved FFR-MACER simulations; RestartFlag=2 is reserved for BH-free/pre-seed snapshots or deliberately fresh synthetic IC tests.
+
+## 13. Iteration-11.5 hardening
+
+Iteration 11.5 is a correctness/robustness pass rather than a new accretion model. It rejects evolved Type-5 RestartFlag=2 snapshots, versions the native FFR restart payload, serializes the rank-local dynamical-friction cache separately from the frozen BHP record and re-replicates it after RestartFlag=1, bounds DF-cache reuse by both 0.25 Rfb displacement and a physical age limit, preserves merger timestep/backlog information, tightens code-unit conservation tolerances, and logs the unresolved kinetic-energy dissipation of inelastic gas capture.
+
+Feedback overlap conflicts still permit at most one event to own any active gas cell in a packet round, but priority is now a deterministic function of BH ID, synchronization time and packet round instead of permanently favoring the lower ID. This removes systematic starvation while remaining MPI-order independent.
+
+For multimass zoom ICs, set BH_FFR_DM_TYPEMASK at compile time to the sum of the selected particle-type bits. Type 1 remains the default. For example, Types 1, 2 and 3 use:
+
+    BH_FFR_DM_TYPEMASK=2+4+8
+
+The current native restart format is FFR restart version 2. It stores the frozen BHP record size and the separate DF-cache record size and fails explicitly on an incompatible layout rather than interpreting shifted bytes as valid state. Restart files written by older FFR binaries should be resumed with the binary that wrote them.
+
+After rebuilding, rerun the existing regression chain before coupled validation:
+
+    NTASKS=16 ./run_dm_restart.sh && python3 verify_dm.py
+    NTASKS=16 ./run_df_restart.sh && python3 verify_df.py
+    NTASKS=16 ./run_merger_restart.sh && python3 verify_merger.py
+    NTASKS=4  ./run_restart_guard.sh
 
 ## Why the boosted sigma8?
 

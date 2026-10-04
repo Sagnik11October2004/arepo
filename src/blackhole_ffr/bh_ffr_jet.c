@@ -273,7 +273,7 @@ void bh_ffr_update_jet_direction(int p, double dt_myr)
   const double theta1 = acos(dot1);
   const double expected = theta0 * decay;
 
-  if(fabs(theta1 - expected) > 2.0e-10 * fmax(1.0, theta0))
+  if(fabs(theta1 - expected) > 2.0e-10 * fmax(theta0, 1.0e-30))
     terminate("BH_FFR: jet-axis exponential update failed ID=%llu theta1=%g expected=%g",
               (unsigned long long)P[p].ID, theta1, expected);
 

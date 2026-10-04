@@ -22,8 +22,9 @@
  *
  * SigmaDM is then cached in BHP[] until the next full-tree update. The
  * transient DF environment is replicated by particle ID after each full-tree
- * refresh so later domain migration does not disable drag. No extra persistent
- * cache metadata is added, preserving the native BHP restart ABI.
+ * refresh so later domain migration does not disable drag. Native RestartFlag=1
+ * serializes this transient environment separately from BHP[], preserving the
+ * frozen persistent BHP field order.
  *
  * If fewer than BHDMNeighbours DM particles exist globally for a target, the
  * same gravity-tree query is repeated for gas and its nearest sample is used

@@ -37,7 +37,7 @@ double bh_ffr_reservoir_processable_mass(double reservoir_mass, double dt_myr, d
 
   /* -expm1(-x) is accurate for x << 1 and tends safely to unity for x >> 1. */
   double processed = reservoir_mass * (-expm1(-dt_myr / tau_myr));
-  if(processed < 0 && processed > -1.0e-14 * dmax(1.0, reservoir_mass))
+  if(processed < 0 && processed > -1.0e-14 * dmax(reservoir_mass, DBL_MIN))
     processed = 0;
   if(processed > reservoir_mass && processed < reservoir_mass * (1.0 + 1.0e-14))
     processed = reservoir_mass;
