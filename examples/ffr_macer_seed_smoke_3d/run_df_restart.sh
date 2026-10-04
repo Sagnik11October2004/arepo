@@ -11,7 +11,11 @@ OUTLIST="$HERE/output_list_df.txt"
 NTASKS="${NTASKS:-16}"
 
 if [[ ! -x "$ROOT/ArepoSeedTest" ]]; then
-  echo "Missing $ROOT/ArepoSeedTest; run ./build.sh first." >&2
+  echo "Missing $ROOT/ArepoSeedTest; building the smoke-test executable now." >&2
+  "$HERE/build.sh"
+fi
+if [[ ! -x "$ROOT/ArepoSeedTest" ]]; then
+  echo "Build completed without an executable at $ROOT/ArepoSeedTest." >&2
   exit 1
 fi
 if [[ ! -f "$SOURCE" ]]; then

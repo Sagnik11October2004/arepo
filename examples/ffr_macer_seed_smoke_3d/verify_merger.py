@@ -108,8 +108,23 @@ for path,n in post:
         for key in f:
             if not key.startswith("PartType") or "ParticleIDs" not in f[key]:
                 continue
-            ids = np.asarray(f[key]["ParticleIDs"][:], dtype=np.uint64)
-            masses = np.asarray(f[key]["Masses"][:], dtype=float)
+            group = f[key]
+            ids = np.asarray(group["ParticleIDs"][:], dtype=np.uint64)
+
+            # Gadget/AREPO snapshots are allowed to omit the Masses dataset
+            # for a particle type whose mass is supplied by Header/MassTable.
+            # Tombstone checking must therefore support both storage modes.
+            if "Masses" in group:
+                masses = np.asarray(group["Masses"][:], dtype=float)
+            else:
+                ptype = int(key[len("PartType"):])
+                mass_table = np.asarray(f["Header"].attrs["MassTable"], dtype=float)
+                if ptype < 0 or ptype >= len(mass_table) or not mass_table[ptype] > 0:
+                    raise SystemExit(
+                        f"FAIL: {path} has no {key}/Masses and no positive Header/MassTable entry"
+                    )
+                masses = np.full(ids.shape, mass_table[ptype], dtype=float)
+
             if np.any((ids == 0) & (masses == 0)):
                 raise SystemExit(f"FAIL: {path} leaked an FFR merger tombstone into {key}")
 

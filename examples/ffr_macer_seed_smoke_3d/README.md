@@ -197,12 +197,14 @@ The nearest-neighbour communication payload now defaults to 64 entries, which co
 
 The current native restart format is FFR restart version 2. It stores the frozen BHP record size and the separate DF-cache record size and fails explicitly on an incompatible layout rather than interpreting shifted bytes as valid state. Restart files written by older FFR binaries should be resumed with the binary that wrote them.
 
-After rebuilding, rerun the existing regression chain before coupled validation:
+After pulling the hardening branch, rerun the regression chain before coupled validation. The regression runners automatically invoke build.sh if ArepoSeedTest is missing:
 
     NTASKS=16 ./run_dm_restart.sh && python3 verify_dm.py
     NTASKS=16 ./run_df_restart.sh && python3 verify_df.py
     NTASKS=16 ./run_merger_restart.sh && python3 verify_merger.py
     NTASKS=4  ./run_restart_guard.sh
+
+The merger verifier accepts both explicit per-particle Masses datasets and the standard Gadget/AREPO Header/MassTable convention for fixed-mass particle species.
 
 ## Why the boosted sigma8?
 
