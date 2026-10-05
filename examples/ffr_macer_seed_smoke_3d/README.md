@@ -76,15 +76,15 @@ A passing test requires all of the following:
 1. at least one "BH_FFR: seeded FoF group" event at z>20;
 2. every seed has a `BH_FFR: seed axis ... axis_source=local-gas|deterministic-fallback coherence=...` diagnostic consistent with `BHMinCoherence`;
 3. Type-5 BHs in an HDF5 snapshot;
-3. BH_Mass = 1e5 Msun;
-4. BH_DiskMass = BH_MdotSupply = 0 because resolved capture is disabled;
-5. N_gas + N_BH = 128^3 in every snapshot;
-6. N_DM = 128^3 in every snapshot;
-7. total snapshot mass conserved across the gas-to-BH conversion;
-8. a dedicated checkpoint near a=0.02050 (z~47.7805) that contains no Type-5 BH and has z greater than the first seed redshift;
-9. a snapshot after the first seeded snapshot in which the seeded BH ID still exists;
-10. for the deliberately empty reservoir, BH_MdotFeed = BH_ProcessedEddRatio = 0, BH_MdotEdd is positive, and BH_Mode = 0 (ADIOS);
-11. with an empty reservoir, BH_MdotHorizon, BH_MdotWind, BH_Lbol, BH_PWind, and BH_PJet remain exactly zero.
+4. BH_Mass = 1e5 Msun;
+5. BH_DiskMass = BH_MdotSupply = 0 because resolved capture is disabled;
+6. N_gas + N_BH = 128^3 in every snapshot;
+7. N_DM = 128^3 in every snapshot;
+8. total snapshot mass conserved across the gas-to-BH conversion;
+9. a dedicated checkpoint near a=0.02050 (z~47.7805) that contains no Type-5 BH and has z greater than the first seed redshift;
+10. a snapshot after the first seeded snapshot in which the seeded BH ID still exists;
+11. for the deliberately empty reservoir, BH_MdotFeed = BH_ProcessedEddRatio = 0, BH_MdotEdd is positive, and BH_Mode = 0 (ADIOS);
+12. with an empty reservoir, BH_MdotHorizon, BH_MdotWind, BH_Lbol, BH_PWind, and BH_PJet remain exactly zero.
 
 If the deterministic test realization does not seed near z~47.72, that is a test failure or a changed realization/configuration. Do not lower the threshold silently; inspect run.log first.
 

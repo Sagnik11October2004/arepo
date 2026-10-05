@@ -199,9 +199,13 @@ static void kernel_imported(void)
     bh_ffr_capture_evaluate(target++, MODE_IMPORTED_PARTICLES, threadid);
 }
 
-static double bh_ffr_capture_lambda(const data_in *bh, double coordinate_distance)
+static double bh_ffr_capture_lambda_core(const data_in *bh, double coordinate_distance,
+                                             double freefall_a, double freefall_alpha)
 {
-  if(!bh->CaptureEnabled || All.BHFreeFallA == 0 || !(bh->CentralMass > 0))
+  if(!isfinite(freefall_a) || freefall_a < 0 || !isfinite(freefall_alpha))
+    terminate("BH_FFR: invalid free-fall coefficient inputs A=%g alpha=%g", freefall_a, freefall_alpha);
+
+  if(!bh->CaptureEnabled || freefall_a == 0 || !(bh->CentralMass > 0))
     return 0.0;
 
   const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
@@ -215,8 +219,8 @@ static double bh_ffr_capture_lambda(const data_in *bh, double coordinate_distanc
   if(!isfinite(tff) || !(tff > 0))
     terminate("BH_FFR: invalid free-fall time d=%g Mcen=%g G=%g", d, bh->CentralMass, All.G);
 
-  double eta = All.BHFreeFallA;
-  if(All.BHFreeFallAlpha != 0)
+  double eta = freefall_a;
+  if(freefall_alpha != 0)
     {
       if(!(bh->SchwarzschildRadius > 0))
         return 0.0;
@@ -225,7 +229,7 @@ static double bh_ffr_capture_lambda(const data_in *bh, double coordinate_distanc
       if(!(ratio > 0) || !isfinite(ratio))
         terminate("BH_FFR: invalid d/Rs=%g in free-fall sink", ratio);
 
-      eta *= pow(ratio, All.BHFreeFallAlpha);
+      eta *= pow(ratio, freefall_alpha);
     }
 
   const double lambda = eta / tff;
@@ -233,6 +237,11 @@ static double bh_ffr_capture_lambda(const data_in *bh, double coordinate_distanc
     terminate("BH_FFR: invalid free-fall lambda=%g eta=%g tff=%g", lambda, eta, tff);
 
   return lambda;
+}
+
+static double bh_ffr_capture_lambda(const data_in *bh, double coordinate_distance)
+{
+  return bh_ffr_capture_lambda_core(bh, coordinate_distance, All.BHFreeFallA, All.BHFreeFallAlpha);
 }
 
 static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
@@ -572,6 +581,23 @@ void bh_ffr_capture_self_test(void)
   const double capped = dmin(sink, 0.25 * mass);
   if(!(capped > 0) || capped > 0.25 * mass)
     terminate("BH_FFR: capture self-test failed sink cap");
+
+  /* Source-fidelity/full-unresolved-mass switch regression. For alpha=0 the
+   * capture coefficient scales as lambda proportional to sqrt(M_cen), so
+   * changing M_cen from M_BH to 4 M_BH must double lambda. */
+  data_in bh_test;
+  memset(&bh_test, 0, sizeof(bh_test));
+  bh_test.CaptureEnabled = 1;
+  bh_test.SchwarzschildRadius = 1.0;
+  bh_test.CentralMass = 1.0;
+  const double lambda_bh_only = bh_ffr_capture_lambda_core(&bh_test, 0.5, 1.0, 0.0);
+  bh_test.CentralMass = 4.0;
+  const double lambda_full = bh_ffr_capture_lambda_core(&bh_test, 0.5, 1.0, 0.0);
+
+  if(!(lambda_bh_only > 0) || !isfinite(lambda_full) ||
+     fabs(lambda_full / lambda_bh_only - 2.0) > 2.0e-13)
+    terminate("BH_FFR: capture self-test failed central-mass switch scaling lambdaBH=%g lambdaFull=%g",
+              lambda_bh_only, lambda_full);
 }
 
 void bh_ffr_capture_resolved_gas(void)
