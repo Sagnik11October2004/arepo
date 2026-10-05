@@ -273,15 +273,18 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
    * local Chandrasekhar damping time prevents the emergency 50% kick cap from
    * becoming the normal integration scheme. Reuse the existing internal
    * accuracy factor rather than introducing another calibration parameter. */
-  const double df_tcode = bh_ffr_get_cached_dynamical_friction_timescale_code(p);
-  if(isfinite(df_tcode) && df_tcode > 0)
+  if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
     {
-      const double df_limit_myr = All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(df_tcode);
-      if(!isfinite(df_limit_myr) || !(df_limit_myr > 0))
-        terminate("BH_FFR: invalid dynamical-friction timestep limit=%g Myr for ID=%llu", df_limit_myr,
-                  (unsigned long long)P[p].ID);
-      if(df_limit_myr < dt_limit_myr)
-        dt_limit_myr = df_limit_myr;
+      const double df_tcode = bh_ffr_get_cached_dynamical_friction_timescale_code(p);
+      if(isfinite(df_tcode) && df_tcode > 0)
+        {
+          const double df_limit_myr = All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(df_tcode);
+          if(!isfinite(df_limit_myr) || !(df_limit_myr > 0))
+            terminate("BH_FFR: invalid dynamical-friction timestep limit=%g Myr for ID=%llu", df_limit_myr,
+                      (unsigned long long)P[p].ID);
+          if(df_limit_myr < dt_limit_myr)
+            dt_limit_myr = df_limit_myr;
+        }
     }
 
   limited = bh_ffr_limit_integer_step_by_physical_myr(limited, dt_limit_myr);
@@ -377,10 +380,12 @@ void bh_ffr_step(void)
       if(BHP[b].LastProcessedTi != All.Ti_Current && (!(dt_myr > 0) || !(dt_code > 0)))
         terminate("BH_FFR: non-positive elapsed physical timestep for active particle ID=%llu", (unsigned long long)P[p].ID);
 
-      /* Iteration-11 drag is consumed here, exactly once with the same
-       * elapsed interval that will now be committed by LastProcessedTi. The
-       * full-gravity-tree hook only refreshes the transient DM environment. */
-      bh_ffr_apply_cached_dynamical_friction(p, dt_code);
+      /* Iteration-11 drag belongs to the validated reservoir/MACER
+       * backend.  Direct benchmark runs are intentionally accretion-only so
+       * that changes in BH-gas relative velocity do not contaminate the
+       * accretion-law comparison. */
+      if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
+        bh_ffr_apply_cached_dynamical_friction(p, dt_code);
 
       if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
         {
