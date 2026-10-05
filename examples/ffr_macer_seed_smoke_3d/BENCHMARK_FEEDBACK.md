@@ -2,18 +2,18 @@
 
 The feedback selector is independent of the resolved accretion estimator:
 
-- `BHBenchmarkFeedbackModel = 0`: no feedback.
-- `BHBenchmarkFeedbackModel = 1`: IllustrisTNG thermal/kinetic feedback law.
-- `BHBenchmarkFeedbackModel = 2`: validated FFR-MACER mechanical wind+jet feedback.
+- \`BHBenchmarkFeedbackModel = 0\`: no feedback.
+- \`BHBenchmarkFeedbackModel = 1\`: IllustrisTNG thermal/kinetic feedback law.
+- \`BHBenchmarkFeedbackModel = 2\`: validated FFR-MACER mechanical wind+jet feedback.
 
-The supported backend combinations are intentionally strict:
+The allowed backend combinations are intentionally strict:
 
-- TNG feedback requires `BHBenchmarkAccretionTarget = 1` (direct).
-- MACER feedback requires `BHBenchmarkAccretionTarget = 0` (reservoir).
-- `NONE` may be used with either target for isolated tests.
+- TNG feedback requires \`BHBenchmarkAccretionTarget = 1\` (direct).
+- MACER feedback requires \`BHBenchmarkAccretionTarget = 0\` (reservoir).
+- \`NONE\` may be used with either target for isolated tests.
 
-This produces the six headline configurations without duplicating the
-accretion implementation:
+This yields the six headline configurations without duplicating the accretion
+implementation:
 
 | Configuration | Accretion model | Target | Feedback |
 | --- | --- | --- | --- |
@@ -26,161 +26,183 @@ accretion implementation:
 
 ## TNG mode switch
 
-For the TNG feedback law,
+The TNG feedback switch is
 
-[
-chi = minleft[chi_0
-  left(rac{M_{m BH}}{10^8,M_odot}ight)^eta,
-  chi_{max}ight].
-]
+\[
+\chi =
+\min\left[
+\chi_0
+\left(\frac{M_{\rm BH}}{10^8\,M_\odot}\right)^\beta,
+\chi_{\max}
+\right],
+\]
 
-The fiducial parameters are
+with fiducial values
 
-[
-chi_0=0.002,qquad eta=2,qquad chi_{max}=0.1.
-]
+\[
+\chi_0=0.002,\qquad \beta=2,\qquad \chi_{\max}=0.1.
+\]
 
-The feedback state is selected with the **uncapped** benchmark estimator,
+The feedback state is selected from the uncapped benchmark estimator,
 
-[
-f_{m Edd,raw} =
-rac{dot M_{m raw}}{dot M_{m Edd}}.
-]
+\[
+f_{\rm Edd,raw} =
+\frac{\dot M_{\rm raw}}{\dot M_{\rm Edd}}.
+\]
 
-The thermal state is used when (f_{m Edd,raw}gechi); otherwise the
-kinetic state is used.  For model 0 this reproduces the TNG choice based on
-uncapped Bondi accretion.  Models 1--3 use the same rule applied to their own
-raw estimator, which is the controlled cross-model generalization.
+Thermal mode is used for \(f_{\rm Edd,raw}\ge\chi\), otherwise kinetic mode is
+used. For model 0 this is the native TNG choice based on uncapped Bondi
+accretion. Models 1--3 use the same switch applied to their own raw estimator;
+that extension is part of the controlled cross-model benchmark.
 
 ## TNG energy generation
 
-The energy source uses the benchmark operational accretion rate (after the
-direct-backend Eddington cap), not the finite-step realized gas sink:
+The energy source uses the benchmark operational direct accretion rate, i.e.
+the selected estimator after the direct-backend Eddington cap. It is kept
+separate from the finite-step realized conservative gas sink.
 
-[
-dot E_{m thermal} =
-epsilon_{m f,high}epsilon_rdot M_{m operational}c^2,
-]
+Thermal mode:
 
-with fiducial
+\[
+\dot E_{\rm thermal}
+=
+\epsilon_{\rm f,high}\epsilon_r
+\dot M_{\rm operational}c^2,
+\]
 
-[
-epsilon_{m f,high}=0.1,qquad epsilon_r=0.2.
-]
+with
 
-The kinetic state uses
+\[
+\epsilon_{\rm f,high}=0.1,\qquad \epsilon_r=0.2.
+\]
 
-[
-dot E_{m kinetic} =
-epsilon_{m f,kin}dot M_{m operational}c^2,
-]
+Kinetic mode:
+
+\[
+\dot E_{\rm kinetic}
+=
+\epsilon_{\rm f,kin}
+\dot M_{\rm operational}c^2,
+\]
 
 where
 
-[
-epsilon_{m f,kin}
+\[
+\epsilon_{\rm f,kin}
 =
-minleft[
-rac{n_{m H}}
-     {f_{m thresh} n_{m H,SF}},
-epsilon_{m f,kin,max}
-ight].
-]
+\min\left[
+\frac{n_{\rm H}}
+     {f_{\rm thresh}n_{\rm H,SF}},
+\epsilon_{\rm f,kin,max}
+\right].
+\]
 
-Fiducial parameters are
+The fiducial benchmark values are
 
-[
-f_{m thresh}=0.05,qquad
-n_{m H,SF}=0.1,{m cm^{-3}},qquad
-epsilon_{m f,kin,max}=0.2.
-]
+\[
+f_{\rm thresh}=0.05,\qquad
+n_{\rm H,SF}=0.1\,{\rm cm^{-3}},\qquad
+\epsilon_{\rm f,kin,max}=0.2.
+\]
 
-The density is measured with a cubic-spline kernel over the controlled fixed
-proper `BHFeedbackRadius`.
+The star-formation density is a configurable physical-\(n_{\rm H}\) proxy in
+this public-AREPO benchmark. It should be matched to the star-formation model
+used by a later production setup.
 
 ## TNG kinetic bursts
 
-Kinetic energy accumulates persistently until
+Kinetic energy is stored persistently until
 
-[
-E_{m kin,buf}ge E_{m inj,min},
-qquad
-E_{m inj,min}=
-f_{m re}rac12 M_{m enc}sigma_{m DM}^2,
-]
+\[
+E_{\rm kin,buf}\ge E_{\rm inj,min},
+\qquad
+E_{\rm inj,min}
+=
+f_{\rm re}\frac{1}{2}M_{\rm enc}\sigma_{\rm DM}^2,
+\]
 
-with fiducial (f_{m re}=20), full gas mass (M_{m enc}) inside the
-feedback aperture, and the cached one-dimensional local dark-matter velocity
-dispersion.
+with the Weinberger et al. fiducial \(f_{\rm re}=20\). \(M_{\rm enc}\) is the
+full gas mass inside the feedback aperture and \(\sigma_{\rm DM}\) is the
+cached one-dimensional local dark-matter velocity dispersion.
 
-When an event fires, all available kinetic-buffer energy is released.  A
-single reproducible pseudorandom unit vector is chosen for the event.  Each
-active target cell receives
+When an event fires, the available kinetic buffer is released. A single
+reproducible pseudorandom unit vector is chosen for that event and changes
+between events. Each active target receives
 
-[
-Delta {f p}_j =
-m_jsqrt{rac{2Delta E,W_j}{ho_{m active}}},hat{f n}.
-]
+\[
+\Delta{\bf p}_j
+=
+m_j
+\sqrt{
+\frac{2\Delta E\,W_j}{\rho_{\rm active}}
+}
+\,\hat{\bf n}.
+\]
 
-The direction changes between events.  This deliberately does **not** impose
-zero momentum per event: that is the source TNG prescription.  The quadratic
-kinetic term is checked to sum to (Delta E); the actual lab-frame total
-energy change also contains the pre-existing velocity cross term and is
-logged separately.
+This deliberately does not force zero net momentum for an individual event:
+that is the TNG prescription. The code verifies that the sum of the quadratic
+kinetic terms equals \(\Delta E\), and separately logs the actual lab-frame
+energy change and injected momentum. In TNG these quantities conserve only in
+the average over randomly reoriented events.
 
 ## Controlled aperture and active-cell policy
 
-The original TNG cosmological implementation adapts its BH smoothing region to
-a target neighbour count.  The headline convergence benchmark instead keeps
-the same fixed proper feedback aperture for TNG and MACER.  This is
-intentional: it isolates the feedback prescription from neighbourhood-size
-changes.  Therefore the paper should call this the **TNG feedback law in the
-controlled fixed aperture**, not a byte-for-byte native TNG implementation.
+The cosmological TNG implementation normally adapts the BH neighbourhood to a
+target neighbour count. The convergence benchmark instead keeps the same fixed
+proper \`BHFeedbackRadius\` for TNG and MACER so changes in the headline
+comparison come from the feedback prescription, not a different numerical
+aperture. Weinberger et al. also used a fixed physical feedback radius in their
+idealized kinetic-wind convergence tests.
 
-Public AREPO also lacks the private TNG wake-up machinery.  Only synchronized
-active hydro cells are modified.  The full aperture is still used read-only
-for (M_{m enc}), density, and the kinetic threshold.  If the active subset
-is too small, the energy remains in its persistent buffer.  When injection is
-allowed, kernel weights are renormalized over active targets so buffered
-energy is not lost.
+The paper should therefore describe this implementation as the **TNG feedback
+law in a controlled fixed aperture**, rather than as a byte-for-byte native TNG
+BH implementation.
+
+The public AREPO base used here does not provide the private TNG wake-up
+machinery. Only synchronized active hydro cells are modified. All gas inside
+the aperture is still used read-only for \(M_{\rm enc}\), the kernel density,
+and the kinetic threshold. If the active subset is too small, energy remains
+buffered. Injection weights are renormalized over the active subset so no
+stored feedback energy is silently discarded.
 
 ## MACER path
 
-`BHBenchmarkFeedbackModel=2` calls the existing validated FFR-MACER feedback
-implementation without changing its physical closure:
+\`BHBenchmarkFeedbackModel=2\` calls the already validated FFR-MACER feedback
+implementation. Its physical closure is not rewritten:
 
-- broad bipolar wind around the coherent disc axis,
-- narrow bipolar jet around the persistent jet axis,
-- separate wind and jet energy reservoirs,
-- wind rest-mass return,
-- binding/virial burst thresholds,
-- active-target/lobe safeguards,
-- exact zero-net-momentum bipolar packets,
-- exact requested kinetic-energy increment,
-- packet backlog and feedback-aware timestep handling.
+- broad bipolar wind around the coherent disc axis;
+- narrow bipolar jet around the persistent jet axis;
+- separate wind and jet energy reservoirs;
+- wind rest-mass return;
+- binding/virial burst thresholds;
+- active-target and lobe safeguards;
+- zero-net-momentum bipolar packets;
+- exact requested packet kinetic-energy increment;
+- backlog and feedback-aware timestep handling.
 
-Thus `FFR + reservoir + MACER` remains the validated production model, while
-`Bondi + reservoir + MACER` changes only the resolved supply estimator.
+Thus \`FFR + reservoir + MACER\` remains the validated production-model
+combination, while \`Bondi + reservoir + MACER\` changes only the resolved
+supply estimator.
 
 ## Snapshot diagnostics
 
-The benchmark writes these additional Type-5 fields:
+Additional Type-5 output fields are:
 
-- `BH_BenchmarkMdotRaw`
-- `BH_BenchmarkMdotOperational`
-- `BH_TNGMode`
-- `BH_TNGRawEddRatio`
-- `BH_TNGModeThreshold`
-- `BH_TNGFeedbackPower`
-- `BH_TNGThermalEnergyBuffer`
-- `BH_TNGKineticEnergyBuffer`
-- `BH_TNGKineticThresholdEnergy`
+- \`BH_BenchmarkMdotRaw\`
+- \`BH_BenchmarkMdotOperational\`
+- \`BH_TNGMode\`
+- \`BH_TNGRawEddRatio\`
+- \`BH_TNGModeThreshold\`
+- \`BH_TNGFeedbackPower\`
+- \`BH_TNGThermalEnergyBuffer\`
+- \`BH_TNGKineticEnergyBuffer\`
+- \`BH_TNGKineticThresholdEnergy\`
 
-The existing MACER diagnostics remain unchanged.
+The existing MACER diagnostics are unchanged.
 
 ## Restart format
 
-Adding persistent TNG energy buffers changes the benchmark BHP layout.  Native
-benchmark restarts therefore use FFR restart version 3 and explicitly reject
-older incompatible native restart records.  This does not modify the
-validated `ffr-macer` branch or its restart format.
+Persistent TNG feedback buffers extend the benchmark BHP state. Native restart
+files written by this branch therefore use FFR restart version 3 and reject
+older incompatible records explicitly. The validated \`ffr-macer\` branch is
+untouched and retains its own existing restart format.
