@@ -612,9 +612,9 @@ void bh_benchmark_tng_feedback_accumulate(void)
       if(mode == BH_BENCHMARK_TNG_MODE_THERMAL)
         power = All.BHBenchmarkTNGThermalCoupling *
                 All.BHBenchmarkRadiativeEfficiency *
-                BHP[b].MdotHorizon * c_internal * c_internal;
+                BHP[b].BenchmarkMdotOperational * c_internal * c_internal;
       else
-        power = epskin * BHP[b].MdotHorizon * c_internal * c_internal;
+        power = epskin * BHP[b].BenchmarkMdotOperational * c_internal * c_internal;
 
       if(!isfinite(power) || power < 0)
         terminate("BH_TNG: invalid feedback power=%g for ID=%llu",
@@ -652,13 +652,14 @@ void bh_benchmark_tng_feedback_accumulate(void)
       BHP[b].TNGFeedbackMode = mode;
 
       printf("BH_TNG: source ID=%llu task=%d mode=%s MbhMsun=%g "
-             "fEddRaw=%g chi=%g mdotRaw=%g mdotRealized=%g nH=%g epsKin=%g "
-             "power=%g dE=%g Eth=%g EthermBuf=%g EkinBuf=%g "
+             "fEddRaw=%g chi=%g mdotRaw=%g mdotOperational=%g mdotRealized=%g "
+             "nH=%g epsKin=%g power=%g dE=%g Eth=%g EthermBuf=%g EkinBuf=%g "
              "Menc=%g sigmaDM=%g\n",
              (unsigned long long)P[p].ID, ThisTask,
              mode == BH_BENCHMARK_TNG_MODE_THERMAL ? "thermal" : "kinetic",
              bh_mass_msun, fedd_raw, chi, BHP[b].BenchmarkMdotRaw,
-             BHP[b].MdotHorizon, nh, epskin, power, denergy, eth,
+             BHP[b].BenchmarkMdotOperational, BHP[b].MdotHorizon, nh, epskin,
+             power, denergy, eth,
              BHP[b].TNGThermalEnergyBuffer, BHP[b].TNGKineticEnergyBuffer,
              res->EnclosedMass, BHP[b].SigmaDM);
       fflush(stdout);
