@@ -38,8 +38,8 @@ if not da > 0:
 with h5py.File(p, "r") as f:
     a=float(f["Header"].attrs["Time"])
 with open(out, "w") as g:
-    g.write(f"{a + 4.0e-6:.15f} 1\n")
-    g.write(f"{a + 8.0e-6:.15f} 1\n")
+    g.write(f"{a + 0.5*da:.15f} 1\n")
+    g.write(f"{a + da:.15f} 1\n")
 print(f"Merger test starts at a={a:.12f}; SHORT_DA={da:.3e}")
 PY
 
