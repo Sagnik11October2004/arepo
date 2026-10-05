@@ -62,6 +62,8 @@ struct bh_tng_event
   MyDouble Energy;
   MyDouble Direction[3];
   MyDouble ActiveKernelDensity;
+  MyDouble ActiveMass;
+  long long ActiveCount;
   MyDouble EnergyBefore;
 };
 
@@ -428,8 +430,14 @@ static int bh_tng_evaluate(int target, int mode, int threadid)
 
       if(TNGPass == BH_TNG_PASS_MARK)
         {
-          if(bh_tng_candidate_wins(in->BHID, TNGWinnerID[j]))
-            TNGWinnerID[j] = in->BHID;
+          /* Generic gas walks may evaluate different BH targets on different
+           * OpenMP threads.  Protect the read/compare/write so the winner is
+           * deterministic rather than scheduling-dependent. */
+#pragma omp critical(bh_tng_winner_update)
+          {
+            if(bh_tng_candidate_wins(in->BHID, TNGWinnerID[j]))
+              TNGWinnerID[j] = in->BHID;
+          }
           continue;
         }
 
@@ -705,6 +713,8 @@ static void bh_tng_prepare_events(int channel, int round)
 
       ev->Channel = channel;
       ev->ActiveKernelDensity = res->ActiveKernelDensity;
+      ev->ActiveMass = res->ActiveMass;
+      ev->ActiveCount = res->ActiveCount;
 
       if(res->ActiveCount <= 0 || !(res->ActiveKernelDensity > 0) ||
          res->ActiveMass < All.BHMinActiveTargetMassFrac * res->EnclosedMass)
@@ -792,7 +802,7 @@ static void bh_tng_commit_events(int channel)
                  (unsigned long long)P[p].ID, ThisTask, ev->Energy,
                  fabs(res->InjectedThermalEnergy - ev->Energy) /
                      fmax(ev->Energy, 1.0e-30),
-                 TNGResults[n].ActiveCount, TNGResults[n].ActiveMass);
+                 ev->ActiveCount, ev->ActiveMass);
           fflush(stdout);
         }
       else
