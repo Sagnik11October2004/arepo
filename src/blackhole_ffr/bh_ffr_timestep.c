@@ -473,8 +473,8 @@ void bh_ffr_step(void)
                       (unsigned long long)P[p].ID);
         }
 
-      printf("BH_BENCHMARK: mass-ledger ID=%llu task=%d dtCode=%g "
-             "dMop=%g cumOperational=%g cumRealized=%g cumBHGrowth=%g\n",
+      printf("BH_BENCHMARK: mass-ledger ID=%llu task=%d dtCode=%.17g "
+             "dMop=%.17g cumOperational=%.17g cumRealized=%.17g cumBHGrowth=%.17g\n",
              (unsigned long long)P[p].ID, ThisTask, dt_code, operational_mass,
              BHP[b].BenchmarkCumulativeOperationalMass,
              BHP[b].BenchmarkCumulativeRealizedMass,

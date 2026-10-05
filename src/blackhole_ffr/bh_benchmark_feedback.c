@@ -740,10 +740,10 @@ void bh_benchmark_tng_feedback_accumulate(void)
 
       bh_tng_validate_energy_ledger(b, P[p].ID, "source-accumulation");
 
-      printf("BH_TNG: source ID=%llu task=%d mode=%s MbhMsun=%g "
-             "fEddRaw=%g chi=%g mdotRaw=%g mdotOperational=%g mdotRealized=%g "
-             "nH=%g epsKin=%g power=%g dE=%g Eth=%g EthermBuf=%g EkinBuf=%g "
-             "Menc=%g Mactive=%g activeFrac=%g sigmaDM=%g cumGenerated=%g cumInjected=%g\n",
+      printf("BH_TNG: source ID=%llu task=%d mode=%s MbhMsun=%.17g "
+             "fEddRaw=%.17g chi=%.17g mdotRaw=%.17g mdotOperational=%.17g mdotRealized=%.17g "
+             "nH=%.17g epsKin=%.17g power=%.17g dE=%.17g Eth=%.17g EthermBuf=%.17g EkinBuf=%.17g "
+             "Menc=%.17g Mactive=%.17g activeFrac=%.17g sigmaDM=%.17g cumGenerated=%.17g cumInjected=%.17g\n",
              (unsigned long long)P[p].ID, ThisTask,
              mode == BH_BENCHMARK_TNG_MODE_THERMAL ? "thermal" : "kinetic",
              bh_mass_msun, fedd_raw, chi, BHP[b].BenchmarkMdotRaw,
@@ -893,9 +893,9 @@ static void bh_tng_commit_events(int channel)
 
           bh_tng_validate_energy_ledger(b, P[p].ID, "thermal-event");
 
-          printf("BH_TNG: thermal event ID=%llu task=%d E=%g dErel=%g "
-                 "Nactive=%lld Mactive=%g activeFrac=%g waitTransactions=%d waitCodeTime=%g "
-                 "cumGenerated=%g cumInjected=%g\n",
+          printf("BH_TNG: thermal event ID=%llu task=%d E=%.17g dErel=%.17g "
+                 "Nactive=%lld Mactive=%.17g activeFrac=%.17g waitTransactions=%d waitCodeTime=%.17g "
+                 "cumGenerated=%.17g cumInjected=%.17g\n",
                  (unsigned long long)P[p].ID, ThisTask, ev->Energy,
                  fabs(res->InjectedThermalEnergy - ev->Energy) /
                      fmax(ev->Energy, 1.0e-30),
@@ -934,10 +934,10 @@ static void bh_tng_commit_events(int channel)
 
           bh_tng_validate_energy_ledger(b, P[p].ID, "kinetic-event");
 
-          printf("BH_TNG: kinetic event ID=%llu task=%d E=%g dEquadRel=%g "
-                 "dElab=%g px=%g py=%g pz=%g pnorm=%g "
-                 "dir=(%g,%g,%g) activeFrac=%g waitTransactions=%d waitCodeTime=%g "
-                 "cumGenerated=%g cumInjected=%g\n",
+          printf("BH_TNG: kinetic event ID=%llu task=%d E=%.17g dEquadRel=%.17g "
+                 "dElab=%.17g px=%.17g py=%.17g pz=%.17g pnorm=%.17g "
+                 "dir=(%.17g,%.17g,%.17g) activeFrac=%.17g waitTransactions=%d waitCodeTime=%.17g "
+                 "cumGenerated=%.17g cumInjected=%.17g\n",
                  (unsigned long long)P[p].ID, ThisTask, ev->Energy,
                  fabs(res->InjectedKineticQuadraticEnergy - ev->Energy) /
                      fmax(ev->Energy, 1.0e-30),
@@ -1027,10 +1027,10 @@ void bh_benchmark_tng_feedback_inject(void)
                    fabs(BHP[b].TNGCumulativeInjectedEnergy) + fabs(buffered),
                1.0e-30);
 
-      printf("BH_TNG: coupling-ledger ID=%llu task=%d activeFrac=%g "
-             "EthermBuf=%g EkinBuf=%g thermAgeTransactions=%d thermAgeCodeTime=%g "
-             "kinAgeTransactions=%d kinAgeCodeTime=%g cumGenerated=%g cumInjected=%g "
-             "residual=%g rel=%g\n",
+      printf("BH_TNG: coupling-ledger ID=%llu task=%d activeFrac=%.17g "
+             "EthermBuf=%.17g EkinBuf=%.17g thermAgeTransactions=%d thermAgeCodeTime=%.17g "
+             "kinAgeTransactions=%d kinAgeCodeTime=%.17g cumGenerated=%.17g cumInjected=%.17g "
+             "residual=%.17g rel=%.17g\n",
              (unsigned long long)P[p].ID, ThisTask,
              BHP[b].TNGActiveTargetMassFraction,
              BHP[b].TNGThermalEnergyBuffer, BHP[b].TNGKineticEnergyBuffer,

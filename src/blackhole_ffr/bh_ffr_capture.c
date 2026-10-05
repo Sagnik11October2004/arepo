@@ -597,8 +597,8 @@ static void bh_ffr_prepare_benchmark_rates(void)
                   res->LambdaScale, res->UniformLambda, (unsigned long long)P[p].ID);
 
       printf("BH_BENCHMARK: accretion ID=%llu task=%d model=%s target=%s feedback=%d "
-             "Mgas=%g rho=%g cs=%g vrel=%g Vphi=%g nH=%g raw=%g edd=%g operational=%g "
-             "boost=%g amlim=%g\n",
+             "Mgas=%.17g rho=%.17g cs=%.17g vrel=%.17g Vphi=%.17g nH=%.17g raw=%.17g edd=%.17g operational=%.17g "
+             "boost=%.17g amlim=%.17g\n",
              (unsigned long long)P[p].ID, ThisTask,
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT ? "direct" : "reservoir",
@@ -897,8 +897,8 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
         terminate("BH_BENCHMARK: invalid active accretion-aperture mass fraction=%g for ID=%llu",
                   active_aperture_fraction, (unsigned long long)P[p].ID);
 
-      printf("BH_BENCHMARK: sink ID=%llu task=%d raw=%g operational=%g realized=%g "
-             "R_sink=%g dM=%g cumRealized=%g activeGasFrac=%g sinkMinBin=%d sinkMaxBin=%d "
+      printf("BH_BENCHMARK: sink ID=%llu task=%d raw=%.17g operational=%.17g realized=%.17g "
+             "R_sink=%.17g dM=%.17g cumRealized=%.17g activeGasFrac=%.17g sinkMinBin=%d sinkMaxBin=%d "
              "sinkCells=%lld heterogeneous=%d\n",
              (unsigned long long)P[p].ID, ThisTask,
              BHP[b].BenchmarkMdotRaw, BHP[b].BenchmarkMdotOperational,
