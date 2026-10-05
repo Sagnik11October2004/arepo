@@ -524,6 +524,42 @@ void read_parameter_file(char *fname)
       strcpy(tag[nt], "BHBenchmarkEddingtonFactor");
       addr[nt] = &All.BHBenchmarkEddingtonFactor;
       id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkFeedbackModel");
+      addr[nt] = &All.BHBenchmarkFeedbackModel;
+      id[nt++] = INT;
+
+      strcpy(tag[nt], "BHBenchmarkTNGChi0");
+      addr[nt] = &All.BHBenchmarkTNGChi0;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkTNGChiBeta");
+      addr[nt] = &All.BHBenchmarkTNGChiBeta;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkTNGChiMax");
+      addr[nt] = &All.BHBenchmarkTNGChiMax;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkTNGThermalCoupling");
+      addr[nt] = &All.BHBenchmarkTNGThermalCoupling;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkTNGKineticMaxEfficiency");
+      addr[nt] = &All.BHBenchmarkTNGKineticMaxEfficiency;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkTNGKineticDensityFactor");
+      addr[nt] = &All.BHBenchmarkTNGKineticDensityFactor;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkTNGSFThresholdNH");
+      addr[nt] = &All.BHBenchmarkTNGSFThresholdNH;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkTNGKineticBurstFactor");
+      addr[nt] = &All.BHBenchmarkTNGKineticBurstFactor;
+      id[nt++] = REAL;
 #endif /* #ifdef BLACKHOLE_FFR */
 
 #ifdef NODEREFINE_BACKGROUND_GRID
@@ -896,7 +932,13 @@ void check_parameters()
      !isfinite(All.BHMinActiveTargetMassFrac) || !isfinite(All.BHInternalTimestepFactor) ||
      !isfinite(All.BHBenchmarkBoostAlpha) || !isfinite(All.BHBenchmarkBoostDensityThreshold) ||
      !isfinite(All.BHBenchmarkBoostBeta) || !isfinite(All.BHBenchmarkAMViscosity) ||
-     !isfinite(All.BHBenchmarkRadiativeEfficiency) || !isfinite(All.BHBenchmarkEddingtonFactor))
+     !isfinite(All.BHBenchmarkRadiativeEfficiency) || !isfinite(All.BHBenchmarkEddingtonFactor) ||
+     !isfinite(All.BHBenchmarkTNGChi0) || !isfinite(All.BHBenchmarkTNGChiBeta) ||
+     !isfinite(All.BHBenchmarkTNGChiMax) || !isfinite(All.BHBenchmarkTNGThermalCoupling) ||
+     !isfinite(All.BHBenchmarkTNGKineticMaxEfficiency) ||
+     !isfinite(All.BHBenchmarkTNGKineticDensityFactor) ||
+     !isfinite(All.BHBenchmarkTNGSFThresholdNH) ||
+     !isfinite(All.BHBenchmarkTNGKineticBurstFactor))
     mpi_terminate("BLACKHOLE_FFR floating-point parameters must all be finite.\n");
   if(All.BHSeedHaloMassMsun <= 0 || All.BHSeedMassMsun <= 0 || All.BHSeedMinRedshift < 0 ||
      All.BHSeedMaxDonorFraction <= 0 || All.BHSeedMaxDonorFraction >= 1)
@@ -951,6 +993,30 @@ void check_parameters()
     mpi_terminate("BHBenchmarkRadiativeEfficiency must lie in (0,1).\n");
   if(All.BHBenchmarkEddingtonFactor <= 0)
     mpi_terminate("BHBenchmarkEddingtonFactor must be positive.\n");
+
+  if(All.BHBenchmarkFeedbackModel < BH_BENCHMARK_FEEDBACK_NONE ||
+     All.BHBenchmarkFeedbackModel > BH_BENCHMARK_FEEDBACK_MACER)
+    mpi_terminate("BHBenchmarkFeedbackModel must be 0(none), 1(TNG), or 2(MACER).\n");
+
+  if(All.BHBenchmarkTNGChi0 <= 0 || All.BHBenchmarkTNGChiBeta < 0 ||
+     All.BHBenchmarkTNGChiMax <= 0 || All.BHBenchmarkTNGChiMax > 1)
+    mpi_terminate("TNG mode-switch parameters require chi0>0, beta>=0, and 0<chiMax<=1.\n");
+
+  if(All.BHBenchmarkTNGThermalCoupling < 0 || All.BHBenchmarkTNGThermalCoupling > 1 ||
+     All.BHBenchmarkTNGKineticMaxEfficiency < 0 || All.BHBenchmarkTNGKineticMaxEfficiency > 1)
+    mpi_terminate("TNG thermal coupling and kinetic maximum efficiency must lie in [0,1].\n");
+
+  if(All.BHBenchmarkTNGKineticDensityFactor <= 0 || All.BHBenchmarkTNGSFThresholdNH <= 0 ||
+     All.BHBenchmarkTNGKineticBurstFactor <= 0)
+    mpi_terminate("TNG density factor, star-formation nH threshold, and kinetic burst factor must be positive.\n");
+
+  if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_TNG &&
+     All.BHBenchmarkAccretionTarget != BH_BENCHMARK_TARGET_DIRECT)
+    mpi_terminate("TNG benchmark feedback requires BHBenchmarkAccretionTarget=1 (direct).\n");
+
+  if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_MACER &&
+     All.BHBenchmarkAccretionTarget != BH_BENCHMARK_TARGET_RESERVOIR)
+    mpi_terminate("MACER benchmark feedback requires BHBenchmarkAccretionTarget=0 (reservoir).\n");
 #endif /* #ifdef BLACKHOLE_FFR */
 
   if(All.NumFilesWrittenInParallel > NTask)
