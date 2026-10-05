@@ -47,6 +47,49 @@ enum bh_ffr_accretion_state
   BH_FFR_STATE_COLD = 2
 };
 
+
+/* Accretion-law selector for convergence benchmarks.  The default branch
+ * behaviour is recovered with ACC_FFR + TARGET_RESERVOIR. */
+enum bh_benchmark_accretion_model
+{
+  BH_BENCHMARK_ACC_TNG_BONDI = 0,
+  BH_BENCHMARK_ACC_BOOSTED_BONDI = 1,
+  BH_BENCHMARK_ACC_AM_BONDI = 2,
+  BH_BENCHMARK_ACC_FFR = 3
+};
+
+enum bh_benchmark_accretion_target
+{
+  BH_BENCHMARK_TARGET_RESERVOIR = 0,
+  BH_BENCHMARK_TARGET_DIRECT = 1
+};
+
+enum bh_benchmark_boost_mode
+{
+  BH_BENCHMARK_BOOST_CONSTANT = 0,
+  BH_BENCHMARK_BOOST_DENSITY = 1
+};
+
+struct bh_benchmark_environment
+{
+  double GasMass;
+  double Density;
+  double SoundSpeed;
+  double RelativeSpeed;
+  double Vphi;
+  double HydrogenNumberDensity;
+  double FFRRawRate;
+};
+
+struct bh_benchmark_rate_result
+{
+  double RawRate;
+  double OperationalRate;
+  double EddingtonRate;
+  double BoostFactor;
+  double AngularMomentumLimiter;
+};
+
 /*! Persistent sub-grid state for one Type-5 FFR-MACER black hole.
  *
  * The coherence vector stores mass-weighted orientation memory, not a
@@ -165,6 +208,11 @@ void bh_ffr_df_restart_replicate(void);
 void bh_ffr_merge_close_black_holes(void);
 void bh_ffr_capture_resolved_gas(void);
 void bh_ffr_capture_self_test(void);
+const char *bh_benchmark_accretion_model_name(int model);
+double bh_benchmark_eddington_rate_code(double bh_mass);
+void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, double bh_mass,
+                                    struct bh_benchmark_rate_result *out);
+void bh_benchmark_accretion_self_test(void);
 double bh_ffr_central_mass_code(int p);
 double bh_ffr_reservoir_timescale_myr(double bh_mass, double reservoir_mass);
 double bh_ffr_reservoir_processable_mass(double reservoir_mass, double dt_myr, double tau_myr);
