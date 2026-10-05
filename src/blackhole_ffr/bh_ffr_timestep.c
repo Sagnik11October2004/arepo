@@ -459,8 +459,10 @@ void bh_ffr_step(void)
 
   /* TNG feedback energy is generated from this transaction before
    * LastProcessedTi is advanced. Its mode is selected from the uncapped
-   * estimator/Eddington ratio, while energy generation uses the realized
-   * captured mass rate so gas removal and feedback energetics stay consistent. */
+   * estimator/Eddington ratio, while energy generation uses the selected
+   * Eddington-limited operational accretion rate as in the TNG source model.
+   * The realized finite-step gas sink remains a separate conservation
+   * diagnostic and converges to that operational rate with timestep. */
   if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_TNG)
     bh_benchmark_tng_feedback_accumulate();
 
