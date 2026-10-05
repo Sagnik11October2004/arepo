@@ -164,7 +164,7 @@ The verifier requires an exact 64-particle DM sample (no gas fallback), positive
     EthWind = BHWindBurstFactor * 0.5 * Menc * vbind^2
     EthJet  = BHJetBurstFactor  * 0.5 * Menc * vbind^2
 
-from runtime diagnostics. If fewer than BHDMNeighbours dark-matter particles exist, production code falls back to the nearest gas velocity sample and logs source=gas-fallback; no persistent fallback flag is added because the BHP restart ABI is frozen.
+from runtime diagnostics. If fewer than BHDMNeighbours dark-matter particles exist, production code falls back to the nearest gas velocity sample and logs source=gas-fallback; no persistent fallback flag is needed because this diagnostic remains part of the separate DM-environment cache.
 
 ## 12. Iteration-11 dynamical-friction and simple-merger regressions
 
@@ -191,7 +191,7 @@ The version-1 merger deliberately has no boundness, relative-velocity, binary-ha
 
 ## 13. Iteration-11.5 hardening
 
-Iteration 11.5 is a correctness/robustness pass rather than a new accretion model. It rejects evolved Type-5 RestartFlag=2 snapshots, versions the native FFR restart payload, serializes the rank-local dynamical-friction cache separately from the frozen BHP record and re-replicates it after RestartFlag=1, bounds DF-cache reuse by both 0.25 Rfb displacement and a physical age limit, preserves merger timestep/backlog information, tightens code-unit conservation tolerances, and logs the unresolved kinetic-energy dissipation of inelastic gas capture.
+Iteration 11.5 is a correctness/robustness pass rather than a new accretion model. It rejects evolved Type-5 RestartFlag=2 snapshots, versions the native FFR restart payload, serializes the rank-local dynamical-friction cache separately from the BHP record and re-replicates it after RestartFlag=1, bounds DF-cache reuse by both 0.25 Rfb displacement and a physical age limit, preserves merger timestep/backlog information, tightens code-unit conservation tolerances, and logs the unresolved kinetic-energy dissipation of inelastic gas capture.
 
 Feedback overlap conflicts still permit at most one event to own any active gas cell in a packet round, but priority is now a deterministic function of BH ID, synchronization time and packet round instead of permanently favoring the lower ID. This removes systematic starvation while remaining MPI-order independent.
 
@@ -201,7 +201,7 @@ For multimass zoom ICs, set BH_FFR_DM_TYPEMASK at compile time to the sum of the
 
 The nearest-neighbour communication payload now defaults to 64 entries, which covers the fiducial 40-neighbour estimator and the 64-neighbour smoke test without carrying the previous 256-candidate result structure for every exported BH. Runs that deliberately need a larger sample can set `BH_FFR_DM_MAX_NEIGHBOURS=<N>` in Config.sh; parameter validation uses the compiled capacity.
 
-The current native restart format is FFR restart version 2. It stores the frozen BHP record size and the separate DF-cache record size and fails explicitly on an incompatible layout rather than interpreting shifted bytes as valid state. Restart files written by older FFR binaries should be resumed with the binary that wrote them.
+The convergence-benchmark branch now uses FFR native restart version 3 because the benchmark TNG feedback model adds persistent energy reservoirs and diagnostics to BHP. The restart stores the BHP record size and the separate DF-cache record size and fails explicitly on an incompatible layout rather than interpreting shifted bytes as valid state. The validated `ffr-macer` branch is unchanged; restart files written by older binaries should be resumed with the matching binary.
 
 After pulling the hardening branch, rerun the regression chain before coupled validation. The regression runners automatically invoke build.sh if ArepoSeedTest is missing:
 
