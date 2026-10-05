@@ -101,13 +101,15 @@ The fiducial benchmark values are
 
 \[
 f_{\rm thresh}=0.05,\qquad
-n_{\rm H,SF}=0.1\,{\rm cm^{-3}},\qquad
+n_{\rm H,SF}=0.1065\,{\rm cm^{-3}},\qquad
 \epsilon_{\rm f,kin,max}=0.2.
 \]
 
 The star-formation density is a configurable physical-\(n_{\rm H}\) proxy in
-this public-AREPO benchmark. It should be matched to the star-formation model
-used by a later production setup.
+this public-AREPO benchmark. The checked-in value, \(0.1065\,{\rm cm^{-3}}\),
+is the physical TNG threshold corresponding to the commonly quoted rounded
+value \(\simeq0.1\,{\rm cm^{-3}}\). It should be matched to the star-formation
+model if a later production setup deliberately changes that threshold.
 
 ## TNG kinetic bursts
 
