@@ -401,8 +401,16 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
           for(int k = 0; k < 3; k++)
             out.EnvAngularMomentum[k] += P[j].Mass * ell[k];
 
+          /* The benchmark raw rate is an instantaneous estimator and
+           * should be defined even at the initial synchronization point, where
+           * no elapsed transaction exists yet.  Keep CaptureEnabled gating for
+           * the actual sink passes, but remove it from this diagnostic-only
+           * environment estimate so FFR is comparable to the Bondi-family
+           * raw rates at identical states. */
+          data_in rate_bh = *bh;
+          rate_bh.CaptureEnabled = 1;
           const double lambda_ffr =
-              bh_ffr_capture_lambda_core(bh, r, All.BHFreeFallA, All.BHFreeFallAlpha);
+              bh_ffr_capture_lambda_core(&rate_bh, r, All.BHFreeFallA, All.BHFreeFallAlpha);
           if(lambda_ffr > 0)
             out.EnvFFRRawRate += P[j].Mass * lambda_ffr;
 
