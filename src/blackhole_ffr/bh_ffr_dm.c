@@ -759,7 +759,7 @@ static void bh_ffr_dm_self_test(void)
   bh_ffr_dm_insert(&res, 1.0, 1.0, v1);
   bh_ffr_dm_insert(&res, 2.0, 1.0, v2);
 
-  const int expected_count = dmin(All.BHDMNeighbours, 3);
+  const int expected_count = (All.BHDMNeighbours < 3) ? All.BHDMNeighbours : 3;
   if(expected_count < 2 || res.Count != expected_count ||
      res.C[0].R2 != 1.0 || res.C[1].R2 != 2.0 ||
      (expected_count == 3 && res.C[2].R2 != 4.0))
