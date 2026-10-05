@@ -367,10 +367,13 @@ void set_non_standard_physics_for_current_time(void)
 void calculate_non_standard_physics_with_valid_gravity_tree(void)
 {
 #ifdef BLACKHOLE_FFR
-  /* Iteration 11 refreshes SigmaDM and applies a simple Chandrasekhar
-   * dynamical-friction kick from the same nearest-DM sample. With hierarchical
-   * gravity this remains restricted to full-tree synchronization points. */
-  bh_ffr_prepare_dm_environment_search();
+  /* The validated FFR-MACER reservoir backend retains the Iteration-11
+   * SigmaDM/Chandrasekhar environment.  Direct benchmark accretion is
+   * deliberately accretion-only in this development stage; do not spend a
+   * full-tree nearest-DM search or perturb the BH orbit with DF before the
+   * separate TNG feedback module is introduced. */
+  if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
+    bh_ffr_prepare_dm_environment_search();
 #endif
 }
 
