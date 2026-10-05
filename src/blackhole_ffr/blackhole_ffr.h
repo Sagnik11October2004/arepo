@@ -163,15 +163,28 @@ struct bh_ffr_particle_data
    * buffer is the physical burst reservoir of the TNG model. */
   MyDouble BenchmarkMdotRaw;
   MyDouble BenchmarkMdotOperational;
+  MyDouble BenchmarkMdotRealized;
+  MyDouble BenchmarkSinkRateRatio;
+  MyDouble BenchmarkCumulativeOperationalMass;
+  MyDouble BenchmarkCumulativeRealizedMass;
+  MyDouble BenchmarkCumulativeBHMassGrowth;
+
   MyDouble TNGThermalEnergyBuffer;
   MyDouble TNGKineticEnergyBuffer;
   MyDouble TNGFeedbackPower;
   MyDouble TNGKineticThresholdEnergy;
   MyDouble TNGEddingtonRatio;
   MyDouble TNGModeThreshold;
+  MyDouble TNGCumulativeGeneratedEnergy;
+  MyDouble TNGCumulativeInjectedEnergy;
+  MyDouble TNGActiveTargetMassFraction;
+  MyDouble TNGThermalBufferAgeCodeTime;
+  MyDouble TNGKineticBufferAgeCodeTime;
 
   int AccretionState;
   int TNGFeedbackMode;
+  int TNGThermalBufferAgeTransactions;
+  int TNGKineticBufferAgeTransactions;
 };
 
 extern struct bh_ffr_particle_data *BHP;
@@ -205,7 +218,7 @@ struct bh_ffr_domain_exchange_context
  *
  * This remains separate from bh_ffr_particle_data so the DM cache is not
  * replicated inside every persistent BH record.  The benchmark branch now
- * versions its extended BHP layout explicitly as native restart version 3.
+ * versions its extended BHP layout explicitly as native restart version 4.
  * RestartFlag=1 stores only cache entries owned by the local rank, then
  * reconstructs the replicated ID-addressable cache after all rank-local
  * restart files have been read.

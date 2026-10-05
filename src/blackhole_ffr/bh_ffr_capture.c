@@ -46,6 +46,9 @@ struct bh_ffr_capture_result
   MyDouble UniformLambda;
 
   int MinHydroTimeBin;
+  int SinkMinHydroTimeBin;
+  int SinkMaxHydroTimeBin;
+  long long SinkCellCount;
 };
 
 static double *LambdaSink;
@@ -85,6 +88,9 @@ typedef struct
   MyDouble EnvAngularMomentum[3];
   MyDouble EnvFFRRawRate;
   int MinHydroTimeBin;
+  int SinkMinHydroTimeBin;
+  int SinkMaxHydroTimeBin;
+  long long SinkCellCount;
 } data_out;
 
 static data_out *DataResult, *DataOut;
@@ -220,6 +226,9 @@ static void out2particle(data_out *out, int target, int mode)
           res->CoherenceIncrement[k] = out->CoherenceIncrement[k];
         }
       res->MinHydroTimeBin = out->MinHydroTimeBin;
+      res->SinkMinHydroTimeBin = out->SinkMinHydroTimeBin;
+      res->SinkMaxHydroTimeBin = out->SinkMaxHydroTimeBin;
+      res->SinkCellCount = out->SinkCellCount;
     }
   else
     {
@@ -234,6 +243,11 @@ static void out2particle(data_out *out, int target, int mode)
         }
       if(out->MinHydroTimeBin < res->MinHydroTimeBin)
         res->MinHydroTimeBin = out->MinHydroTimeBin;
+      if(out->SinkMinHydroTimeBin < res->SinkMinHydroTimeBin)
+        res->SinkMinHydroTimeBin = out->SinkMinHydroTimeBin;
+      if(out->SinkMaxHydroTimeBin > res->SinkMaxHydroTimeBin)
+        res->SinkMaxHydroTimeBin = out->SinkMaxHydroTimeBin;
+      res->SinkCellCount += out->SinkCellCount;
     }
 }
 
@@ -346,6 +360,8 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
   data_out out;
   memset(&out, 0, sizeof(out));
   out.MinHydroTimeBin = TIMEBINS;
+  out.SinkMinHydroTimeBin = TIMEBINS;
+  out.SinkMaxHydroTimeBin = -1;
 
   const int nfound =
       ngb_treefind_variable_threads(bh->Pos, bh->AccretionRadius, target, mode, threadid, numnodes, firstnode);
@@ -441,6 +457,11 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
         terminate("BH_FFR: invalid overlap share=%g sink=%g lambda=%g Lambda=%g", share, SinkMass[j], lambda, LambdaSink[j]);
 
       out.CapturedMass += share;
+      if(bin > 0 && bin < out.SinkMinHydroTimeBin)
+        out.SinkMinHydroTimeBin = bin;
+      if(bin > out.SinkMaxHydroTimeBin)
+        out.SinkMaxHydroTimeBin = bin;
+      out.SinkCellCount++;
 
       const double dt_gas = bh_ffr_active_gas_timestep_code_time(j);
       if(!(dt_gas > 0) || !isfinite(dt_gas))
@@ -568,12 +589,13 @@ static void bh_ffr_prepare_benchmark_rates(void)
         terminate("BH_BENCHMARK: invalid sink normalization scale=%g uniform=%g for ID=%llu",
                   res->LambdaScale, res->UniformLambda, (unsigned long long)P[p].ID);
 
-      printf("BH_BENCHMARK: accretion ID=%llu task=%d model=%s target=%s "
+      printf("BH_BENCHMARK: accretion ID=%llu task=%d model=%s target=%s feedback=%d "
              "Mgas=%g rho=%g cs=%g vrel=%g Vphi=%g nH=%g raw=%g edd=%g operational=%g "
              "boost=%g amlim=%g\n",
              (unsigned long long)P[p].ID, ThisTask,
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT ? "direct" : "reservoir",
+             All.BHBenchmarkFeedbackModel,
              env.GasMass, env.Density, env.SoundSpeed, env.RelativeSpeed, env.Vphi,
              env.HydrogenNumberDensity, rate.RawRate, rate.EddingtonRate, rate.OperationalRate,
              rate.BoostFactor, rate.AngularMomentumLimiter);
@@ -817,12 +839,28 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
         terminate("BH_FFR: invalid captured supply rate=%g for particle ID=%llu", res->CapturedRate,
                   (unsigned long long)P[p].ID);
 
-      /* Preserve the algebraic estimator separately from the realized
-       * conservative gas sink.  TNG selects its feedback state from the
-       * uncapped estimator/Eddington ratio, while its energy budget below is
-       * tied to the mass that was actually captured. */
+      /* Keep the three benchmark rates explicit:
+       *   raw         = algebraic estimator before backend limits,
+       *   operational = instantaneous backend target/hazard after limits,
+       *   realized    = conservative finite-step gas sink sum(dm_i/dt_i).
+       * TNG feedback power deliberately uses the operational rate; the
+       * realized rate is a separate timestep-convergence diagnostic. */
       BHP[b].BenchmarkMdotRaw = res->ModelRawRate;
       BHP[b].BenchmarkMdotOperational = res->ModelOperationalRate;
+      BHP[b].BenchmarkMdotRealized = res->CapturedRate;
+
+      double sink_ratio = 1.0;
+      if(res->ModelOperationalRate > 0)
+        sink_ratio = res->CapturedRate / res->ModelOperationalRate;
+      else if(res->CapturedRate > 0)
+        terminate("BH_BENCHMARK: positive realized sink with zero operational rate for ID=%llu",
+                  (unsigned long long)P[p].ID);
+
+      if(!isfinite(sink_ratio) || sink_ratio < 0)
+        terminate("BH_BENCHMARK: invalid realized/operational sink ratio=%g for ID=%llu",
+                  sink_ratio, (unsigned long long)P[p].ID);
+      BHP[b].BenchmarkSinkRateRatio = sink_ratio;
+      BHP[b].BenchmarkCumulativeRealizedMass += dm;
 
       /* Each gas sink is integrated over that gas cell's own synchronized
        * hydro step.  Summing dm_i/dt_i avoids spuriously dividing a gas-step
@@ -842,7 +880,21 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
           BHP[b].WindPower = 0.0;
           BHP[b].JetPower = 0.0;
           BHP[b].AccretionState = BH_FFR_STATE_UNINITIALIZED;
+          BHP[b].BenchmarkCumulativeBHMassGrowth += dm;
         }
+
+      printf("BH_BENCHMARK: sink ID=%llu task=%d raw=%g operational=%g realized=%g "
+             "R_sink=%g dM=%g cumRealized=%g sinkMinBin=%d sinkMaxBin=%d "
+             "sinkCells=%lld heterogeneous=%d\n",
+             (unsigned long long)P[p].ID, ThisTask,
+             BHP[b].BenchmarkMdotRaw, BHP[b].BenchmarkMdotOperational,
+             BHP[b].BenchmarkMdotRealized, BHP[b].BenchmarkSinkRateRatio, dm,
+             BHP[b].BenchmarkCumulativeRealizedMass,
+             res->SinkMinHydroTimeBin, res->SinkMaxHydroTimeBin,
+             res->SinkCellCount,
+             res->SinkMinHydroTimeBin > 0 &&
+                 res->SinkMaxHydroTimeBin > res->SinkMinHydroTimeBin);
+      fflush(stdout);
 
       *local_captured_mass += dm;
       for(int k = 0; k < 3; k++)
@@ -921,7 +973,11 @@ void bh_ffr_capture_resolved_gas(void)
   if(CaptureNTargets > 0)
     memset(CaptureResults, 0, CaptureNTargets * sizeof(*CaptureResults));
   for(int n = 0; n < CaptureNTargets; n++)
-    CaptureResults[n].MinHydroTimeBin = TIMEBINS;
+    {
+      CaptureResults[n].MinHydroTimeBin = TIMEBINS;
+      CaptureResults[n].SinkMinHydroTimeBin = TIMEBINS;
+      CaptureResults[n].SinkMaxHydroTimeBin = -1;
+    }
 
   LambdaSink = NULL;
   SinkMass = NULL;
@@ -953,8 +1009,12 @@ void bh_ffr_capture_resolved_gas(void)
     }
 
   for(int n = 0; n < CaptureNTargets; n++)
-    if(CaptureResults[n].MinHydroTimeBin == TIMEBINS)
-      CaptureResults[n].MinHydroTimeBin = -1;
+    {
+      if(CaptureResults[n].MinHydroTimeBin == TIMEBINS)
+        CaptureResults[n].MinHydroTimeBin = -1;
+      if(CaptureResults[n].SinkMinHydroTimeBin == TIMEBINS)
+        CaptureResults[n].SinkMinHydroTimeBin = -1;
+    }
 
   double local_captured_mass, local_captured_momentum[3], local_captured_abs_momentum[3];
   bh_ffr_apply_capture_to_bhs(&local_captured_mass, local_captured_momentum, local_captured_abs_momentum);

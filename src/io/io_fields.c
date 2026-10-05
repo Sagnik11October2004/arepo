@@ -212,6 +212,31 @@ static void io_func_bh_bench_mdotop(int particle, int components, void *out_buff
   ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->BenchmarkMdotOperational;
 }
 
+static void io_func_bh_bench_mdotreal(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->BenchmarkMdotRealized;
+}
+
+static void io_func_bh_bench_rsink(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->BenchmarkSinkRateRatio;
+}
+
+static void io_func_bh_bench_cumop(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->BenchmarkCumulativeOperationalMass;
+}
+
+static void io_func_bh_bench_cumreal(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->BenchmarkCumulativeRealizedMass;
+}
+
+static void io_func_bh_bench_cumbhgrowth(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->BenchmarkCumulativeBHMassGrowth;
+}
+
 static void io_func_bh_tng_mode(int particle, int components, void *out_buffer, int mode)
 {
   ((int *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGFeedbackMode;
@@ -245,6 +270,41 @@ static void io_func_bh_tng_ekin(int particle, int components, void *out_buffer, 
 static void io_func_bh_tng_ethkin(int particle, int components, void *out_buffer, int mode)
 {
   ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGKineticThresholdEnergy;
+}
+
+static void io_func_bh_tng_cumgen(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGCumulativeGeneratedEnergy;
+}
+
+static void io_func_bh_tng_cuminj(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGCumulativeInjectedEnergy;
+}
+
+static void io_func_bh_tng_activefrac(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGActiveTargetMassFraction;
+}
+
+static void io_func_bh_tng_thage(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGThermalBufferAgeCodeTime;
+}
+
+static void io_func_bh_tng_kinage(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGKineticBufferAgeCodeTime;
+}
+
+static void io_func_bh_tng_thagetxn(int particle, int components, void *out_buffer, int mode)
+{
+  ((int *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGThermalBufferAgeTransactions;
+}
+
+static void io_func_bh_tng_kinagetxn(int particle, int components, void *out_buffer, int mode)
+{
+  ((int *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGKineticBufferAgeTransactions;
 }
 #endif /* #ifdef BLACKHOLE_FFR */
 
@@ -800,6 +860,26 @@ void init_io_fields()
              io_func_bh_bench_mdotop, BHS_ONLY);
   init_units(IO_BH_BENCH_MDOTOP, 0., 0., -1., 1., 1., All.UnitMass_in_g / All.UnitTime_in_s);
 
+  init_field(IO_BH_BENCH_MDOTREAL, "BHBE", "BH_BenchmarkMdotRealized", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_bench_mdotreal, BHS_ONLY);
+  init_units(IO_BH_BENCH_MDOTREAL, 0., 0., -1., 1., 1., All.UnitMass_in_g / All.UnitTime_in_s);
+
+  init_field(IO_BH_BENCH_RSINK, "BHBS", "BH_BenchmarkSinkRateRatio", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_bench_rsink, BHS_ONLY);
+  init_units(IO_BH_BENCH_RSINK, 0., 0., 0., 0., 0., 0.);
+
+  init_field(IO_BH_BENCH_CUMOPMASS, "BHBU", "BH_BenchmarkCumulativeOperationalMass", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_bench_cumop, BHS_ONLY);
+  init_units(IO_BH_BENCH_CUMOPMASS, 0., -1., 0., 1., 0., All.UnitMass_in_g);
+
+  init_field(IO_BH_BENCH_CUMREALMASS, "BHBV", "BH_BenchmarkCumulativeRealizedMass", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_bench_cumreal, BHS_ONLY);
+  init_units(IO_BH_BENCH_CUMREALMASS, 0., -1., 0., 1., 0., All.UnitMass_in_g);
+
+  init_field(IO_BH_BENCH_CUMBHGROWTH, "BHBW", "BH_BenchmarkCumulativeBHMassGrowth", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_bench_cumbhgrowth, BHS_ONLY);
+  init_units(IO_BH_BENCH_CUMBHGROWTH, 0., -1., 0., 1., 0., All.UnitMass_in_g);
+
   init_field(IO_BH_TNG_MODE, "BHTM", "BH_TNGMode", MEM_NONE, FILE_INT, FILE_NONE, 1, A_NONE, 0,
              io_func_bh_tng_mode, BHS_ONLY);
   init_units(IO_BH_TNG_MODE, 0., 0., 0., 0., 0., 0.);
@@ -827,6 +907,34 @@ void init_io_fields()
   init_field(IO_BH_TNG_ETHKIN, "BHTQ", "BH_TNGKineticThresholdEnergy", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
              io_func_bh_tng_ethkin, BHS_ONLY);
   init_units(IO_BH_TNG_ETHKIN, 0., -1., 0., 1., 2., All.UnitEnergy_in_cgs);
+
+  init_field(IO_BH_TNG_CUMGEN, "BHTG", "BH_TNGCumulativeGeneratedEnergy", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_cumgen, BHS_ONLY);
+  init_units(IO_BH_TNG_CUMGEN, 0., -1., 0., 1., 2., All.UnitEnergy_in_cgs);
+
+  init_field(IO_BH_TNG_CUMINJ, "BHTI", "BH_TNGCumulativeInjectedEnergy", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_cuminj, BHS_ONLY);
+  init_units(IO_BH_TNG_CUMINJ, 0., -1., 0., 1., 2., All.UnitEnergy_in_cgs);
+
+  init_field(IO_BH_TNG_ACTIVEFRAC, "BHTA", "BH_TNGActiveTargetMassFraction", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_activefrac, BHS_ONLY);
+  init_units(IO_BH_TNG_ACTIVEFRAC, 0., 0., 0., 0., 0., 0.);
+
+  init_field(IO_BH_TNG_THAGE, "BHTD", "BH_TNGThermalBufferAgeCodeTime", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_thage, BHS_ONLY);
+  init_units(IO_BH_TNG_THAGE, 0., 0., 0., 0., 0., All.UnitTime_in_s);
+
+  init_field(IO_BH_TNG_KINAGE, "BHTL", "BH_TNGKineticBufferAgeCodeTime", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_kinage, BHS_ONLY);
+  init_units(IO_BH_TNG_KINAGE, 0., 0., 0., 0., 0., All.UnitTime_in_s);
+
+  init_field(IO_BH_TNG_THAGETXN, "BHTN", "BH_TNGThermalBufferAgeTransactions", MEM_NONE, FILE_INT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_thagetxn, BHS_ONLY);
+  init_units(IO_BH_TNG_THAGETXN, 0., 0., 0., 0., 0., 0.);
+
+  init_field(IO_BH_TNG_KINAGETXN, "BHTO", "BH_TNGKineticBufferAgeTransactions", MEM_NONE, FILE_INT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_kinagetxn, BHS_ONLY);
+  init_units(IO_BH_TNG_KINAGETXN, 0., 0., 0., 0., 0., 0.);
 #endif /* #ifdef BLACKHOLE_FFR */
 
 #ifdef OUTPUTPOTENTIAL

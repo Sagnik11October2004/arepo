@@ -146,6 +146,19 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
         merged->JetEnergyBuffer += s->JetEnergyBuffer;
         merged->TNGThermalEnergyBuffer += s->TNGThermalEnergyBuffer;
         merged->TNGKineticEnergyBuffer += s->TNGKineticEnergyBuffer;
+        merged->BenchmarkCumulativeOperationalMass += s->BenchmarkCumulativeOperationalMass;
+        merged->BenchmarkCumulativeRealizedMass += s->BenchmarkCumulativeRealizedMass;
+        merged->BenchmarkCumulativeBHMassGrowth += s->BenchmarkCumulativeBHMassGrowth;
+        merged->TNGCumulativeGeneratedEnergy += s->TNGCumulativeGeneratedEnergy;
+        merged->TNGCumulativeInjectedEnergy += s->TNGCumulativeInjectedEnergy;
+        merged->TNGThermalBufferAgeCodeTime =
+            fmax(merged->TNGThermalBufferAgeCodeTime, s->TNGThermalBufferAgeCodeTime);
+        merged->TNGKineticBufferAgeCodeTime =
+            fmax(merged->TNGKineticBufferAgeCodeTime, s->TNGKineticBufferAgeCodeTime);
+        if(s->TNGThermalBufferAgeTransactions > merged->TNGThermalBufferAgeTransactions)
+          merged->TNGThermalBufferAgeTransactions = s->TNGThermalBufferAgeTransactions;
+        if(s->TNGKineticBufferAgeTransactions > merged->TNGKineticBufferAgeTransactions)
+          merged->TNGKineticBufferAgeTransactions = s->TNGKineticBufferAgeTransactions;
 
         /* These are rates/powers already evaluated for the same synchronization
          * point before the merger. Their sums are the best conservative
@@ -160,7 +173,9 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
         merged->JetPower += s->JetPower;
         merged->BenchmarkMdotRaw += s->BenchmarkMdotRaw;
         merged->BenchmarkMdotOperational += s->BenchmarkMdotOperational;
+        merged->BenchmarkMdotRealized += s->BenchmarkMdotRealized;
         merged->TNGFeedbackPower += s->TNGFeedbackPower;
+        merged->TNGActiveTargetMassFraction += w * s->TNGActiveTargetMassFraction;
 
         if(s->MinNeighbourHydroTimeBin > 0 &&
            (merged->MinNeighbourHydroTimeBin < 0 || s->MinNeighbourHydroTimeBin < merged->MinNeighbourHydroTimeBin))
@@ -244,6 +259,11 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
       merged->JetDir[k] = dominant_jet[k];
 
   merged->SigmaDM = sigma_weight / dynmass;
+  merged->TNGActiveTargetMassFraction /= dynmass;
+  merged->BenchmarkSinkRateRatio =
+      merged->BenchmarkMdotOperational > 0
+          ? merged->BenchmarkMdotRealized / merged->BenchmarkMdotOperational
+          : 1.0;
   merged->MdotEddington = bh_ffr_eddington_rate_code(merged->BHMass);
   merged->ProcessedEddingtonRatio =
       merged->MdotEddington > 0 ? merged->MdotProcessed / merged->MdotEddington : 0.0;

@@ -200,15 +200,49 @@ void bh_ffr_validate_state(const char *where)
              !isfinite(BHP[b].JetThresholdEnergy) || BHP[b].JetThresholdEnergy < 0 ||
              !isfinite(BHP[b].BenchmarkMdotRaw) || BHP[b].BenchmarkMdotRaw < 0 ||
              !isfinite(BHP[b].BenchmarkMdotOperational) || BHP[b].BenchmarkMdotOperational < 0 ||
+             !isfinite(BHP[b].BenchmarkMdotRealized) || BHP[b].BenchmarkMdotRealized < 0 ||
+             !isfinite(BHP[b].BenchmarkSinkRateRatio) || BHP[b].BenchmarkSinkRateRatio < 0 ||
+             !isfinite(BHP[b].BenchmarkCumulativeOperationalMass) || BHP[b].BenchmarkCumulativeOperationalMass < 0 ||
+             !isfinite(BHP[b].BenchmarkCumulativeRealizedMass) || BHP[b].BenchmarkCumulativeRealizedMass < 0 ||
+             !isfinite(BHP[b].BenchmarkCumulativeBHMassGrowth) || BHP[b].BenchmarkCumulativeBHMassGrowth < 0 ||
              !isfinite(BHP[b].TNGThermalEnergyBuffer) || BHP[b].TNGThermalEnergyBuffer < 0 ||
              !isfinite(BHP[b].TNGKineticEnergyBuffer) || BHP[b].TNGKineticEnergyBuffer < 0 ||
              !isfinite(BHP[b].TNGFeedbackPower) || BHP[b].TNGFeedbackPower < 0 ||
              !isfinite(BHP[b].TNGKineticThresholdEnergy) || BHP[b].TNGKineticThresholdEnergy < 0 ||
              !isfinite(BHP[b].TNGEddingtonRatio) || BHP[b].TNGEddingtonRatio < 0 ||
              !isfinite(BHP[b].TNGModeThreshold) || BHP[b].TNGModeThreshold < 0 ||
+             !isfinite(BHP[b].TNGCumulativeGeneratedEnergy) || BHP[b].TNGCumulativeGeneratedEnergy < 0 ||
+             !isfinite(BHP[b].TNGCumulativeInjectedEnergy) || BHP[b].TNGCumulativeInjectedEnergy < 0 ||
+             !isfinite(BHP[b].TNGActiveTargetMassFraction) || BHP[b].TNGActiveTargetMassFraction < 0 ||
+             BHP[b].TNGActiveTargetMassFraction > 1.0 + 1.0e-12 ||
+             !isfinite(BHP[b].TNGThermalBufferAgeCodeTime) || BHP[b].TNGThermalBufferAgeCodeTime < 0 ||
+             !isfinite(BHP[b].TNGKineticBufferAgeCodeTime) || BHP[b].TNGKineticBufferAgeCodeTime < 0 ||
+             BHP[b].TNGThermalBufferAgeTransactions < 0 || BHP[b].TNGKineticBufferAgeTransactions < 0 ||
              !isfinite(BHP[b].ColdBlendWeight) || BHP[b].ColdBlendWeight < 0 || BHP[b].ColdBlendWeight > 1)
             terminate("BH_FFR: invalid mass/rate/energetics buffer for particle ID=%llu in %s",
                       (unsigned long long)P[i].ID, where);
+
+          if(BHP[b].TNGCumulativeInjectedEnergy >
+             BHP[b].TNGCumulativeGeneratedEnergy +
+                 5.0e-12 * fmax(BHP[b].TNGCumulativeGeneratedEnergy, 1.0e-30))
+            terminate("BH_TNG: cumulative injected energy exceeds generated energy for particle ID=%llu in %s",
+                      (unsigned long long)P[i].ID, where);
+
+          if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT)
+            {
+              const double mass_scale =
+                  fmax(fmax(BHP[b].BenchmarkCumulativeRealizedMass,
+                            BHP[b].BenchmarkCumulativeBHMassGrowth),
+                       1.0e-30);
+              if(fabs(BHP[b].BenchmarkCumulativeRealizedMass -
+                      BHP[b].BenchmarkCumulativeBHMassGrowth) >
+                 2.0e-10 * mass_scale)
+                terminate("BH_BENCHMARK: direct cumulative sink/BH-growth mismatch for particle ID=%llu in %s "
+                          "Msink=%g MBHgrowth=%g",
+                          (unsigned long long)P[i].ID, where,
+                          BHP[b].BenchmarkCumulativeRealizedMass,
+                          BHP[b].BenchmarkCumulativeBHMassGrowth);
+            }
 
           if(BHP[b].AccretionState < BH_FFR_STATE_UNINITIALIZED || BHP[b].AccretionState > BH_FFR_STATE_COLD)
             terminate("BH_FFR: invalid accretion state=%d for particle ID=%llu in %s", BHP[b].AccretionState,

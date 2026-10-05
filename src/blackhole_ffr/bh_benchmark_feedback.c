@@ -63,6 +63,7 @@ struct bh_tng_event
   MyDouble Direction[3];
   MyDouble ActiveKernelDensity;
   MyDouble ActiveMass;
+  MyDouble ActiveFraction;
   long long ActiveCount;
   MyDouble EnergyBefore;
 };
@@ -605,6 +606,27 @@ static void bh_tng_free_work(void)
   TNGNTargets = 0;
 }
 
+static void bh_tng_validate_energy_ledger(int b, MyIDType id, const char *where)
+{
+  const double buffered =
+      BHP[b].TNGThermalEnergyBuffer + BHP[b].TNGKineticEnergyBuffer;
+  const double residual =
+      BHP[b].TNGCumulativeGeneratedEnergy -
+      BHP[b].TNGCumulativeInjectedEnergy - buffered;
+  const double scale =
+      fmax(fabs(BHP[b].TNGCumulativeGeneratedEnergy) +
+               fabs(BHP[b].TNGCumulativeInjectedEnergy) + fabs(buffered),
+           1.0e-30);
+
+  if(!isfinite(residual) || fabs(residual) > 5.0e-11 * scale)
+    terminate("BH_TNG: cumulative energy ledger failed ID=%llu in %s generated=%g injected=%g "
+              "buffered=%g residual=%g rel=%g",
+              (unsigned long long)id, where,
+              BHP[b].TNGCumulativeGeneratedEnergy,
+              BHP[b].TNGCumulativeInjectedEnergy, buffered, residual,
+              residual / scale);
+}
+
 static double bh_tng_density_to_nh(double density_code)
 {
   if(!isfinite(density_code) || density_code < 0)
@@ -686,6 +708,13 @@ void bh_benchmark_tng_feedback_accumulate(void)
         terminate("BH_TNG: invalid accumulated energy=%g for ID=%llu",
                   denergy, (unsigned long long)P[p].ID);
 
+      if(BHP[b].TNGThermalEnergyBuffer > 0)
+        BHP[b].TNGThermalBufferAgeCodeTime += dt_code;
+      if(BHP[b].TNGKineticEnergyBuffer > 0)
+        BHP[b].TNGKineticBufferAgeCodeTime += dt_code;
+
+      BHP[b].TNGCumulativeGeneratedEnergy += denergy;
+
       if(mode == BH_BENCHMARK_TNG_MODE_THERMAL)
         BHP[b].TNGThermalEnergyBuffer += denergy;
       else
@@ -700,18 +729,31 @@ void bh_benchmark_tng_feedback_accumulate(void)
       BHP[b].TNGEddingtonRatio = fedd_raw;
       BHP[b].TNGModeThreshold = chi;
       BHP[b].TNGFeedbackMode = mode;
+      BHP[b].TNGActiveTargetMassFraction =
+          res->EnclosedMass > 0 ? res->ActiveMass / res->EnclosedMass : 0.0;
+      if(!isfinite(BHP[b].TNGActiveTargetMassFraction) ||
+         BHP[b].TNGActiveTargetMassFraction < 0 ||
+         BHP[b].TNGActiveTargetMassFraction > 1.0 + 1.0e-12)
+        terminate("BH_TNG: invalid active feedback mass fraction=%g for ID=%llu",
+                  BHP[b].TNGActiveTargetMassFraction,
+                  (unsigned long long)P[p].ID);
+
+      bh_tng_validate_energy_ledger(b, P[p].ID, "source-accumulation");
 
       printf("BH_TNG: source ID=%llu task=%d mode=%s MbhMsun=%g "
              "fEddRaw=%g chi=%g mdotRaw=%g mdotOperational=%g mdotRealized=%g "
              "nH=%g epsKin=%g power=%g dE=%g Eth=%g EthermBuf=%g EkinBuf=%g "
-             "Menc=%g sigmaDM=%g\n",
+             "Menc=%g Mactive=%g activeFrac=%g sigmaDM=%g cumGenerated=%g cumInjected=%g\n",
              (unsigned long long)P[p].ID, ThisTask,
              mode == BH_BENCHMARK_TNG_MODE_THERMAL ? "thermal" : "kinetic",
              bh_mass_msun, fedd_raw, chi, BHP[b].BenchmarkMdotRaw,
              BHP[b].BenchmarkMdotOperational, BHP[b].MdotHorizon, nh, epskin,
              power, denergy, eth,
              BHP[b].TNGThermalEnergyBuffer, BHP[b].TNGKineticEnergyBuffer,
-             res->EnclosedMass, BHP[b].SigmaDM);
+             res->EnclosedMass, res->ActiveMass,
+             BHP[b].TNGActiveTargetMassFraction, BHP[b].SigmaDM,
+             BHP[b].TNGCumulativeGeneratedEnergy,
+             BHP[b].TNGCumulativeInjectedEnergy);
       fflush(stdout);
     }
 
@@ -756,6 +798,8 @@ static void bh_tng_prepare_events(int channel, int round)
       ev->Channel = channel;
       ev->ActiveKernelDensity = res->ActiveKernelDensity;
       ev->ActiveMass = res->ActiveMass;
+      ev->ActiveFraction =
+          res->EnclosedMass > 0 ? res->ActiveMass / res->EnclosedMass : 0.0;
       ev->ActiveCount = res->ActiveCount;
 
       if(res->ActiveCount <= 0 || !(res->ActiveKernelDensity > 0) ||
@@ -838,6 +882,7 @@ static void bh_tng_commit_events(int channel)
                       res->InjectedThermalEnergy, ev->Energy);
 
           BHP[b].TNGThermalEnergyBuffer = ev->EnergyBefore - ev->Energy;
+          BHP[b].TNGCumulativeInjectedEnergy += ev->Energy;
           if(BHP[b].TNGThermalEnergyBuffer < 0 &&
              BHP[b].TNGThermalEnergyBuffer >
                  -3.0e-12 * fmax(fabs(ev->EnergyBefore), 1.0e-30))
@@ -846,12 +891,19 @@ static void bh_tng_commit_events(int channel)
             terminate("BH_TNG: negative thermal buffer after event for ID=%llu",
                       (unsigned long long)P[p].ID);
 
+          bh_tng_validate_energy_ledger(b, P[p].ID, "thermal-event");
+
           printf("BH_TNG: thermal event ID=%llu task=%d E=%g dErel=%g "
-                 "Nactive=%lld Mactive=%g\n",
+                 "Nactive=%lld Mactive=%g activeFrac=%g waitTransactions=%d waitCodeTime=%g "
+                 "cumGenerated=%g cumInjected=%g\n",
                  (unsigned long long)P[p].ID, ThisTask, ev->Energy,
                  fabs(res->InjectedThermalEnergy - ev->Energy) /
                      fmax(ev->Energy, 1.0e-30),
-                 ev->ActiveCount, ev->ActiveMass);
+                 ev->ActiveCount, ev->ActiveMass, ev->ActiveFraction,
+                 BHP[b].TNGThermalBufferAgeTransactions,
+                 BHP[b].TNGThermalBufferAgeCodeTime,
+                 BHP[b].TNGCumulativeGeneratedEnergy,
+                 BHP[b].TNGCumulativeInjectedEnergy);
           fflush(stdout);
         }
       else
@@ -867,6 +919,7 @@ static void bh_tng_commit_events(int channel)
                       res->InjectedKineticQuadraticEnergy, ev->Energy);
 
           BHP[b].TNGKineticEnergyBuffer = ev->EnergyBefore - ev->Energy;
+          BHP[b].TNGCumulativeInjectedEnergy += ev->Energy;
           if(BHP[b].TNGKineticEnergyBuffer < 0 &&
              BHP[b].TNGKineticEnergyBuffer >
                  -3.0e-12 * fmax(fabs(ev->EnergyBefore), 1.0e-30))
@@ -879,16 +932,24 @@ static void bh_tng_commit_events(int channel)
           for(int k = 0; k < 3; k++)
             pnorm2 += res->InjectedMomentum[k] * res->InjectedMomentum[k];
 
+          bh_tng_validate_energy_ledger(b, P[p].ID, "kinetic-event");
+
           printf("BH_TNG: kinetic event ID=%llu task=%d E=%g dEquadRel=%g "
                  "dElab=%g px=%g py=%g pz=%g pnorm=%g "
-                 "dir=(%g,%g,%g)\n",
+                 "dir=(%g,%g,%g) activeFrac=%g waitTransactions=%d waitCodeTime=%g "
+                 "cumGenerated=%g cumInjected=%g\n",
                  (unsigned long long)P[p].ID, ThisTask, ev->Energy,
                  fabs(res->InjectedKineticQuadraticEnergy - ev->Energy) /
                      fmax(ev->Energy, 1.0e-30),
                  res->InjectedKineticLabEnergy,
                  res->InjectedMomentum[0], res->InjectedMomentum[1],
                  res->InjectedMomentum[2], sqrt(pnorm2),
-                 ev->Direction[0], ev->Direction[1], ev->Direction[2]);
+                 ev->Direction[0], ev->Direction[1], ev->Direction[2],
+                 ev->ActiveFraction,
+                 BHP[b].TNGKineticBufferAgeTransactions,
+                 BHP[b].TNGKineticBufferAgeCodeTime,
+                 BHP[b].TNGCumulativeGeneratedEnergy,
+                 BHP[b].TNGCumulativeInjectedEnergy);
           fflush(stdout);
         }
     }
@@ -932,6 +993,55 @@ void bh_benchmark_tng_feedback_inject(void)
 
   if(fires > 0)
     update_primitive_variables();
+
+  for(int n = 0; n < TNGNTargets; n++)
+    {
+      const int p = bh_tng_particle_from_target(n, "feedback-buffer-age");
+      const int b = P[p].BHDataIndex;
+
+      if(BHP[b].TNGThermalEnergyBuffer > 0)
+        BHP[b].TNGThermalBufferAgeTransactions++;
+      else
+        {
+          BHP[b].TNGThermalBufferAgeTransactions = 0;
+          BHP[b].TNGThermalBufferAgeCodeTime = 0.0;
+        }
+
+      if(BHP[b].TNGKineticEnergyBuffer > 0)
+        BHP[b].TNGKineticBufferAgeTransactions++;
+      else
+        {
+          BHP[b].TNGKineticBufferAgeTransactions = 0;
+          BHP[b].TNGKineticBufferAgeCodeTime = 0.0;
+        }
+
+      bh_tng_validate_energy_ledger(b, P[p].ID, "post-injection");
+
+      const double buffered =
+          BHP[b].TNGThermalEnergyBuffer + BHP[b].TNGKineticEnergyBuffer;
+      const double residual =
+          BHP[b].TNGCumulativeGeneratedEnergy -
+          BHP[b].TNGCumulativeInjectedEnergy - buffered;
+      const double scale =
+          fmax(fabs(BHP[b].TNGCumulativeGeneratedEnergy) +
+                   fabs(BHP[b].TNGCumulativeInjectedEnergy) + fabs(buffered),
+               1.0e-30);
+
+      printf("BH_TNG: coupling-ledger ID=%llu task=%d activeFrac=%g "
+             "EthermBuf=%g EkinBuf=%g thermAgeTransactions=%d thermAgeCodeTime=%g "
+             "kinAgeTransactions=%d kinAgeCodeTime=%g cumGenerated=%g cumInjected=%g "
+             "residual=%g rel=%g\n",
+             (unsigned long long)P[p].ID, ThisTask,
+             BHP[b].TNGActiveTargetMassFraction,
+             BHP[b].TNGThermalEnergyBuffer, BHP[b].TNGKineticEnergyBuffer,
+             BHP[b].TNGThermalBufferAgeTransactions,
+             BHP[b].TNGThermalBufferAgeCodeTime,
+             BHP[b].TNGKineticBufferAgeTransactions,
+             BHP[b].TNGKineticBufferAgeCodeTime,
+             BHP[b].TNGCumulativeGeneratedEnergy,
+             BHP[b].TNGCumulativeInjectedEnergy, residual, residual / scale);
+      fflush(stdout);
+    }
 
   bh_ffr_validate_state("post-TNG-feedback");
   bh_tng_free_work();

@@ -431,8 +431,16 @@ void bh_ffr_step(void)
         terminate("BH_FFR: non-positive elapsed physical timestep for active particle ID=%llu",
                   (unsigned long long)P[p].ID);
 
+      const double operational_mass = BHP[b].BenchmarkMdotOperational * dt_code;
+      if(!isfinite(operational_mass) || operational_mass < 0)
+        terminate("BH_BENCHMARK: invalid operational mass increment=%g for ID=%llu",
+                  operational_mass, (unsigned long long)P[p].ID);
+      BHP[b].BenchmarkCumulativeOperationalMass += operational_mass;
+
       if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
         {
+          const double bh_mass_before_inner = BHP[b].BHMass;
+
           /* Preserve the validated FFR-MACER orbital and reservoir transaction
            * exactly for every reservoir-backed benchmark. */
           bh_ffr_apply_cached_dynamical_friction(p, dt_code);
@@ -442,6 +450,14 @@ void bh_ffr_step(void)
                                               BHP[b].ReservoirMass);
 
           bh_ffr_update_reservoir_state(p, dt_myr, dt_code, disk_time_myr);
+          const double bh_growth = BHP[b].BHMass - bh_mass_before_inner;
+          if(!isfinite(bh_growth) ||
+             bh_growth < -2.0e-12 * fmax(fabs(bh_mass_before_inner), 1.0e-30))
+            terminate("BH_BENCHMARK: invalid reservoir BH-mass growth=%g for ID=%llu",
+                      bh_growth, (unsigned long long)P[p].ID);
+          if(bh_growth > 0)
+            BHP[b].BenchmarkCumulativeBHMassGrowth += bh_growth;
+
           bh_ffr_update_jet_direction(p, dt_myr, disk_time_myr);
           bh_ffr_store_frozen_disk_time(p, b, disk_time_myr);
         }
@@ -456,6 +472,14 @@ void bh_ffr_step(void)
             terminate("BH_BENCHMARK: direct backend found non-empty MACER state for ID=%llu",
                       (unsigned long long)P[p].ID);
         }
+
+      printf("BH_BENCHMARK: mass-ledger ID=%llu task=%d dtCode=%g "
+             "dMop=%g cumOperational=%g cumRealized=%g cumBHGrowth=%g\n",
+             (unsigned long long)P[p].ID, ThisTask, dt_code, operational_mass,
+             BHP[b].BenchmarkCumulativeOperationalMass,
+             BHP[b].BenchmarkCumulativeRealizedMass,
+             BHP[b].BenchmarkCumulativeBHMassGrowth);
+      fflush(stdout);
     }
 
   /* TNG feedback energy is generated from this transaction before
