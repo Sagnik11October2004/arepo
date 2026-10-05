@@ -249,28 +249,40 @@ static int *bh_ffr_build_local_donor_list(int grnr, MyIDType central_id, int *nd
   return list;
 }
 
-static double bh_ffr_seed_measure_local_rotation(const struct bh_ffr_seed_central *central,
-                                                   const int *donors, int ndonors, MyDouble axis[3])
+static double bh_ffr_seed_measure_local_rotation(const struct bh_ffr_seed_central *central, MyDouble axis[3])
 {
   const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
   const double rcoord = All.BHAccretionRadius / a;
   const double r2max = rcoord * rcoord;
   double local_mass = 0.0, local_c[3] = {0, 0, 0};
 
-  for(int n = 0; n < ndonors; n++)
+  /* The seed-axis diagnostic is local to the physical accretion aperture and
+   * deliberately independent of the conservative FoF donor list.  This follows
+   * the PDF prescription: use coherent resolved gas rotation when it exists,
+   * otherwise fall back to the deterministic particle-ID axis. */
+  for(int i = 0; i < NumGas; i++)
     {
-      const int i = donors[n];
-      if(bh_ffr_seed_distance2(central->Pos, i) > r2max)
+      if(P[i].Type != 0 || P[i].ID == 0 || !(P[i].Mass > 0))
         continue;
+
       double xtmp, ytmp, ztmp;
       const double dr[3] = {NEAREST_X(P[i].Pos[0] - central->Pos[0]),
                             NEAREST_Y(P[i].Pos[1] - central->Pos[1]),
                             NEAREST_Z(P[i].Pos[2] - central->Pos[2])};
-      const double dv[3] = {P[i].Vel[0] - central->Vel[0], P[i].Vel[1] - central->Vel[1], P[i].Vel[2] - central->Vel[2]};
-      const double ell[3] = {dr[1]*dv[2]-dr[2]*dv[1], dr[2]*dv[0]-dr[0]*dv[2], dr[0]*dv[1]-dr[1]*dv[0]};
-      const double en = sqrt(ell[0]*ell[0] + ell[1]*ell[1] + ell[2]*ell[2]);
+      const double r2 = dr[0] * dr[0] + dr[1] * dr[1] + dr[2] * dr[2];
+      if(!(r2 > 0) || r2 > r2max)
+        continue;
+
+      const double dv[3] = {P[i].Vel[0] - central->Vel[0],
+                            P[i].Vel[1] - central->Vel[1],
+                            P[i].Vel[2] - central->Vel[2]};
+      const double ell[3] = {dr[1] * dv[2] - dr[2] * dv[1],
+                             dr[2] * dv[0] - dr[0] * dv[2],
+                             dr[0] * dv[1] - dr[1] * dv[0]};
+      const double en = sqrt(ell[0] * ell[0] + ell[1] * ell[1] + ell[2] * ell[2]);
       if(!(en > 0) || !isfinite(en))
         continue;
+
       local_mass += P[i].Mass;
       for(int k = 0; k < 3; k++)
         local_c[k] += P[i].Mass * ell[k] / en;
@@ -279,12 +291,15 @@ static double bh_ffr_seed_measure_local_rotation(const struct bh_ffr_seed_centra
   double mass = 0.0, c[3] = {0, 0, 0};
   MPI_Allreduce(&local_mass, &mass, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
   MPI_Allreduce(local_c, c, 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-  const double cn = sqrt(c[0]*c[0] + c[1]*c[1] + c[2]*c[2]);
+
+  const double cn = sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
   const double coherence = mass > 0 ? cn / mass : 0.0;
   if(!isfinite(coherence) || coherence < 0 || coherence > 1.0 + 1.0e-10)
     terminate("BH_FFR: invalid local seed coherence=%g", coherence);
+
   for(int k = 0; k < 3; k++)
     axis[k] = (cn > 0 && coherence > All.BHMinCoherence) ? c[k] / cn : 0.0;
+
   return coherence;
 }
 
@@ -369,7 +384,7 @@ static int bh_ffr_seed_one_candidate(struct bh_ffr_seed_candidate *candidate, do
     terminate("BH_FFR: invalid seed donor normalization q=%g group=%d", q, candidate->GrNr);
 
   candidate->SeedID = central.ID;
-  const double seed_coherence = bh_ffr_seed_measure_local_rotation(&central, donors, ndonors, candidate->SeedAxis);
+  const double seed_coherence = bh_ffr_seed_measure_local_rotation(&central, candidate->SeedAxis);
   candidate->HasCoherentAxis = seed_coherence > All.BHMinCoherence &&
                                (candidate->SeedAxis[0] != 0 || candidate->SeedAxis[1] != 0 || candidate->SeedAxis[2] != 0);
 
