@@ -203,10 +203,12 @@ struct bh_ffr_domain_exchange_context
 
 /*! Restart record for the transient dynamical-friction environment.
  *
- * This is intentionally separate from bh_ffr_particle_data so the frozen BHP
- * ABI remains unchanged. Native RestartFlag=1 stores only cache entries owned
- * by the local rank, then reconstructs the replicated ID-addressable cache
- * once all rank-local restart files have been read.
+ * This remains separate from bh_ffr_particle_data so the DM cache is not
+ * replicated inside every persistent BH record.  The benchmark branch now
+ * versions its extended BHP layout explicitly as native restart version 3.
+ * RestartFlag=1 stores only cache entries owned by the local rank, then
+ * reconstructs the replicated ID-addressable cache after all rank-local
+ * restart files have been read.
  */
 struct bh_ffr_df_restart_entry
 {
