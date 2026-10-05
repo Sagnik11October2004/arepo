@@ -1,6 +1,7 @@
 #include <float.h>
 #include <math.h>
 #include <mpi.h>
+#include <stdlib.h>
 
 #include "blackhole_ffr.h"
 #include "../main/proto.h"
@@ -18,6 +19,90 @@ static int bh_ffr_compact_index_from_particle(int p, const char *where)
     terminate("BH_FFR: invalid compact state for particle ID=%llu in %s", (unsigned long long)P[p].ID, where);
 
   return b;
+}
+
+/* The PDF requires one beginning-of-transaction reservoir time to control
+ * drainage, jet-axis relaxation, and the next reservoir-accuracy timestep.
+ * BHP is restart-ABI frozen, so keep this last-transaction value in a small
+ * transient ID-addressed cache instead of adding another persistent field.
+ *
+ * The post-transaction BH/reservoir masses are a signature: a subsequent BH
+ * merger invalidates the cached value automatically, while wind/jet packet
+ * release does not.  Stale slots are recycled on the next synchronization. */
+struct bh_ffr_frozen_disk_time_entry
+{
+  MyIDType ID;
+  integertime Ti;
+  double DiskTimeMyr;
+  double PostBHMass;
+  double PostReservoirMass;
+};
+
+static struct bh_ffr_frozen_disk_time_entry *FrozenDiskTimeCache;
+static int FrozenDiskTimeCount;
+static int FrozenDiskTimeCapacity;
+
+static void bh_ffr_store_frozen_disk_time(int p, int b, double disk_time_myr)
+{
+  if(!isfinite(disk_time_myr) || !(disk_time_myr > 0))
+    terminate("BH_FFR: invalid frozen reservoir time=%g Myr for ID=%llu", disk_time_myr,
+              (unsigned long long)P[p].ID);
+
+  int slot = -1;
+  int stale = -1;
+  for(int i = 0; i < FrozenDiskTimeCount; i++)
+    {
+      if(FrozenDiskTimeCache[i].ID == P[p].ID)
+        {
+          slot = i;
+          break;
+        }
+      if(stale < 0 && FrozenDiskTimeCache[i].Ti != All.Ti_Current)
+        stale = i;
+    }
+
+  if(slot < 0)
+    slot = stale;
+
+  if(slot < 0)
+    {
+      if(FrozenDiskTimeCount == FrozenDiskTimeCapacity)
+        {
+          const int new_capacity = FrozenDiskTimeCapacity > 0 ? 2 * FrozenDiskTimeCapacity : 16;
+          void *tmp = realloc(FrozenDiskTimeCache, (size_t)new_capacity * sizeof(*FrozenDiskTimeCache));
+          if(tmp == NULL)
+            terminate("BH_FFR: failed to grow frozen-reservoir-time cache to %d entries", new_capacity);
+          FrozenDiskTimeCache = (struct bh_ffr_frozen_disk_time_entry *)tmp;
+          FrozenDiskTimeCapacity = new_capacity;
+        }
+      slot = FrozenDiskTimeCount++;
+    }
+
+  FrozenDiskTimeCache[slot].ID = P[p].ID;
+  FrozenDiskTimeCache[slot].Ti = All.Ti_Current;
+  FrozenDiskTimeCache[slot].DiskTimeMyr = disk_time_myr;
+  FrozenDiskTimeCache[slot].PostBHMass = BHP[b].BHMass;
+  FrozenDiskTimeCache[slot].PostReservoirMass = BHP[b].ReservoirMass;
+}
+
+static double bh_ffr_timestep_reservoir_time_myr(int p, int b, int *used_frozen)
+{
+  for(int i = 0; i < FrozenDiskTimeCount; i++)
+    if(FrozenDiskTimeCache[i].ID == P[p].ID && FrozenDiskTimeCache[i].Ti == All.Ti_Current &&
+       FrozenDiskTimeCache[i].PostBHMass == BHP[b].BHMass &&
+       FrozenDiskTimeCache[i].PostReservoirMass == BHP[b].ReservoirMass)
+      {
+        if(used_frozen != NULL)
+          *used_frozen = 1;
+        return FrozenDiskTimeCache[i].DiskTimeMyr;
+      }
+
+  /* Startup/newly seeded BHs and post-merger survivors can legitimately have
+   * no matching transaction cache.  In those cases limit from the current
+   * state; ordinary processed BHs must take the frozen branch above. */
+  if(used_frozen != NULL)
+    *used_frozen = 0;
+  return bh_ffr_reservoir_timescale_myr(BHP[b].BHMass, BHP[b].ReservoirMass);
 }
 
 double bh_ffr_integer_interval_to_physical_myr(integertime ti0, integertime ti1)
@@ -152,7 +237,8 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
    * maps are stable without this restriction; this controls coefficient and
    * burst-threshold evolution over one BH step.  Energy/power ratios are in
    * physical code time and are converted to Myr before timeline limiting. */
-  const double disk_time_myr = bh_ffr_reservoir_timescale_myr(BHP[b].BHMass, BHP[b].ReservoirMass);
+  int used_frozen_disk_time = 0;
+  const double disk_time_myr = bh_ffr_timestep_reservoir_time_myr(p, b, &used_frozen_disk_time);
   double reservoir_limit_myr = DBL_MAX;
   if(disk_time_myr < DBL_MAX / All.BHInternalTimestepFactor)
     reservoir_limit_myr = All.BHInternalTimestepFactor * disk_time_myr;
@@ -239,10 +325,11 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
 
       printf("BH_FFR: timestep limit ID=%llu task=%d raw=%lld limited=%lld gasbin=%d fint=%g "
              "dtintMyr=%g dtwindMyr=%g dtjetMyr=%g accuracyLimited=%lld backlogLimit=%lld "
-             "windBacklog=%g jetBacklog=%g backlog=%d backlogApplied=%d\n",
+             "windBacklog=%g jetBacklog=%g backlog=%d backlogApplied=%d tdFrozen=%d\n",
              (unsigned long long)P[p].ID, ThisTask, (long long)raw_step, (long long)limited, gas_bin,
              All.BHInternalTimestepFactor, reservoir_limit_myr, wind_limit_myr, jet_limit_myr,
-             (long long)accuracy_limited, (long long)backlog_limit, wind_ratio, jet_ratio, backlog, backlog_applied);
+             (long long)accuracy_limited, (long long)backlog_limit, wind_ratio, jet_ratio, backlog, backlog_applied,
+             used_frozen_disk_time);
       fflush(stdout);
     }
 
@@ -304,6 +391,10 @@ void bh_ffr_step(void)
       bh_ffr_update_reservoir_state(p, dt_myr, dt_code, disk_time_myr);
       bh_ffr_update_jet_direction(p, dt_myr, disk_time_myr);
 
+      /* Record the exact same frozen t_d for the next gravity-timestep
+       * assignment, after the transaction has established its final mass
+       * signature but before LastProcessedTi is committed. */
+      bh_ffr_store_frozen_disk_time(p, b, disk_time_myr);
       BHP[b].LastProcessedTi = All.Ti_Current;
     }
 
