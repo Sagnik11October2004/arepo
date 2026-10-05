@@ -221,88 +221,125 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
   integertime limited = ti_step;
   const integertime raw_step = ti_step;
 
-  /* Existing local-hydro synchronization constraint. */
+  /* Every backend remains synchronized to gas inside the common accretion
+   * aperture. */
   const int gas_bin = BHP[b].MinNeighbourHydroTimeBin;
   if(gas_bin >= 0)
     {
       if(gas_bin == 0 || gas_bin >= TIMEBINS)
-        terminate("BH_FFR: corrupt neighbour hydro timebin=%d for particle ID=%llu", gas_bin, (unsigned long long)P[p].ID);
+        terminate("BH_FFR: corrupt neighbour hydro timebin=%d for particle ID=%llu",
+                  gas_bin, (unsigned long long)P[p].ID);
 
       const integertime gas_ti_step = ((integertime)1) << gas_bin;
       if(gas_ti_step < limited)
         limited = gas_ti_step;
     }
 
-  /* Iteration 9 internal accuracy limits. The analytic reservoir/direction
-   * maps are stable without this restriction; this controls coefficient and
-   * burst-threshold evolution over one BH step.  Energy/power ratios are in
-   * physical code time and are converted to Myr before timeline limiting. */
-  int used_frozen_disk_time = 0;
-  const double disk_time_myr = bh_ffr_timestep_reservoir_time_myr(p, b, &used_frozen_disk_time);
-  double reservoir_limit_myr = DBL_MAX;
-  if(disk_time_myr < DBL_MAX / All.BHInternalTimestepFactor)
-    reservoir_limit_myr = All.BHInternalTimestepFactor * disk_time_myr;
-  double dt_limit_myr = reservoir_limit_myr;
+  double dt_limit_myr = HUGE_VAL;
+  double reservoir_limit_myr = HUGE_VAL;
   double wind_limit_myr = HUGE_VAL;
   double jet_limit_myr = HUGE_VAL;
+  double tng_limit_myr = HUGE_VAL;
+  int used_frozen_disk_time = 0;
 
-  if(BHP[b].WindThresholdEnergy > 0 && BHP[b].WindPower > 0)
-    {
-      const double tcode = BHP[b].WindThresholdEnergy / BHP[b].WindPower;
-      wind_limit_myr = All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(tcode);
-      if(!isfinite(wind_limit_myr) || !(wind_limit_myr > 0))
-        terminate("BH_FFR: invalid wind timestep limit=%g Myr for ID=%llu", wind_limit_myr,
-                  (unsigned long long)P[p].ID);
-      if(wind_limit_myr < dt_limit_myr)
-        dt_limit_myr = wind_limit_myr;
-    }
-
-  if(BHP[b].JetThresholdEnergy > 0 && BHP[b].JetPower > 0)
-    {
-      const double tcode = BHP[b].JetThresholdEnergy / BHP[b].JetPower;
-      jet_limit_myr = All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(tcode);
-      if(!isfinite(jet_limit_myr) || !(jet_limit_myr > 0))
-        terminate("BH_FFR: invalid jet timestep limit=%g Myr for ID=%llu", jet_limit_myr,
-                  (unsigned long long)P[p].ID);
-      if(jet_limit_myr < dt_limit_myr)
-        dt_limit_myr = jet_limit_myr;
-    }
-
-  /* Dynamical friction is not an impulsive stability source term: the
-   * exponential kick is bounded.  Nevertheless, resolving a fraction of the
-   * local Chandrasekhar damping time prevents the emergency 50% kick cap from
-   * becoming the normal integration scheme. Reuse the existing internal
-   * accuracy factor rather than introducing another calibration parameter. */
+  /* Reservoir evolution and Chandrasekhar drag belong only to the unresolved
+   * reservoir backend.  Direct TNG/feedback-free benchmarks must not inherit a
+   * fictitious disc timescale. */
   if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
     {
-      const double df_tcode = bh_ffr_get_cached_dynamical_friction_timescale_code(p);
+      const double disk_time_myr =
+          bh_ffr_timestep_reservoir_time_myr(p, b, &used_frozen_disk_time);
+      if(disk_time_myr < DBL_MAX / All.BHInternalTimestepFactor)
+        reservoir_limit_myr = All.BHInternalTimestepFactor * disk_time_myr;
+      if(reservoir_limit_myr < dt_limit_myr)
+        dt_limit_myr = reservoir_limit_myr;
+
+      const double df_tcode =
+          bh_ffr_get_cached_dynamical_friction_timescale_code(p);
       if(isfinite(df_tcode) && df_tcode > 0)
         {
-          const double df_limit_myr = All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(df_tcode);
+          const double df_limit_myr =
+              All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(df_tcode);
           if(!isfinite(df_limit_myr) || !(df_limit_myr > 0))
-            terminate("BH_FFR: invalid dynamical-friction timestep limit=%g Myr for ID=%llu", df_limit_myr,
-                      (unsigned long long)P[p].ID);
+            terminate("BH_FFR: invalid dynamical-friction timestep limit=%g Myr for ID=%llu",
+                      df_limit_myr, (unsigned long long)P[p].ID);
           if(df_limit_myr < dt_limit_myr)
             dt_limit_myr = df_limit_myr;
         }
     }
 
+  /* The validated MACER backend resolves the time to one wind/jet burst
+   * threshold. */
+  if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_MACER)
+    {
+      if(BHP[b].WindThresholdEnergy > 0 && BHP[b].WindPower > 0)
+        {
+          const double tcode =
+              BHP[b].WindThresholdEnergy / BHP[b].WindPower;
+          wind_limit_myr =
+              All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(tcode);
+          if(!isfinite(wind_limit_myr) || !(wind_limit_myr > 0))
+            terminate("BH_FFR: invalid wind timestep limit=%g Myr for ID=%llu",
+                      wind_limit_myr, (unsigned long long)P[p].ID);
+          if(wind_limit_myr < dt_limit_myr)
+            dt_limit_myr = wind_limit_myr;
+        }
+
+      if(BHP[b].JetThresholdEnergy > 0 && BHP[b].JetPower > 0)
+        {
+          const double tcode =
+              BHP[b].JetThresholdEnergy / BHP[b].JetPower;
+          jet_limit_myr =
+              All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(tcode);
+          if(!isfinite(jet_limit_myr) || !(jet_limit_myr > 0))
+            terminate("BH_FFR: invalid jet timestep limit=%g Myr for ID=%llu",
+                      jet_limit_myr, (unsigned long long)P[p].ID);
+          if(jet_limit_myr < dt_limit_myr)
+            dt_limit_myr = jet_limit_myr;
+        }
+    }
+
+  /* TNG thermal feedback is continuous and needs no burst timescale.  In the
+   * kinetic state, resolve a fraction of the time needed to accumulate one
+   * current E_inj,min. */
+  if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_TNG &&
+     BHP[b].TNGFeedbackMode == BH_BENCHMARK_TNG_MODE_KINETIC &&
+     BHP[b].TNGKineticThresholdEnergy > 0 && BHP[b].TNGFeedbackPower > 0)
+    {
+      const double tcode =
+          BHP[b].TNGKineticThresholdEnergy / BHP[b].TNGFeedbackPower;
+      tng_limit_myr =
+          All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(tcode);
+      if(!isfinite(tng_limit_myr) || !(tng_limit_myr > 0))
+        terminate("BH_TNG: invalid kinetic timestep limit=%g Myr for ID=%llu",
+                  tng_limit_myr, (unsigned long long)P[p].ID);
+      if(tng_limit_myr < dt_limit_myr)
+        dt_limit_myr = tng_limit_myr;
+    }
+
   limited = bh_ffr_limit_integer_step_by_physical_myr(limited, dt_limit_myr);
   const integertime accuracy_limited = limited;
 
-  /* If a channel still stores at least as many full thresholds as can be
-   * released in one activation, request one bin finer than the timestep that
-   * would otherwise be chosen by gas+internal-accuracy limits.  Anchor this
-   * to accuracy_limited, not the particle's current bin: otherwise a persistent
-   * backlog recursively halves the BH bin on every activation until the
-   * minimum timeline step is reached. */
   int backlog = 0;
-  if(BHP[b].WindThresholdEnergy > 0 &&
-     BHP[b].WindEnergyBuffer >= All.BHMaxPacketsPerStep * BHP[b].WindThresholdEnergy)
-    backlog = 1;
-  if(BHP[b].JetThresholdEnergy > 0 &&
-     BHP[b].JetEnergyBuffer >= All.BHMaxPacketsPerStep * BHP[b].JetThresholdEnergy)
-    backlog = 1;
+  if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_MACER)
+    {
+      if(BHP[b].WindThresholdEnergy > 0 &&
+         BHP[b].WindEnergyBuffer >=
+             All.BHMaxPacketsPerStep * BHP[b].WindThresholdEnergy)
+        backlog = 1;
+      if(BHP[b].JetThresholdEnergy > 0 &&
+         BHP[b].JetEnergyBuffer >=
+             All.BHMaxPacketsPerStep * BHP[b].JetThresholdEnergy)
+        backlog = 1;
+    }
+  else if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_TNG)
+    {
+      if(BHP[b].TNGKineticThresholdEnergy > 0 &&
+         BHP[b].TNGKineticEnergyBuffer >= BHP[b].TNGKineticThresholdEnergy)
+        backlog = 1;
+      if(BHP[b].TNGThermalEnergyBuffer > 0)
+        backlog = 1;
+    }
 
   integertime backlog_limit = accuracy_limited;
   int backlog_applied = 0;
@@ -311,7 +348,6 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
       backlog_limit = accuracy_limited >> 1;
       if(backlog_limit < 2)
         backlog_limit = 2;
-
       if(backlog_limit < limited)
         {
           limited = backlog_limit;
@@ -322,17 +358,30 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
   if(limited < raw_step)
     {
       const double wind_ratio =
-          BHP[b].WindThresholdEnergy > 0 ? BHP[b].WindEnergyBuffer / BHP[b].WindThresholdEnergy : 0.0;
+          BHP[b].WindThresholdEnergy > 0
+              ? BHP[b].WindEnergyBuffer / BHP[b].WindThresholdEnergy
+              : 0.0;
       const double jet_ratio =
-          BHP[b].JetThresholdEnergy > 0 ? BHP[b].JetEnergyBuffer / BHP[b].JetThresholdEnergy : 0.0;
+          BHP[b].JetThresholdEnergy > 0
+              ? BHP[b].JetEnergyBuffer / BHP[b].JetThresholdEnergy
+              : 0.0;
+      const double tng_ratio =
+          BHP[b].TNGKineticThresholdEnergy > 0
+              ? BHP[b].TNGKineticEnergyBuffer /
+                    BHP[b].TNGKineticThresholdEnergy
+              : 0.0;
 
-      printf("BH_FFR: timestep limit ID=%llu task=%d raw=%lld limited=%lld gasbin=%d fint=%g "
-             "dtintMyr=%g dtwindMyr=%g dtjetMyr=%g accuracyLimited=%lld backlogLimit=%lld "
-             "windBacklog=%g jetBacklog=%g backlog=%d backlogApplied=%d tdFrozen=%d\n",
-             (unsigned long long)P[p].ID, ThisTask, (long long)raw_step, (long long)limited, gas_bin,
-             All.BHInternalTimestepFactor, reservoir_limit_myr, wind_limit_myr, jet_limit_myr,
-             (long long)accuracy_limited, (long long)backlog_limit, wind_ratio, jet_ratio, backlog, backlog_applied,
-             used_frozen_disk_time);
+      printf("BH_FFR: timestep limit ID=%llu task=%d feedback=%d raw=%lld limited=%lld "
+             "gasbin=%d fint=%g dtresMyr=%g dtwindMyr=%g dtjetMyr=%g dtTNGMyr=%g "
+             "accuracyLimited=%lld backlogLimit=%lld windBacklog=%g jetBacklog=%g "
+             "tngBacklog=%g backlog=%d backlogApplied=%d tdFrozen=%d\n",
+             (unsigned long long)P[p].ID, ThisTask,
+             All.BHBenchmarkFeedbackModel, (long long)raw_step,
+             (long long)limited, gas_bin, All.BHInternalTimestepFactor,
+             reservoir_limit_myr, wind_limit_myr, jet_limit_myr,
+             tng_limit_myr, (long long)accuracy_limited,
+             (long long)backlog_limit, wind_ratio, jet_ratio, tng_ratio,
+             backlog, backlog_applied, used_frozen_disk_time);
       fflush(stdout);
     }
 
@@ -341,29 +390,28 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
 
 void bh_ffr_step(void)
 {
-  /* Particle array indices can change after domain/FoF reordering. Rebuild
-   * this derived target cache from AREPO's current gravity-active list. */
+  /* Particle array indices can change after domain/FoF reordering. */
   bh_ffr_build_active_list();
 
-  /* Capture uses AREPO's generic MPI communication pattern. A BH may exist on
-   * only one task, but every task in MPI_COMM_WORLD must enter the same
-   * collectives in the same order. Therefore gate the collective phase on the
-   * global, not local, number of active BHs. */
   int global_active_bhs = 0;
-  MPI_Allreduce(&NumActiveBHFFR, &global_active_bhs, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(&NumActiveBHFFR, &global_active_bhs, 1, MPI_INT, MPI_SUM,
+                MPI_COMM_WORLD);
   if(global_active_bhs <= 0)
     return;
 
-  static int reservoir_self_test_done = 0;
-  if(!reservoir_self_test_done)
+  static int self_tests_done = 0;
+  if(!self_tests_done)
     {
       bh_ffr_reservoir_self_test();
       bh_ffr_inner_self_test();
       bh_ffr_feedback_self_test();
       bh_ffr_jet_self_test();
-      reservoir_self_test_done = 1;
+      bh_benchmark_tng_feedback_self_test();
+      self_tests_done = 1;
     }
 
+  /* The selected resolved estimator removes gas exactly once and stores both
+   * its uncapped algebraic rate and the realized conservative capture rate. */
   bh_ffr_capture_resolved_gas();
 
   for(int n = 0; n < NumActiveBHFFR; n++)
@@ -372,64 +420,78 @@ void bh_ffr_step(void)
       const int b = bh_ffr_compact_index_from_particle(p, "bh_ffr_step");
 
       if(P[p].Ti_Current != All.Ti_Current)
-        terminate("BH_FFR: active particle ID=%llu is not drifted to Ti_Current=%lld", (unsigned long long)P[p].ID,
-                  (long long)All.Ti_Current);
+        terminate("BH_FFR: active particle ID=%llu is not drifted to Ti_Current=%lld",
+                  (unsigned long long)P[p].ID, (long long)All.Ti_Current);
 
       const double dt_myr = bh_ffr_get_elapsed_time_myr(p);
       const double dt_code = bh_ffr_get_elapsed_time_code_time(p);
-      if(BHP[b].LastProcessedTi != All.Ti_Current && (!(dt_myr > 0) || !(dt_code > 0)))
-        terminate("BH_FFR: non-positive elapsed physical timestep for active particle ID=%llu", (unsigned long long)P[p].ID);
-
-      /* Iteration-11 drag belongs to the validated reservoir/MACER
-       * backend.  Direct benchmark runs are intentionally accretion-only so
-       * that changes in BH-gas relative velocity do not contaminate the
-       * accretion-law comparison. */
-      if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
-        bh_ffr_apply_cached_dynamical_friction(p, dt_code);
+      if(BHP[b].LastProcessedTi != All.Ti_Current &&
+         (!(dt_myr > 0) || !(dt_code > 0)))
+        terminate("BH_FFR: non-positive elapsed physical timestep for active particle ID=%llu",
+                  (unsigned long long)P[p].ID);
 
       if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
         {
-          /* Freeze the PDF reservoir time at the beginning of this BH transaction,
-           * after capture but before drainage. The same t_d controls reservoir
-           * processing and persistent jet-direction memory. */
+          /* Preserve the validated FFR-MACER orbital and reservoir transaction
+           * exactly for every reservoir-backed benchmark. */
+          bh_ffr_apply_cached_dynamical_friction(p, dt_code);
+
           const double disk_time_myr =
-              bh_ffr_reservoir_timescale_myr(BHP[b].BHMass, BHP[b].ReservoirMass);
+              bh_ffr_reservoir_timescale_myr(BHP[b].BHMass,
+                                              BHP[b].ReservoirMass);
 
           bh_ffr_update_reservoir_state(p, dt_myr, dt_code, disk_time_myr);
           bh_ffr_update_jet_direction(p, dt_myr, disk_time_myr);
-
-          /* Record the exact same frozen t_d for the next gravity-timestep
-           * assignment, after the transaction has established its final mass
-           * signature but before LastProcessedTi is committed. */
           bh_ffr_store_frozen_disk_time(p, b, disk_time_myr);
         }
       else
         {
-          /* Direct benchmark accretion has already committed captured gas to
-           * BHMass in bh_ffr_capture_resolved_gas().  Do not pass that mass
-           * through the FFR reservoir or MACER state machine. */
+          /* Direct benchmark capture bypasses the FFR reservoir and MACER
+           * inner-flow bookkeeping. MACER buffers must therefore remain empty;
+           * the separate TNG buffers are allowed when TNG feedback is selected. */
           if(BHP[b].ReservoirMass != 0 || BHP[b].WindMassBuffer != 0 ||
-             BHP[b].WindMomentumBuffer != 0 || BHP[b].WindEnergyBuffer != 0 ||
-             BHP[b].JetEnergyBuffer != 0)
+             BHP[b].WindMomentumBuffer != 0 ||
+             BHP[b].WindEnergyBuffer != 0 || BHP[b].JetEnergyBuffer != 0)
             terminate("BH_BENCHMARK: direct backend found non-empty MACER state for ID=%llu",
                       (unsigned long long)P[p].ID);
         }
+    }
 
+  /* TNG feedback energy is generated from this transaction before
+   * LastProcessedTi is advanced. Its mode is selected from the uncapped
+   * estimator/Eddington ratio, while energy generation uses the realized
+   * captured mass rate so gas removal and feedback energetics stay consistent. */
+  if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_TNG)
+    bh_benchmark_tng_feedback_accumulate();
+
+  for(int n = 0; n < NumActiveBHFFR; n++)
+    {
+      const int p = BHFFRActiveParticleList[n];
+      const int b = bh_ffr_compact_index_from_particle(p, "bh_ffr_step-commit-time");
       BHP[b].LastProcessedTi = All.Ti_Current;
     }
 
-  /* At a full synchronization point, coalesce overlapping BHs after each
-   * progenitor has completed its elapsed reservoir/DF transaction but before
-   * either can fire a separate resolved feedback packet. The merger routine
-   * rebuilds the active-BH cache if it actually removes particles. */
+  /* Merge after source accumulation but before injection. Persistent feedback
+   * reservoirs are combined conservatively by the merger routine, so a pair
+   * cannot emit two spatially overlapping events immediately before coalescing. */
   bh_ffr_merge_close_black_holes();
 
-  /* Wind and jet channels belong to the MACER backend only.  Direct
-   * benchmark accretion is intentionally feedback-free in this iteration;
-   * the separate TNG feedback module is added in the next development pass. */
-  if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
+  switch(All.BHBenchmarkFeedbackModel)
     {
-      bh_ffr_inject_wind_feedback();
-      bh_ffr_inject_jet_feedback();
+      case BH_BENCHMARK_FEEDBACK_NONE:
+        break;
+
+      case BH_BENCHMARK_FEEDBACK_TNG:
+        bh_benchmark_tng_feedback_inject();
+        break;
+
+      case BH_BENCHMARK_FEEDBACK_MACER:
+        bh_ffr_inject_wind_feedback();
+        bh_ffr_inject_jet_feedback();
+        break;
+
+      default:
+        terminate("BH_BENCHMARK: unknown feedback model=%d",
+                  All.BHBenchmarkFeedbackModel);
     }
 }
