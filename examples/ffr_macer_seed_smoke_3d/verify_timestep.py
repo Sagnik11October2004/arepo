@@ -35,7 +35,8 @@ pat = re.compile(
     r"raw=(\d+) limited=(\d+) gasbin=(-?\d+) fint=([^\s]+) "
     r"dtintMyr=([^\s]+) dtwindMyr=([^\s]+) dtjetMyr=([^\s]+) "
     r"accuracyLimited=(\d+) backlogLimit=(\d+) "
-    r"windBacklog=([^\s]+) jetBacklog=([^\s]+) backlog=(\d+) backlogApplied=(\d+)"
+    r"windBacklog=([^\s]+) jetBacklog=([^\s]+) backlog=(\d+) backlogApplied=(\d+) "
+    r"tdFrozen=(\d+)"
 )
 rows = pat.findall(log)
 if not rows:
@@ -58,6 +59,7 @@ for row in rows:
     jet_backlog = float(row[12])
     backlog = int(row[13])
     backlog_applied = int(row[14])
+    td_frozen = int(row[15])
 
     if not (raw > 0 and limited > 0 and limited <= raw):
         raise SystemExit(f"FAIL: BH {pid}: invalid integer limiter raw={raw} limited={limited}")
@@ -67,6 +69,10 @@ for row in rows:
         raise SystemExit(f"FAIL: BH {pid}: stress-test fint={fint}, expected 4")
     if not (math.isfinite(dtint) and dtint > 0):
         raise SystemExit(f"FAIL: BH {pid}: invalid reservoir accuracy timescale {dtint}")
+    if td_frozen != 1:
+        raise SystemExit(
+            f"FAIL: BH {pid}: reservoir timestep limiter did not reuse the transaction-frozen t_d"
+        )
 
     if math.isfinite(dtjet) and dtjet > 0 and limited < raw:
         saw_internal = True
@@ -170,6 +176,7 @@ print(f"  timestep limiter log events : {len(rows)}")
 print(f"  jet packets fired           : {len(packets)}")
 print(f"  maximum raw/limited ratio   : {max_reduction:.3f}")
 print(f"  maximum logged jet backlog  : {max_jet_backlog:.3f} thresholds")
+print("  reservoir limiter reused the same transaction-frozen t_d as drain/jet alignment")
 print("  feedback accuracy limit reduced the normal gravity candidate")
 print("  packet-cap backlog forced exactly one bin below the accuracy-limited candidate")
 print("  backlog limiting is anchored and does not recursively collapse the BH timebin")
