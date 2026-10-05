@@ -256,6 +256,7 @@ OBJS    += blackhole_ffr/blackhole_ffr.o \
            blackhole_ffr/bh_ffr_merger.o \
            blackhole_ffr/bh_ffr_capture.o \
            blackhole_ffr/bh_benchmark_accretion.o \
+           blackhole_ffr/bh_benchmark_feedback.o \
            blackhole_ffr/bh_ffr_reservoir.o \
            blackhole_ffr/bh_ffr_inner.o \
            blackhole_ffr/bh_ffr_feedback.o \
