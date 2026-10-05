@@ -522,7 +522,10 @@ int bh_ffr_seed_from_fof(void)
   if(global_converted != seeded_transactions)
     terminate("BH_FFR: seed conversion count mismatch transactions=%d converted=%d", seeded_transactions, global_converted);
   if(global_converted == 0)
-    return 0;
+    {
+      free(candidates);
+      return 0;
+    }
 
   All.TotNumGas -= global_converted;
   if(All.TotNumGas < 0)

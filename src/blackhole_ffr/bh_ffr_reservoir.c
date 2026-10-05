@@ -16,6 +16,8 @@ double bh_ffr_reservoir_timescale_myr(double bh_mass, double reservoir_mass)
   if(!isfinite(All.BHDiskTimeMyr) || !(All.BHDiskTimeMyr > 0) ||
      !isfinite(All.BHDiskTimeExponent) || All.BHDiskTimeExponent < 0)
     terminate("BH_FFR: invalid reservoir law t0=%g p=%g", All.BHDiskTimeMyr, All.BHDiskTimeExponent);
+  if(All.BHDiskTimeExponent == 0)
+    return All.BHDiskTimeMyr;
   if(reservoir_mass == 0)
     return DBL_MAX;
   const double ratio = bh_mass / reservoir_mass;
