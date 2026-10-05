@@ -624,20 +624,26 @@ static void bh_ffr_apply_gas_sink(double *local_removed_mass, double local_remov
       if(!(oldmass > 0) || dm < 0 || dm >= oldmass)
         terminate("BH_FFR: unsafe gas sink ID=%llu oldmass=%g dm=%g", (unsigned long long)P[j].ID, oldmass, dm);
 
-      const double keep = (oldmass - dm) / oldmass;
-      if(!(keep > 0) || keep > 1)
-        terminate("BH_FFR: invalid retained gas fraction=%g for ID=%llu", keep, (unsigned long long)P[j].ID);
+      /* Form the removed fraction directly from dm/oldmass.  For the
+       * benchmark smoke tests dm/oldmass can be extremely small; computing
+       * it indirectly as 1-(oldmass-dm)/oldmass loses significant digits
+       * and can create a false momentum-ledger mismatch at ~1e-9 relative. */
+      const double removed_frac = dm / oldmass;
+      const double keep = 1.0 - removed_frac;
+      if(!(removed_frac > 0) || removed_frac >= 1 || !(keep > 0) || keep > 1)
+        terminate("BH_FFR: invalid sink fractions removed=%g retained=%g for ID=%llu",
+                  removed_frac, keep, (unsigned long long)P[j].ID);
 
       *local_removed_mass += dm;
       for(int k = 0; k < 3; k++)
         {
-          const double removed_p = (1.0 - keep) * SphP[j].Momentum[k];
+          const double removed_p = removed_frac * SphP[j].Momentum[k];
           local_removed_momentum[k] += removed_p;
           local_removed_abs_momentum[k] += fabs(removed_p);
-          SphP[j].Momentum[k] *= keep;
+          SphP[j].Momentum[k] -= removed_p;
         }
 
-      P[j].Mass *= keep;
+      P[j].Mass = oldmass - dm;
       SphP[j].Energy *= keep;
 
 #ifdef PASSIVE_SCALARS
