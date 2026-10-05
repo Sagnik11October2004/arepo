@@ -488,6 +488,42 @@ void read_parameter_file(char *fname)
       strcpy(tag[nt], "BHInternalTimestepFactor");
       addr[nt] = &All.BHInternalTimestepFactor;
       id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkAccretionModel");
+      addr[nt] = &All.BHBenchmarkAccretionModel;
+      id[nt++] = INT;
+
+      strcpy(tag[nt], "BHBenchmarkAccretionTarget");
+      addr[nt] = &All.BHBenchmarkAccretionTarget;
+      id[nt++] = INT;
+
+      strcpy(tag[nt], "BHBenchmarkBoostMode");
+      addr[nt] = &All.BHBenchmarkBoostMode;
+      id[nt++] = INT;
+
+      strcpy(tag[nt], "BHBenchmarkBoostAlpha");
+      addr[nt] = &All.BHBenchmarkBoostAlpha;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkBoostDensityThreshold");
+      addr[nt] = &All.BHBenchmarkBoostDensityThreshold;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkBoostBeta");
+      addr[nt] = &All.BHBenchmarkBoostBeta;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkAMViscosity");
+      addr[nt] = &All.BHBenchmarkAMViscosity;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkRadiativeEfficiency");
+      addr[nt] = &All.BHBenchmarkRadiativeEfficiency;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkEddingtonFactor");
+      addr[nt] = &All.BHBenchmarkEddingtonFactor;
+      id[nt++] = REAL;
 #endif /* #ifdef BLACKHOLE_FFR */
 
 #ifdef NODEREFINE_BACKGROUND_GRID
@@ -857,7 +893,10 @@ void check_parameters()
      !isfinite(All.BHWindBurstFactor) || !isfinite(All.BHJetBurstFactor) ||
      !isfinite(All.BHWindConeAngleDeg) || !isfinite(All.BHJetConeAngleDeg) ||
      !isfinite(All.BHMinCoherence) || !isfinite(All.BHJetDirectionTimeFactor) ||
-     !isfinite(All.BHMinActiveTargetMassFrac) || !isfinite(All.BHInternalTimestepFactor))
+     !isfinite(All.BHMinActiveTargetMassFrac) || !isfinite(All.BHInternalTimestepFactor) ||
+     !isfinite(All.BHBenchmarkBoostAlpha) || !isfinite(All.BHBenchmarkBoostDensityThreshold) ||
+     !isfinite(All.BHBenchmarkBoostBeta) || !isfinite(All.BHBenchmarkAMViscosity) ||
+     !isfinite(All.BHBenchmarkRadiativeEfficiency) || !isfinite(All.BHBenchmarkEddingtonFactor))
     mpi_terminate("BLACKHOLE_FFR floating-point parameters must all be finite.\n");
   if(All.BHSeedHaloMassMsun <= 0 || All.BHSeedMassMsun <= 0 || All.BHSeedMinRedshift < 0 ||
      All.BHSeedMaxDonorFraction <= 0 || All.BHSeedMaxDonorFraction >= 1)
@@ -898,6 +937,20 @@ void check_parameters()
     mpi_terminate("BLACKHOLE_FFR requires BHMaxPacketsPerStep>=1, 2<=BHDMNeighbours<=%d, and positive "
                   "BHInternalTimestepFactor.\n",
                   BH_FFR_DM_MAX_NEIGHBOURS);
+  if(All.BHBenchmarkAccretionModel < 0 || All.BHBenchmarkAccretionModel > 3)
+    mpi_terminate("BHBenchmarkAccretionModel must be 0(TNG Bondi), 1(boosted Bondi), 2(AM Bondi), or 3(FFR).\n");
+  if(All.BHBenchmarkAccretionTarget < 0 || All.BHBenchmarkAccretionTarget > 1)
+    mpi_terminate("BHBenchmarkAccretionTarget must be 0(reservoir/MACER) or 1(direct/TNG backend).\n");
+  if(All.BHBenchmarkBoostMode < 0 || All.BHBenchmarkBoostMode > 1)
+    mpi_terminate("BHBenchmarkBoostMode must be 0(constant) or 1(density-dependent).\n");
+  if(All.BHBenchmarkBoostAlpha <= 0 || All.BHBenchmarkBoostDensityThreshold <= 0 || All.BHBenchmarkBoostBeta < 0)
+    mpi_terminate("Boosted-Bondi parameters require alpha>0, nH threshold>0, and beta>=0.\n");
+  if(All.BHBenchmarkAMViscosity <= 0)
+    mpi_terminate("BHBenchmarkAMViscosity must be positive.\n");
+  if(All.BHBenchmarkRadiativeEfficiency <= 0 || All.BHBenchmarkRadiativeEfficiency >= 1)
+    mpi_terminate("BHBenchmarkRadiativeEfficiency must lie in (0,1).\n");
+  if(All.BHBenchmarkEddingtonFactor <= 0)
+    mpi_terminate("BHBenchmarkEddingtonFactor must be positive.\n");
 #endif /* #ifdef BLACKHOLE_FFR */
 
   if(All.NumFilesWrittenInParallel > NTask)
