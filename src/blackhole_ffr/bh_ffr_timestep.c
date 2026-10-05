@@ -382,19 +382,34 @@ void bh_ffr_step(void)
        * full-gravity-tree hook only refreshes the transient DM environment. */
       bh_ffr_apply_cached_dynamical_friction(p, dt_code);
 
-      /* Freeze the PDF reservoir time at the beginning of this BH transaction,
-       * after capture but before drainage. The same t_d controls reservoir
-       * processing and persistent jet-direction memory. */
-      const double disk_time_myr =
-          bh_ffr_reservoir_timescale_myr(BHP[b].BHMass, BHP[b].ReservoirMass);
+      if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
+        {
+          /* Freeze the PDF reservoir time at the beginning of this BH transaction,
+           * after capture but before drainage. The same t_d controls reservoir
+           * processing and persistent jet-direction memory. */
+          const double disk_time_myr =
+              bh_ffr_reservoir_timescale_myr(BHP[b].BHMass, BHP[b].ReservoirMass);
 
-      bh_ffr_update_reservoir_state(p, dt_myr, dt_code, disk_time_myr);
-      bh_ffr_update_jet_direction(p, dt_myr, disk_time_myr);
+          bh_ffr_update_reservoir_state(p, dt_myr, dt_code, disk_time_myr);
+          bh_ffr_update_jet_direction(p, dt_myr, disk_time_myr);
 
-      /* Record the exact same frozen t_d for the next gravity-timestep
-       * assignment, after the transaction has established its final mass
-       * signature but before LastProcessedTi is committed. */
-      bh_ffr_store_frozen_disk_time(p, b, disk_time_myr);
+          /* Record the exact same frozen t_d for the next gravity-timestep
+           * assignment, after the transaction has established its final mass
+           * signature but before LastProcessedTi is committed. */
+          bh_ffr_store_frozen_disk_time(p, b, disk_time_myr);
+        }
+      else
+        {
+          /* Direct benchmark accretion has already committed captured gas to
+           * BHMass in bh_ffr_capture_resolved_gas().  Do not pass that mass
+           * through the FFR reservoir or MACER state machine. */
+          if(BHP[b].ReservoirMass != 0 || BHP[b].WindMassBuffer != 0 ||
+             BHP[b].WindMomentumBuffer != 0 || BHP[b].WindEnergyBuffer != 0 ||
+             BHP[b].JetEnergyBuffer != 0)
+            terminate("BH_BENCHMARK: direct backend found non-empty MACER state for ID=%llu",
+                      (unsigned long long)P[p].ID);
+        }
+
       BHP[b].LastProcessedTi = All.Ti_Current;
     }
 
@@ -404,9 +419,12 @@ void bh_ffr_step(void)
    * rebuilds the active-BH cache if it actually removes particles. */
   bh_ffr_merge_close_black_holes();
 
-  /* Wind and jet channels use independent burst reservoirs and geometries.
-   * They are applied sequentially so each channel solves its exact kinetic
-   * packet against the gas state left by the preceding channel. */
-  bh_ffr_inject_wind_feedback();
-  bh_ffr_inject_jet_feedback();
+  /* Wind and jet channels belong to the MACER backend only.  Direct
+   * benchmark accretion is intentionally feedback-free in this iteration;
+   * the separate TNG feedback module is added in the next development pass. */
+  if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
+    {
+      bh_ffr_inject_wind_feedback();
+      bh_ffr_inject_jet_feedback();
+    }
 }
