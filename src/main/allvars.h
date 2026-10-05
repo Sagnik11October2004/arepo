@@ -1807,6 +1807,15 @@ enum iofields
   IO_BH_FFR_SIGMADM,
   IO_BH_FFR_ETHWIND,
   IO_BH_FFR_ETHJET,
+  IO_BH_BENCH_MDOTRAW,
+  IO_BH_BENCH_MDOTOP,
+  IO_BH_TNG_MODE,
+  IO_BH_TNG_FEDD,
+  IO_BH_TNG_CHI,
+  IO_BH_TNG_POWER,
+  IO_BH_TNG_ETHERM,
+  IO_BH_TNG_EKIN,
+  IO_BH_TNG_ETHKIN,
 #endif
 
   IO_LASTENTRY /* This should be kept - it signals the end of the list */
