@@ -23,8 +23,9 @@ static int bh_ffr_compact_index_from_particle(int p, const char *where)
 
 /* The PDF requires one beginning-of-transaction reservoir time to control
  * drainage, jet-axis relaxation, and the next reservoir-accuracy timestep.
- * BHP is restart-ABI frozen, so keep this last-transaction value in a small
- * transient ID-addressed cache instead of adding another persistent field.
+ * Keep this last-transaction value in a small transient ID-addressed cache:
+ * it is purely timestep bookkeeping and does not need another persistent BHP
+ * field even though the benchmark BHP layout is explicitly versioned.
  *
  * The post-transaction BH/reservoir masses are a signature: a subsequent BH
  * merger invalidates the cached value automatically, while wind/jet packet
