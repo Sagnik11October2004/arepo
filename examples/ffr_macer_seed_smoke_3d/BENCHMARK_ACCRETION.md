@@ -88,6 +88,7 @@ The checked-in smoke-test parameter file uses
 
 `BHBenchmarkAccretionModel = 3`
 `BHBenchmarkAccretionTarget = 0`
+`BHBenchmarkFeedbackModel = 2`
 
 which recovers the validated FFR-MACER capture/reservoir path.  The added
 common-environment pass changes only diagnostic/search work, not the FFR
