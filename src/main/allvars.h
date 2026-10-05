@@ -938,6 +938,20 @@ extern struct global_data_all_processes
   double BHBenchmarkAMViscosity;
   double BHBenchmarkRadiativeEfficiency;
   double BHBenchmarkEddingtonFactor;
+
+  /* Independent benchmark feedback selector and TNG fiducial parameters.
+   * The TNG law is evaluated on the same fixed proper benchmark aperture as
+   * the other feedback model so the headline comparison changes physics, not
+   * neighbourhood definition. */
+  int BHBenchmarkFeedbackModel;
+  double BHBenchmarkTNGChi0;
+  double BHBenchmarkTNGChiBeta;
+  double BHBenchmarkTNGChiMax;
+  double BHBenchmarkTNGThermalCoupling;
+  double BHBenchmarkTNGKineticMaxEfficiency;
+  double BHBenchmarkTNGKineticDensityFactor;
+  double BHBenchmarkTNGSFThresholdNH;
+  double BHBenchmarkTNGKineticBurstFactor;
 #endif /* #ifdef BLACKHOLE_FFR */
 
 #if defined(COOLING)
