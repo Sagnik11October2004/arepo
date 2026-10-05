@@ -40,8 +40,8 @@ with h5py.File(p,"r") as f:
 if n != 1:
     raise SystemExit(f"need exactly one BH, found {n}")
 with open(out,"w") as g:
-    g.write(f"{a + 4.0e-6:.15f} 1\n")
-    g.write(f"{a + 8.0e-6:.15f} 1\n")
+    g.write(f"{a + 0.5*da:.15f} 1\n")
+    g.write(f"{a + da:.15f} 1\n")
 print(f"DF test starts at a={a:.12f}; SHORT_DA={da:.3e}")
 PY
 
