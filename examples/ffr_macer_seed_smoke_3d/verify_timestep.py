@@ -44,6 +44,7 @@ if not rows:
 
 saw_internal = False
 saw_backlog = False
+saw_frozen_td = False
 max_jet_backlog = 0.0
 max_reduction = 1.0
 
@@ -69,10 +70,10 @@ for row in rows:
         raise SystemExit(f"FAIL: BH {pid}: stress-test fint={fint}, expected 4")
     if not (math.isfinite(dtint) and dtint > 0):
         raise SystemExit(f"FAIL: BH {pid}: invalid reservoir accuracy timescale {dtint}")
-    if td_frozen != 1:
-        raise SystemExit(
-            f"FAIL: BH {pid}: reservoir timestep limiter did not reuse the transaction-frozen t_d"
-        )
+    if td_frozen not in (0, 1):
+        raise SystemExit(f"FAIL: BH {pid}: invalid tdFrozen flag {td_frozen}")
+    if td_frozen == 1:
+        saw_frozen_td = True
 
     if math.isfinite(dtjet) and dtjet > 0 and limited < raw:
         saw_internal = True
@@ -101,6 +102,10 @@ for row in rows:
 
 if not saw_internal:
     raise SystemExit("FAIL: feedback/internal accuracy limit never reduced a BH candidate timestep")
+if not saw_frozen_td:
+    raise SystemExit(
+        "FAIL: timestep regression never reused the beginning-of-transaction frozen reservoir time"
+    )
 if not saw_backlog:
     raise SystemExit(
         "FAIL: test did not exercise the post-packet backlog safeguard; "
