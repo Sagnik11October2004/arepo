@@ -11,8 +11,9 @@
 
 enum bh_ffr_capture_pass
 {
-  BH_FFR_CAPTURE_PASS_LAMBDA = 0,
-  BH_FFR_CAPTURE_PASS_SHARES = 1
+  BH_FFR_CAPTURE_PASS_ENVIRONMENT = 0,
+  BH_FFR_CAPTURE_PASS_LAMBDA = 1,
+  BH_FFR_CAPTURE_PASS_SHARES = 2
 };
 
 struct bh_ffr_capture_result
@@ -22,6 +23,24 @@ struct bh_ffr_capture_result
   MyDouble CapturedMomentum[3];
   MyDouble CapturedKineticEnergy;
   MyDouble CoherenceIncrement[3];
+
+  /* Transient common-aperture environment used by every benchmark model. */
+  MyDouble EnvGasMass;
+  MyDouble EnvVolume;
+  MyDouble EnvSoundVolumeWeighted;
+  MyDouble EnvVelocityMassWeighted[3];
+  MyDouble EnvAngularMomentum[3];
+  MyDouble EnvFFRRawRate;
+
+  /* Algebraic model result before the conservative cell sink is applied. */
+  MyDouble ModelRawRate;
+  MyDouble ModelOperationalRate;
+  MyDouble ModelEddingtonRate;
+  MyDouble ModelBoostFactor;
+  MyDouble ModelAMLimiter;
+  MyDouble LambdaScale;
+  MyDouble UniformLambda;
+
   int MinHydroTimeBin;
 };
 
@@ -39,6 +58,8 @@ typedef struct
   MyFloat AccretionRadius;
   MyDouble CentralMass;
   MyDouble SchwarzschildRadius;
+  MyDouble LambdaScale;
+  MyDouble UniformLambda;
   int CaptureEnabled;
   int Firstnode;
 } data_in;
@@ -52,6 +73,12 @@ typedef struct
   MyDouble CapturedMomentum[3];
   MyDouble CapturedKineticEnergy;
   MyDouble CoherenceIncrement[3];
+  MyDouble EnvGasMass;
+  MyDouble EnvVolume;
+  MyDouble EnvSoundVolumeWeighted;
+  MyDouble EnvVelocityMassWeighted[3];
+  MyDouble EnvAngularMomentum[3];
+  MyDouble EnvFFRRawRate;
   int MinHydroTimeBin;
 } data_out;
 
@@ -121,6 +148,15 @@ static void particle2in(data_in *in, int target, int firstnode)
       (BHP[b].BHMass > 0 && c_internal > 0) ? 2.0 * All.G * BHP[b].BHMass / (c_internal * c_internal) : 0.0;
 
   in->CaptureEnabled = (BHP[b].LastProcessedTi < All.Ti_Current);
+  in->LambdaScale = 1.0;
+  in->UniformLambda = 0.0;
+  if(CapturePass != BH_FFR_CAPTURE_PASS_ENVIRONMENT)
+    {
+      if(target < 0 || target >= CaptureNTargets)
+        terminate("BH_BENCHMARK: invalid capture target=%d while loading sink coefficients", target);
+      in->LambdaScale = CaptureResults[target].LambdaScale;
+      in->UniformLambda = CaptureResults[target].UniformLambda;
+    }
   in->Firstnode = firstnode;
 
   if(!isfinite(in->CentralMass) || in->CentralMass < 0 || !isfinite(in->SchwarzschildRadius) ||
@@ -137,6 +173,35 @@ static void out2particle(data_out *out, int target, int mode)
     terminate("BH_FFR: capture result target %d outside [0,%d)", target, CaptureNTargets);
 
   struct bh_ffr_capture_result *res = &CaptureResults[target];
+
+  if(CapturePass == BH_FFR_CAPTURE_PASS_ENVIRONMENT)
+    {
+      if(mode == MODE_LOCAL_PARTICLES)
+        {
+          res->EnvGasMass = out->EnvGasMass;
+          res->EnvVolume = out->EnvVolume;
+          res->EnvSoundVolumeWeighted = out->EnvSoundVolumeWeighted;
+          res->EnvFFRRawRate = out->EnvFFRRawRate;
+          for(int k = 0; k < 3; k++)
+            {
+              res->EnvVelocityMassWeighted[k] = out->EnvVelocityMassWeighted[k];
+              res->EnvAngularMomentum[k] = out->EnvAngularMomentum[k];
+            }
+        }
+      else
+        {
+          res->EnvGasMass += out->EnvGasMass;
+          res->EnvVolume += out->EnvVolume;
+          res->EnvSoundVolumeWeighted += out->EnvSoundVolumeWeighted;
+          res->EnvFFRRawRate += out->EnvFFRRawRate;
+          for(int k = 0; k < 3; k++)
+            {
+              res->EnvVelocityMassWeighted[k] += out->EnvVelocityMassWeighted[k];
+              res->EnvAngularMomentum[k] += out->EnvAngularMomentum[k];
+            }
+        }
+      return;
+    }
 
   if(mode == MODE_LOCAL_PARTICLES)
     {
@@ -241,7 +306,16 @@ static double bh_ffr_capture_lambda_core(const data_in *bh, double coordinate_di
 
 static double bh_ffr_capture_lambda(const data_in *bh, double coordinate_distance)
 {
-  return bh_ffr_capture_lambda_core(bh, coordinate_distance, All.BHFreeFallA, All.BHFreeFallAlpha);
+  if(!bh->CaptureEnabled)
+    return 0.0;
+
+  if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR)
+    return bh->LambdaScale *
+           bh_ffr_capture_lambda_core(bh, coordinate_distance, All.BHFreeFallA, All.BHFreeFallAlpha);
+
+  if(!isfinite(bh->UniformLambda) || bh->UniformLambda < 0)
+    terminate("BH_BENCHMARK: invalid uniform sink lambda=%g", bh->UniformLambda);
+  return bh->UniformLambda;
 }
 
 static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
@@ -282,6 +356,48 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
         continue;
 
       const int bin = bh_ffr_decode_hydro_timebin(P[j].TimeBinHydro);
+      const double r = sqrt(Thread[threadid].R2list[n]);
+
+      if(CapturePass == BH_FFR_CAPTURE_PASS_ENVIRONMENT)
+        {
+          if(!(SphP[j].Volume > 0) || !isfinite(SphP[j].Volume))
+            terminate("BH_BENCHMARK: invalid gas volume=%g for ID=%llu", (double)SphP[j].Volume,
+                      (unsigned long long)P[j].ID);
+
+          const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+          const double cs = get_sound_speed(j);
+          if(!isfinite(cs) || cs < 0)
+            terminate("BH_BENCHMARK: invalid sound speed=%g for gas ID=%llu", cs, (unsigned long long)P[j].ID);
+
+          out.EnvGasMass += P[j].Mass;
+          out.EnvVolume += SphP[j].Volume;
+          out.EnvSoundVolumeWeighted += SphP[j].Volume * cs;
+
+          double dr[3] = {NEAREST_X(P[j].Pos[0] - bh->Pos[0]) * a,
+                          NEAREST_Y(P[j].Pos[1] - bh->Pos[1]) * a,
+                          NEAREST_Z(P[j].Pos[2] - bh->Pos[2]) * a};
+          double dv[3];
+          for(int k = 0; k < 3; k++)
+            {
+              const double vphys = P[j].Vel[k] / a;
+              const double bhvphys = bh->Vel[k] / a;
+              out.EnvVelocityMassWeighted[k] += P[j].Mass * vphys;
+              dv[k] = vphys - bhvphys;
+            }
+
+          const double ell[3] = {dr[1] * dv[2] - dr[2] * dv[1],
+                                 dr[2] * dv[0] - dr[0] * dv[2],
+                                 dr[0] * dv[1] - dr[1] * dv[0]};
+          for(int k = 0; k < 3; k++)
+            out.EnvAngularMomentum[k] += P[j].Mass * ell[k];
+
+          const double lambda_ffr =
+              bh_ffr_capture_lambda_core(bh, r, All.BHFreeFallA, All.BHFreeFallAlpha);
+          if(lambda_ffr > 0)
+            out.EnvFFRRawRate += P[j].Mass * lambda_ffr;
+
+          continue;
+        }
 
       if(CapturePass == BH_FFR_CAPTURE_PASS_SHARES && bin > 0 && bin < out.MinHydroTimeBin)
         out.MinHydroTimeBin = bin;
@@ -289,7 +405,6 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
       if(!bh_ffr_gas_is_active(j) || !bh->CaptureEnabled)
         continue;
 
-      const double r = sqrt(Thread[threadid].R2list[n]);
       const double lambda = bh_ffr_capture_lambda(bh, r);
       if(!(lambda > 0))
         continue;
@@ -358,6 +473,86 @@ static double bh_ffr_active_gas_timestep_code_time(int j)
     return 0.0;
 
   return bh_ffr_integer_interval_to_physical_code_time(All.Ti_Current - ti_step, All.Ti_Current);
+}
+
+static void bh_ffr_prepare_benchmark_rates(void)
+{
+  const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+
+  for(int n = 0; n < CaptureNTargets; n++)
+    {
+      const int p = bh_ffr_capture_particle_from_target(n, "bh_ffr_prepare_benchmark_rates");
+      const int b = P[p].BHDataIndex;
+      struct bh_ffr_capture_result *res = &CaptureResults[n];
+
+      struct bh_benchmark_environment env;
+      memset(&env, 0, sizeof(env));
+      env.GasMass = res->EnvGasMass;
+      env.FFRRawRate = res->EnvFFRRawRate;
+
+      if(res->EnvGasMass > 0)
+        {
+          if(!(res->EnvVolume > 0) || !isfinite(res->EnvVolume))
+            terminate("BH_BENCHMARK: non-positive common aperture volume=%g for ID=%llu",
+                      res->EnvVolume, (unsigned long long)P[p].ID);
+
+          const double physical_volume = res->EnvVolume * a * a * a;
+          env.Density = res->EnvGasMass / physical_volume;
+          env.SoundSpeed = res->EnvSoundVolumeWeighted / res->EnvVolume;
+
+          double vrel2 = 0.0;
+          double j2 = 0.0;
+          for(int k = 0; k < 3; k++)
+            {
+              const double vbulk = res->EnvVelocityMassWeighted[k] / res->EnvGasMass;
+              const double vbh = P[p].Vel[k] / a;
+              const double dv = vbulk - vbh;
+              vrel2 += dv * dv;
+              j2 += res->EnvAngularMomentum[k] * res->EnvAngularMomentum[k];
+            }
+          env.RelativeSpeed = sqrt(vrel2);
+          env.Vphi = sqrt(j2) / (res->EnvGasMass * All.BHAccretionRadius);
+
+          const double rho_cgs =
+              env.Density * All.UnitDensity_in_cgs * All.HubbleParam * All.HubbleParam;
+          env.HydrogenNumberDensity = HYDROGEN_MASSFRAC * rho_cgs / PROTONMASS;
+        }
+
+      struct bh_benchmark_rate_result rate;
+      bh_benchmark_compute_accretion(&env, BHP[b].BHMass, &rate);
+
+      res->ModelRawRate = rate.RawRate;
+      res->ModelOperationalRate = rate.OperationalRate;
+      res->ModelEddingtonRate = rate.EddingtonRate;
+      res->ModelBoostFactor = rate.BoostFactor;
+      res->ModelAMLimiter = rate.AngularMomentumLimiter;
+      res->LambdaScale = 0.0;
+      res->UniformLambda = 0.0;
+
+      if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR)
+        {
+          if(rate.RawRate > 0)
+            res->LambdaScale = rate.OperationalRate / rate.RawRate;
+        }
+      else if(env.GasMass > 0)
+        res->UniformLambda = rate.OperationalRate / env.GasMass;
+
+      if(!isfinite(res->LambdaScale) || res->LambdaScale < 0 || res->LambdaScale > 1.0 + 1.0e-12 ||
+         !isfinite(res->UniformLambda) || res->UniformLambda < 0)
+        terminate("BH_BENCHMARK: invalid sink normalization scale=%g uniform=%g for ID=%llu",
+                  res->LambdaScale, res->UniformLambda, (unsigned long long)P[p].ID);
+
+      printf("BH_BENCHMARK: accretion ID=%llu task=%d model=%s target=%s "
+             "Mgas=%g rho=%g cs=%g vrel=%g Vphi=%g nH=%g raw=%g edd=%g operational=%g "
+             "boost=%g amlim=%g\n",
+             (unsigned long long)P[p].ID, ThisTask,
+             bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
+             All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT ? "direct" : "reservoir",
+             env.GasMass, env.Density, env.SoundSpeed, env.RelativeSpeed, env.Vphi,
+             env.HydrogenNumberDensity, rate.RawRate, rate.EddingtonRate, rate.OperationalRate,
+             rate.BoostFactor, rate.AngularMomentumLimiter);
+      fflush(stdout);
+    }
 }
 
 static void bh_ffr_compute_exact_cell_sinks(void)
@@ -496,9 +691,21 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
         }
       const double old_bh_kinetic = 0.5 * old_dyn_mass * old_vphys2;
 
-      BHP[b].ReservoirMass += dm;
-      for(int k = 0; k < 3; k++)
-        BHP[b].Coherence[k] += res->CoherenceIncrement[k];
+      if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
+        {
+          BHP[b].ReservoirMass += dm;
+          for(int k = 0; k < 3; k++)
+            BHP[b].Coherence[k] += res->CoherenceIncrement[k];
+        }
+      else
+        {
+          if(BHP[b].ReservoirMass != 0 || BHP[b].WindMassBuffer != 0 ||
+             BHP[b].WindMomentumBuffer != 0 || BHP[b].WindEnergyBuffer != 0 ||
+             BHP[b].JetEnergyBuffer != 0)
+            terminate("BH_BENCHMARK: direct accretion requires empty FFR reservoir/feedback buffers for ID=%llu",
+                      (unsigned long long)P[p].ID);
+          BHP[b].BHMass += dm;
+        }
 
       P[p].Mass = BHP[b].BHMass + BHP[b].ReservoirMass + BHP[b].WindMassBuffer;
       if(!(P[p].Mass > 0) || !isfinite(P[p].Mass))
@@ -530,19 +737,22 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
           fflush(stdout);
         }
 
-      double cnorm2 = 0;
-      for(int k = 0; k < 3; k++)
-        cnorm2 += BHP[b].Coherence[k] * BHP[b].Coherence[k];
-      const double cnorm = sqrt(cnorm2);
-      const double coherence = (BHP[b].ReservoirMass > 0) ? cnorm / BHP[b].ReservoirMass : 0;
+      if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
+        {
+          double cnorm2 = 0;
+          for(int k = 0; k < 3; k++)
+            cnorm2 += BHP[b].Coherence[k] * BHP[b].Coherence[k];
+          const double cnorm = sqrt(cnorm2);
+          const double coherence = (BHP[b].ReservoirMass > 0) ? cnorm / BHP[b].ReservoirMass : 0;
 
-      if(!isfinite(coherence) || coherence > 1.0 + 1.0e-10)
-        terminate("BH_FFR: coherence invariant failed ID=%llu C=%g Md=%g |Cd|=%g", (unsigned long long)P[p].ID, coherence,
-                  BHP[b].ReservoirMass, cnorm);
+          if(!isfinite(coherence) || coherence > 1.0 + 1.0e-10)
+            terminate("BH_FFR: coherence invariant failed ID=%llu C=%g Md=%g |Cd|=%g",
+                      (unsigned long long)P[p].ID, coherence, BHP[b].ReservoirMass, cnorm);
 
-      if(coherence >= All.BHMinCoherence && cnorm > 0)
-        for(int k = 0; k < 3; k++)
-          BHP[b].DiscDir[k] = BHP[b].Coherence[k] / cnorm;
+          if(coherence >= All.BHMinCoherence && cnorm > 0)
+            for(int k = 0; k < 3; k++)
+              BHP[b].DiscDir[k] = BHP[b].Coherence[k] / cnorm;
+        }
 
       if(!isfinite(res->CapturedRate) || res->CapturedRate < 0)
         terminate("BH_FFR: invalid captured supply rate=%g for particle ID=%llu", res->CapturedRate,
@@ -552,6 +762,21 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
        * hydro step.  Summing dm_i/dt_i avoids spuriously dividing a gas-step
        * capture event by a much shorter feedback-limited BH timestep. */
       BHP[b].MdotSupply = res->CapturedRate;
+
+      if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT)
+        {
+          BHP[b].MdotProcessed = res->CapturedRate;
+          BHP[b].MdotHorizon = res->CapturedRate;
+          BHP[b].MdotWind = 0.0;
+          BHP[b].MdotEddington = res->ModelEddingtonRate;
+          BHP[b].ProcessedEddingtonRatio =
+              (res->ModelEddingtonRate > 0) ? res->CapturedRate / res->ModelEddingtonRate : 0.0;
+          BHP[b].ColdBlendWeight = 0.0;
+          BHP[b].BolometricLuminosity = 0.0;
+          BHP[b].WindPower = 0.0;
+          BHP[b].JetPower = 0.0;
+          BHP[b].AccretionState = BH_FFR_STATE_UNINITIALIZED;
+        }
 
       *local_captured_mass += dm;
       for(int k = 0; k < 3; k++)
@@ -617,6 +842,7 @@ void bh_ffr_capture_resolved_gas(void)
   if(!CaptureSelfTestDone)
     {
       bh_ffr_capture_self_test();
+      bh_benchmark_accretion_self_test();
       CaptureSelfTestDone = 1;
     }
 
@@ -640,6 +866,12 @@ void bh_ffr_capture_resolved_gas(void)
 
   if(All.TotNumGas > 0)
     {
+      CapturePass = BH_FFR_CAPTURE_PASS_ENVIRONMENT;
+      generic_set_MaxNexport();
+      generic_comm_pattern(CaptureNTargets, kernel_local, kernel_imported);
+
+      bh_ffr_prepare_benchmark_rates();
+
       CapturePass = BH_FFR_CAPTURE_PASS_LAMBDA;
       generic_set_MaxNexport();
       generic_comm_pattern(CaptureNTargets, kernel_local, kernel_imported);
