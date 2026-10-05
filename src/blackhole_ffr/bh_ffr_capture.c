@@ -24,6 +24,7 @@ struct bh_ffr_capture_result
   MyDouble CapturedMass;
   MyDouble CapturedRate;
   MyDouble CapturedMomentum[3];
+  MyDouble CapturedAbsMomentum[3];
   MyDouble CapturedKineticEnergy;
   MyDouble CoherenceIncrement[3];
 
@@ -74,6 +75,7 @@ typedef struct
   MyDouble CapturedMass;
   MyDouble CapturedRate;
   MyDouble CapturedMomentum[3];
+  MyDouble CapturedAbsMomentum[3];
   MyDouble CapturedKineticEnergy;
   MyDouble CoherenceIncrement[3];
   MyDouble EnvGasMass;
@@ -214,6 +216,7 @@ static void out2particle(data_out *out, int target, int mode)
       for(int k = 0; k < 3; k++)
         {
           res->CapturedMomentum[k] = out->CapturedMomentum[k];
+          res->CapturedAbsMomentum[k] = out->CapturedAbsMomentum[k];
           res->CoherenceIncrement[k] = out->CoherenceIncrement[k];
         }
       res->MinHydroTimeBin = out->MinHydroTimeBin;
@@ -226,6 +229,7 @@ static void out2particle(data_out *out, int target, int mode)
       for(int k = 0; k < 3; k++)
         {
           res->CapturedMomentum[k] += out->CapturedMomentum[k];
+          res->CapturedAbsMomentum[k] += out->CapturedAbsMomentum[k];
           res->CoherenceIncrement[k] += out->CoherenceIncrement[k];
         }
       if(out->MinHydroTimeBin < res->MinHydroTimeBin)
@@ -440,7 +444,9 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
       const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
       for(int k = 0; k < 3; k++)
         {
-          out.CapturedMomentum[k] += share * P[j].Vel[k];
+          const double dp = share * P[j].Vel[k];
+          out.CapturedMomentum[k] += dp;
+          out.CapturedAbsMomentum[k] += fabs(dp);
           const double vphys = P[j].Vel[k] / a;
           vphys2 += vphys * vphys;
         }
@@ -591,11 +597,15 @@ static void bh_ffr_compute_exact_cell_sinks(void)
     }
 }
 
-static void bh_ffr_apply_gas_sink(double *local_removed_mass, double local_removed_momentum[3])
+static void bh_ffr_apply_gas_sink(double *local_removed_mass, double local_removed_momentum[3],
+                                  double local_removed_abs_momentum[3])
 {
   *local_removed_mass = 0;
   for(int k = 0; k < 3; k++)
-    local_removed_momentum[k] = 0;
+    {
+      local_removed_momentum[k] = 0;
+      local_removed_abs_momentum[k] = 0;
+    }
 
   for(int idx = 0; idx < TimeBinsHydro.NActiveParticles; idx++)
     {
@@ -617,6 +627,7 @@ static void bh_ffr_apply_gas_sink(double *local_removed_mass, double local_remov
         {
           const double removed_p = (1.0 - keep) * SphP[j].Momentum[k];
           local_removed_momentum[k] += removed_p;
+          local_removed_abs_momentum[k] += fabs(removed_p);
           SphP[j].Momentum[k] *= keep;
         }
 
@@ -641,13 +652,17 @@ static void bh_ffr_apply_gas_sink(double *local_removed_mass, double local_remov
 }
 
 static void bh_ffr_check_capture_ledger(double local_removed_mass, const double local_removed_momentum[3],
-                                        double local_captured_mass, const double local_captured_momentum[3])
+                                        const double local_removed_abs_momentum[3],
+                                        double local_captured_mass, const double local_captured_momentum[3],
+                                        const double local_captured_abs_momentum[3])
 {
-  double in[8] = {local_removed_mass, local_captured_mass, local_removed_momentum[0], local_removed_momentum[1],
-                  local_removed_momentum[2], local_captured_momentum[0], local_captured_momentum[1],
-                  local_captured_momentum[2]};
-  double out[8];
-  MPI_Allreduce(in, out, 8, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  double in[14] = {local_removed_mass, local_captured_mass,
+                   local_removed_momentum[0], local_removed_momentum[1], local_removed_momentum[2],
+                   local_captured_momentum[0], local_captured_momentum[1], local_captured_momentum[2],
+                   local_removed_abs_momentum[0], local_removed_abs_momentum[1], local_removed_abs_momentum[2],
+                   local_captured_abs_momentum[0], local_captured_abs_momentum[1], local_captured_abs_momentum[2]};
+  double out[14];
+  MPI_Allreduce(in, out, 14, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
 
   const double mass_scale = dmax(1.0e-30, dmax(fabs(out[0]), fabs(out[1])));
   if(fabs(out[0] - out[1]) > 1.0e-9 * mass_scale)
@@ -655,17 +670,35 @@ static void bh_ffr_check_capture_ledger(double local_removed_mass, const double 
 
   for(int k = 0; k < 3; k++)
     {
-      const double pscale = dmax(1.0e-30, dmax(fabs(out[2 + k]), fabs(out[5 + k])));
-      if(fabs(out[2 + k] - out[5 + k]) > 1.0e-9 * pscale)
-        terminate("BH_FFR: capture momentum ledger failed component=%d removed=%g captured=%g", k, out[2 + k], out[5 + k]);
+      const double removed = out[2 + k];
+      const double captured = out[5 + k];
+      const double abs_removed = out[8 + k];
+      const double abs_captured = out[11 + k];
+
+      /* A signed Cartesian component can be tiny because many positive and
+       * negative cell momenta cancel.  Scale roundoff against the total
+       * absolute momentum transported, not the cancellation residual. */
+      const double pscale =
+          dmax(1.0e-30, dmax(dmax(fabs(removed), fabs(captured)),
+                             dmax(abs_removed, abs_captured)));
+      const double pdiff = fabs(removed - captured);
+
+      if(pdiff > 1.0e-9 * pscale)
+        terminate("BH_FFR: capture momentum ledger failed component=%d removed=%g captured=%g "
+                  "absRemoved=%g absCaptured=%g diff=%g rel=%g",
+                  k, removed, captured, abs_removed, abs_captured, pdiff, pdiff / pscale);
     }
 }
 
-static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double local_captured_momentum[3])
+static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double local_captured_momentum[3],
+                                        double local_captured_abs_momentum[3])
 {
   *local_captured_mass = 0;
   for(int k = 0; k < 3; k++)
-    local_captured_momentum[k] = 0;
+    {
+      local_captured_momentum[k] = 0;
+      local_captured_abs_momentum[k] = 0;
+    }
 
   for(int n = 0; n < CaptureNTargets; n++)
     {
@@ -786,7 +819,10 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
 
       *local_captured_mass += dm;
       for(int k = 0; k < 3; k++)
-        local_captured_momentum[k] += res->CapturedMomentum[k];
+        {
+          local_captured_momentum[k] += res->CapturedMomentum[k];
+          local_captured_abs_momentum[k] += res->CapturedAbsMomentum[k];
+        }
     }
 }
 
@@ -893,13 +929,14 @@ void bh_ffr_capture_resolved_gas(void)
     if(CaptureResults[n].MinHydroTimeBin == TIMEBINS)
       CaptureResults[n].MinHydroTimeBin = -1;
 
-  double local_captured_mass, local_captured_momentum[3];
-  bh_ffr_apply_capture_to_bhs(&local_captured_mass, local_captured_momentum);
+  double local_captured_mass, local_captured_momentum[3], local_captured_abs_momentum[3];
+  bh_ffr_apply_capture_to_bhs(&local_captured_mass, local_captured_momentum, local_captured_abs_momentum);
 
-  double local_removed_mass, local_removed_momentum[3];
-  bh_ffr_apply_gas_sink(&local_removed_mass, local_removed_momentum);
+  double local_removed_mass, local_removed_momentum[3], local_removed_abs_momentum[3];
+  bh_ffr_apply_gas_sink(&local_removed_mass, local_removed_momentum, local_removed_abs_momentum);
 
-  bh_ffr_check_capture_ledger(local_removed_mass, local_removed_momentum, local_captured_mass, local_captured_momentum);
+  bh_ffr_check_capture_ledger(local_removed_mass, local_removed_momentum, local_removed_abs_momentum,
+                              local_captured_mass, local_captured_momentum, local_captured_abs_momentum);
 
   if(SinkMass != NULL)
     myfree(SinkMass);
