@@ -119,6 +119,7 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
   merged->LastProcessedTi = All.Ti_Current;
   merged->MinNeighbourHydroTimeBin = -1;
   merged->AccretionState = BH_FFR_STATE_UNINITIALIZED;
+  merged->TNGFeedbackMode = BH_BENCHMARK_TNG_MODE_UNINITIALIZED;
 
   double dynmass = 0.0;
   double pos_offset[3] = {0, 0, 0};
@@ -143,6 +144,8 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
         merged->WindMomentumBuffer += s->WindMomentumBuffer;
         merged->WindEnergyBuffer += s->WindEnergyBuffer;
         merged->JetEnergyBuffer += s->JetEnergyBuffer;
+        merged->TNGThermalEnergyBuffer += s->TNGThermalEnergyBuffer;
+        merged->TNGKineticEnergyBuffer += s->TNGKineticEnergyBuffer;
 
         /* These are rates/powers already evaluated for the same synchronization
          * point before the merger. Their sums are the best conservative
@@ -155,6 +158,9 @@ static void bh_ffr_build_merged_state(const struct bh_ffr_merge_summary *all, co
         merged->BolometricLuminosity += s->BolometricLuminosity;
         merged->WindPower += s->WindPower;
         merged->JetPower += s->JetPower;
+        merged->BenchmarkMdotRaw += s->BenchmarkMdotRaw;
+        merged->BenchmarkMdotOperational += s->BenchmarkMdotOperational;
+        merged->TNGFeedbackPower += s->TNGFeedbackPower;
 
         if(s->MinNeighbourHydroTimeBin > 0 &&
            (merged->MinNeighbourHydroTimeBin < 0 || s->MinNeighbourHydroTimeBin < merged->MinNeighbourHydroTimeBin))
