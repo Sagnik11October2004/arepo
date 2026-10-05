@@ -5,7 +5,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 SOURCE="${SOURCE:-$HERE/output_dm/snap_003.hdf5}"
 SYNTH="$HERE/merge_source.hdf5"
-SHORT_DA="${SHORT_DA:-4.0e-6}"
+SHORT_DA="${SHORT_DA:-2.0e-7}"
 SHORT_STEP_FRAC="${SHORT_STEP_FRAC:-0.45}"
 PARAM="$HERE/param_merger.txt"
 OUT="$HERE/output_merger"
@@ -63,7 +63,10 @@ if not da > 0:
 if not (0.0 < step_frac < 1.0):
     raise SystemExit(f"SHORT_STEP_FRAC must lie in (0,1), got {step_frac}")
 tmax=a+da
-# Keep the startup inequality, but avoid the old ~10-cycle test-only cap.
+# Keep the startup inequality. The merger regression only needs the merge,
+# one domain-compaction opportunity, and a post-merger snapshot; it must not
+# evolve this synthetic snapshot long enough for unrelated cosmological modes
+# to become numerically pathological.
 dloga=math.log(tmax/a)
 maxstep=step_frac*min(dloga, da)
 if not (0.0 < maxstep < da):
