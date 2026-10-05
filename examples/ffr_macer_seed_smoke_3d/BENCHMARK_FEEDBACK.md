@@ -2,15 +2,15 @@
 
 The feedback selector is independent of the resolved accretion estimator:
 
-- \`BHBenchmarkFeedbackModel = 0\`: no feedback.
-- \`BHBenchmarkFeedbackModel = 1\`: IllustrisTNG thermal/kinetic feedback law.
-- \`BHBenchmarkFeedbackModel = 2\`: validated FFR-MACER mechanical wind+jet feedback.
+- `BHBenchmarkFeedbackModel = 0`: no feedback.
+- `BHBenchmarkFeedbackModel = 1`: IllustrisTNG thermal/kinetic feedback law.
+- `BHBenchmarkFeedbackModel = 2`: validated FFR-MACER mechanical wind+jet feedback.
 
 The allowed backend combinations are intentionally strict:
 
-- TNG feedback requires \`BHBenchmarkAccretionTarget = 1\` (direct).
-- MACER feedback requires \`BHBenchmarkAccretionTarget = 0\` (reservoir).
-- \`NONE\` may be used with either target for isolated tests.
+- TNG feedback requires `BHBenchmarkAccretionTarget = 1` (direct).
+- MACER feedback requires `BHBenchmarkAccretionTarget = 0` (reservoir).
+- `NONE` may be used with either target for isolated tests.
 
 This yields the six headline configurations without duplicating the accretion
 implementation:
@@ -149,7 +149,7 @@ the average over randomly reoriented events.
 
 The cosmological TNG implementation normally adapts the BH neighbourhood to a
 target neighbour count. The convergence benchmark instead keeps the same fixed
-proper \`BHFeedbackRadius\` for TNG and MACER so changes in the headline
+proper `BHFeedbackRadius` for TNG and MACER so changes in the headline
 comparison come from the feedback prescription, not a different numerical
 aperture. Weinberger et al. also used a fixed physical feedback radius in their
 idealized kinetic-wind convergence tests.
@@ -167,7 +167,7 @@ stored feedback energy is silently discarded.
 
 ## MACER path
 
-\`BHBenchmarkFeedbackModel=2\` calls the already validated FFR-MACER feedback
+`BHBenchmarkFeedbackModel=2` calls the already validated FFR-MACER feedback
 implementation. Its physical closure is not rewritten:
 
 - broad bipolar wind around the coherent disc axis;
@@ -180,23 +180,23 @@ implementation. Its physical closure is not rewritten:
 - exact requested packet kinetic-energy increment;
 - backlog and feedback-aware timestep handling.
 
-Thus \`FFR + reservoir + MACER\` remains the validated production-model
-combination, while \`Bondi + reservoir + MACER\` changes only the resolved
+Thus `FFR + reservoir + MACER` remains the validated production-model
+combination, while `Bondi + reservoir + MACER` changes only the resolved
 supply estimator.
 
 ## Snapshot diagnostics
 
 Additional Type-5 output fields are:
 
-- \`BH_BenchmarkMdotRaw\`
-- \`BH_BenchmarkMdotOperational\`
-- \`BH_TNGMode\`
-- \`BH_TNGRawEddRatio\`
-- \`BH_TNGModeThreshold\`
-- \`BH_TNGFeedbackPower\`
-- \`BH_TNGThermalEnergyBuffer\`
-- \`BH_TNGKineticEnergyBuffer\`
-- \`BH_TNGKineticThresholdEnergy\`
+- `BH_BenchmarkMdotRaw`
+- `BH_BenchmarkMdotOperational`
+- `BH_TNGMode`
+- `BH_TNGRawEddRatio`
+- `BH_TNGModeThreshold`
+- `BH_TNGFeedbackPower`
+- `BH_TNGThermalEnergyBuffer`
+- `BH_TNGKineticEnergyBuffer`
+- `BH_TNGKineticThresholdEnergy`
 
 The existing MACER diagnostics are unchanged.
 
@@ -204,5 +204,5 @@ The existing MACER diagnostics are unchanged.
 
 Persistent TNG feedback buffers extend the benchmark BHP state. Native restart
 files written by this branch therefore use FFR restart version 3 and reject
-older incompatible records explicitly. The validated \`ffr-macer\` branch is
+older incompatible records explicitly. The validated `ffr-macer` branch is
 untouched and retains its own existing restart format.
