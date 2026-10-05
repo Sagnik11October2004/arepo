@@ -149,3 +149,20 @@ BHDMNeighbours                          64
 % Internal BH accuracy factor in dt <= f_int min(t_d, Eth_w/P_w, Eth_j/P_j).
 % This smoke default is intentionally loose; production convergence should test ~0.25.
 BHInternalTimestepFactor                1.0
+
+%---- Convergence-benchmark accretion selector
+% AccretionModel: 0=TNG Bondi, 1=boosted Bondi, 2=AM-regulated Bondi, 3=FFR.
+% AccretionTarget: 0=unresolved reservoir/MACER backend, 1=direct/TNG backend.
+% These defaults exactly preserve the validated FFR-MACER path.
+BHBenchmarkAccretionModel               3
+BHBenchmarkAccretionTarget              0
+% Boost mode: 0=constant alpha, 1=Booth-Schaye density-dependent alpha.
+BHBenchmarkBoostMode                    1
+BHBenchmarkBoostAlpha                   100.0
+BHBenchmarkBoostDensityThreshold        0.1
+BHBenchmarkBoostBeta                    2.0
+% EAGLE reference value C_visc=2*pi.
+BHBenchmarkAMViscosity                  6.283185307179586
+% TNG-like direct backend defaults.
+BHBenchmarkRadiativeEfficiency          0.2
+BHBenchmarkEddingtonFactor              1.0
