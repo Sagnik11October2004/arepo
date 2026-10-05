@@ -417,12 +417,20 @@ void read_parameter_file(char *fname)
       addr[nt] = &All.BHFreeFallAlpha;
       id[nt++] = REAL;
 
+      strcpy(tag[nt], "BHUseFullCentralMass");
+      addr[nt] = &All.BHUseFullCentralMass;
+      id[nt++] = INT;
+
       strcpy(tag[nt], "BHMaxSinkFraction");
       addr[nt] = &All.BHMaxSinkFraction;
       id[nt++] = REAL;
 
       strcpy(tag[nt], "BHDiskTimeMyr");
       addr[nt] = &All.BHDiskTimeMyr;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHDiskTimeExponent");
+      addr[nt] = &All.BHDiskTimeExponent;
       id[nt++] = REAL;
 
       strcpy(tag[nt], "BHRHotMaxInRs");
@@ -844,7 +852,8 @@ void check_parameters()
      !isfinite(All.BHSeedMinRedshift) || !isfinite(All.BHSeedMaxDonorFraction) ||
      !isfinite(All.BHFreeFallA) || !isfinite(All.BHFreeFallAlpha) ||
      !isfinite(All.BHMaxSinkFraction) || !isfinite(All.BHDiskTimeMyr) ||
-     !isfinite(All.BHRHotMaxInRs) || !isfinite(All.BHRadiativeEfficiency) ||
+     !isfinite(All.BHDiskTimeExponent) || !isfinite(All.BHRHotMaxInRs) ||
+     !isfinite(All.BHRadiativeEfficiency) ||
      !isfinite(All.BHWindBurstFactor) || !isfinite(All.BHJetBurstFactor) ||
      !isfinite(All.BHWindConeAngleDeg) || !isfinite(All.BHJetConeAngleDeg) ||
      !isfinite(All.BHMinCoherence) || !isfinite(All.BHJetDirectionTimeFactor) ||
@@ -857,10 +866,14 @@ void check_parameters()
     mpi_terminate("BLACKHOLE_FFR requires positive BHAccretionRadius and BHFeedbackRadius.\n");
   if(All.BHFreeFallA < 0)
     mpi_terminate("BHFreeFallA must be non-negative.\n");
+  if(All.BHUseFullCentralMass != 0 && All.BHUseFullCentralMass != 1)
+    mpi_terminate("BHUseFullCentralMass must be 0 or 1.\n");
   if(All.BHMaxSinkFraction <= 0 || All.BHMaxSinkFraction >= 1)
     mpi_terminate("BHMaxSinkFraction must lie in (0,1) so an active gas cell retains positive mass.\n");
   if(All.BHDiskTimeMyr <= 0)
-    mpi_terminate("BHDiskTimeMyr must be positive.\n");
+    mpi_terminate("BHDiskTimeMyr (t_d,0) must be positive.\n");
+  if(All.BHDiskTimeExponent < 0)
+    mpi_terminate("BHDiskTimeExponent must be non-negative.\n");
   if(All.BHRHotMaxInRs <= 3.0)
     mpi_terminate("BHRHotMaxInRs must exceed 3 so the truncated-flow interval is non-empty.\n");
   if(All.BHRadiativeEfficiency <= 0 || All.BHRadiativeEfficiency >= 1)

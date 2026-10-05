@@ -9,6 +9,27 @@
  * candidate only after bh_ffr_apply_inner_flow() has partitioned it exactly
  * into horizon and wind channels. */
 
+double bh_ffr_reservoir_timescale_myr(double bh_mass, double reservoir_mass)
+{
+  if(!isfinite(bh_mass) || bh_mass < 0 || !isfinite(reservoir_mass) || reservoir_mass < 0)
+    terminate("BH_FFR: invalid masses Mbh=%g Md=%g in reservoir-timescale calculation", bh_mass, reservoir_mass);
+  if(!isfinite(All.BHDiskTimeMyr) || !(All.BHDiskTimeMyr > 0) ||
+     !isfinite(All.BHDiskTimeExponent) || All.BHDiskTimeExponent < 0)
+    terminate("BH_FFR: invalid reservoir law t0=%g p=%g", All.BHDiskTimeMyr, All.BHDiskTimeExponent);
+  if(reservoir_mass == 0)
+    return DBL_MAX;
+  const double ratio = bh_mass / reservoir_mass;
+  if(!isfinite(ratio) || ratio < 0)
+    return DBL_MAX;
+  const double log_tau = log(All.BHDiskTimeMyr) + All.BHDiskTimeExponent * log1p(ratio);
+  if(!isfinite(log_tau) || log_tau >= log(DBL_MAX))
+    return DBL_MAX;
+  const double tau = exp(log_tau);
+  if(!isfinite(tau) || !(tau > 0))
+    terminate("BH_FFR: invalid reservoir timescale=%g Myr", tau);
+  return tau;
+}
+
 static double bh_ffr_eddington_rate_cgs(double mass_g, double efficiency)
 {
   if(!(mass_g > 0))
@@ -141,7 +162,7 @@ int bh_ffr_classify_accretion_state(int previous_state, double processed_edd_rat
   return BH_FFR_STATE_TRUNCATED;
 }
 
-void bh_ffr_update_reservoir_state(int p, double dt_myr, double dt_code)
+void bh_ffr_update_reservoir_state(int p, double dt_myr, double dt_code, double disk_time_myr)
 {
   if(p < 0 || p >= NumPart || P[p].Type != BH_FFR_PARTICLE_TYPE)
     terminate("BH_FFR: invalid particle index=%d in reservoir-state update", p);
@@ -155,7 +176,9 @@ void bh_ffr_update_reservoir_state(int p, double dt_myr, double dt_code)
   if((dt_myr == 0) != (dt_code == 0))
     terminate("BH_FFR: inconsistent zero timestep dt_myr=%g dt_code=%g", dt_myr, dt_code);
 
-  const double processable = bh_ffr_reservoir_processable_mass(BHP[b].ReservoirMass, dt_myr, All.BHDiskTimeMyr);
+  if(!isfinite(disk_time_myr) || !(disk_time_myr > 0))
+    terminate("BH_FFR: invalid frozen reservoir time=%g Myr for ID=%llu", disk_time_myr, (unsigned long long)P[p].ID);
+  const double processable = bh_ffr_reservoir_processable_mass(BHP[b].ReservoirMass, dt_myr, disk_time_myr);
   const double mdot_processed = (dt_code > 0) ? processable / dt_code : 0.0;
   const double mdot_edd = bh_ffr_eddington_rate_code(BHP[b].BHMass);
   const double processed_edd_ratio = (mdot_edd > 0) ? mdot_processed / mdot_edd : 0.0;
@@ -178,6 +201,13 @@ void bh_ffr_update_reservoir_state(int p, double dt_myr, double dt_code)
 
 void bh_ffr_reservoir_self_test(void)
 {
+  const double td = bh_ffr_reservoir_timescale_myr(100.0, 1.0);
+  const double td_expected = All.BHDiskTimeMyr * pow(101.0, All.BHDiskTimeExponent);
+  if(fabs(td - td_expected) > 2.0e-13 * td_expected)
+    terminate("BH_FFR: reservoir self-test failed PDF timescale got=%g expected=%g", td, td_expected);
+  if(bh_ffr_reservoir_timescale_myr(100.0, 0.0) != DBL_MAX)
+    terminate("BH_FFR: reservoir self-test failed empty-reservoir limit");
+
   const double md = 2.0;
   const double exact = md * (1.0 - exp(-1.0));
   const double got = bh_ffr_reservoir_processable_mass(md, 5.0, 5.0);

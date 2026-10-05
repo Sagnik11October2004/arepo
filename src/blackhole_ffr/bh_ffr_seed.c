@@ -34,12 +34,16 @@ struct bh_ffr_seed_candidate
 {
   int GrNr;
   double HaloMass;
+  MyIDType SeedID;
+  MyDouble SeedAxis[3];
+  int HasCoherentAxis;
 };
 
 struct bh_ffr_seed_central
 {
   MyIDType ID;
   MyDouble Pos[3];
+  MyFloat Vel[3];
   double Density;
   double Mass;
   int Task;
@@ -113,6 +117,10 @@ static struct bh_ffr_seed_candidate *bh_ffr_collect_seed_candidates(int *ncandid
       {
         local[n].GrNr = Group[i].GrNr;
         local[n].HaloMass = Group[i].Mass;
+        local[n].SeedID = 0;
+        local[n].HasCoherentAxis = 0;
+        for(int k = 0; k < 3; k++)
+          local[n].SeedAxis[k] = 0;
         n++;
       }
 
@@ -204,7 +212,10 @@ static int bh_ffr_find_seed_central(int grnr, double seed_mass_code, struct bh_f
       central->Task = ThisTask;
       central->Index = local_index;
       for(int k = 0; k < 3; k++)
-        central->Pos[k] = P[local_index].Pos[k];
+        {
+          central->Pos[k] = P[local_index].Pos[k];
+          central->Vel[k] = P[local_index].Vel[k];
+        }
     }
 
   MPI_Bcast(central, (int)sizeof(*central), MPI_BYTE, owner, MPI_COMM_WORLD);
@@ -238,7 +249,46 @@ static int *bh_ffr_build_local_donor_list(int grnr, MyIDType central_id, int *nd
   return list;
 }
 
-static int bh_ffr_seed_one_candidate(const struct bh_ffr_seed_candidate *candidate, double seed_mass_code)
+static double bh_ffr_seed_measure_local_rotation(const struct bh_ffr_seed_central *central,
+                                                   const int *donors, int ndonors, MyDouble axis[3])
+{
+  const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+  const double rcoord = All.BHAccretionRadius / a;
+  const double r2max = rcoord * rcoord;
+  double local_mass = 0.0, local_c[3] = {0, 0, 0};
+
+  for(int n = 0; n < ndonors; n++)
+    {
+      const int i = donors[n];
+      if(bh_ffr_seed_distance2(central->Pos, i) > r2max)
+        continue;
+      double xtmp, ytmp, ztmp;
+      const double dr[3] = {NEAREST_X(P[i].Pos[0] - central->Pos[0]),
+                            NEAREST_Y(P[i].Pos[1] - central->Pos[1]),
+                            NEAREST_Z(P[i].Pos[2] - central->Pos[2])};
+      const double dv[3] = {P[i].Vel[0] - central->Vel[0], P[i].Vel[1] - central->Vel[1], P[i].Vel[2] - central->Vel[2]};
+      const double ell[3] = {dr[1]*dv[2]-dr[2]*dv[1], dr[2]*dv[0]-dr[0]*dv[2], dr[0]*dv[1]-dr[1]*dv[0]};
+      const double en = sqrt(ell[0]*ell[0] + ell[1]*ell[1] + ell[2]*ell[2]);
+      if(!(en > 0) || !isfinite(en))
+        continue;
+      local_mass += P[i].Mass;
+      for(int k = 0; k < 3; k++)
+        local_c[k] += P[i].Mass * ell[k] / en;
+    }
+
+  double mass = 0.0, c[3] = {0, 0, 0};
+  MPI_Allreduce(&local_mass, &mass, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  MPI_Allreduce(local_c, c, 3, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+  const double cn = sqrt(c[0]*c[0] + c[1]*c[1] + c[2]*c[2]);
+  const double coherence = mass > 0 ? cn / mass : 0.0;
+  if(!isfinite(coherence) || coherence < 0 || coherence > 1.0 + 1.0e-10)
+    terminate("BH_FFR: invalid local seed coherence=%g", coherence);
+  for(int k = 0; k < 3; k++)
+    axis[k] = (cn > 0 && coherence > All.BHMinCoherence) ? c[k] / cn : 0.0;
+  return coherence;
+}
+
+static int bh_ffr_seed_one_candidate(struct bh_ffr_seed_candidate *candidate, double seed_mass_code)
 {
   struct bh_ffr_seed_central central;
   if(!bh_ffr_find_seed_central(candidate->GrNr, seed_mass_code, &central))
@@ -318,6 +368,11 @@ static int bh_ffr_seed_one_candidate(const struct bh_ffr_seed_candidate *candida
   if(!(q > 0) || q > 1.0 || !isfinite(q))
     terminate("BH_FFR: invalid seed donor normalization q=%g group=%d", q, candidate->GrNr);
 
+  candidate->SeedID = central.ID;
+  const double seed_coherence = bh_ffr_seed_measure_local_rotation(&central, donors, ndonors, candidate->SeedAxis);
+  candidate->HasCoherentAxis = seed_coherence > All.BHMinCoherence &&
+                               (candidate->SeedAxis[0] != 0 || candidate->SeedAxis[1] != 0 || candidate->SeedAxis[2] != 0);
+
   double local_removed_mass = 0;
   double local_removed_momentum[3] = {0, 0, 0};
 
@@ -395,6 +450,9 @@ static int bh_ffr_seed_one_candidate(const struct bh_ffr_seed_candidate *candida
              candidate->GrNr, All.cf_redshift,
              candidate->HaloMass * All.UnitMass_in_g / (All.HubbleParam * SOLAR_MASS), All.BHSeedMassMsun,
              (unsigned long long)central.ID);
+  mpi_printf("BH_FFR: seed axis ID=%llu source=%s coherence=%g.\n",
+             (unsigned long long)central.ID, candidate->HasCoherentAxis ? "local-gas" : "deterministic-fallback",
+             seed_coherence);
   return 1;
 }
 
@@ -456,7 +514,6 @@ int bh_ffr_seed_from_fof(void)
   int seeded_transactions = 0;
   for(int c = 0; c < ncandidates; c++)
     seeded_transactions += bh_ffr_seed_one_candidate(&candidates[c], seed_mass_code);
-  free(candidates);
 
   int local_converted = bh_ffr_rearrange_seeded_gas_cells();
   int global_converted = 0;
@@ -472,6 +529,16 @@ int bh_ffr_seed_from_fof(void)
     terminate("BH_FFR: negative global gas count after seeding");
 
   bh_ffr_rebuild_state_after_particle_changes();
+  for(int c = 0; c < ncandidates; c++)
+    if(candidates[c].SeedID != 0 && candidates[c].HasCoherentAxis)
+      for(int b = 0; b < NumBHFFR; b++)
+        if(BHP[b].ParticleID == candidates[c].SeedID)
+          for(int k = 0; k < 3; k++)
+            {
+              BHP[b].DiscDir[k] = candidates[c].SeedAxis[k];
+              BHP[b].JetDir[k] = candidates[c].SeedAxis[k];
+            }
+  free(candidates);
   reconstruct_timebins();
 
   /* The FoF caller still owns PS and other movable arena blocks here. The

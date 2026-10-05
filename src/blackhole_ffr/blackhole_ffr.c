@@ -37,6 +37,19 @@ static void bh_ffr_deterministic_axis(MyIDType id, MyDouble axis[3])
   axis[2] = z;
 }
 
+double bh_ffr_central_mass_code(int p)
+{
+  if(p < 0 || p >= NumPart || P[p].Type != BH_FFR_PARTICLE_TYPE)
+    terminate("BH_FFR: invalid particle index=%d in central-mass query", p);
+  const int b = P[p].BHDataIndex;
+  if(b < 0 || b >= NumBHFFR || BHP[b].ParticleID != P[p].ID)
+    terminate("BH_FFR: invalid compact state in central-mass query for ID=%llu", (unsigned long long)P[p].ID);
+  const double mass = All.BHUseFullCentralMass ? P[p].Mass : BHP[b].BHMass;
+  if(!isfinite(mass) || mass < 0)
+    terminate("BH_FFR: invalid central mass=%g for ID=%llu", mass, (unsigned long long)P[p].ID);
+  return mass;
+}
+
 static void bh_ffr_initialize_record(struct bh_ffr_particle_data *bh, int p, integertime last_processed_ti)
 {
   memset(bh, 0, sizeof(*bh));

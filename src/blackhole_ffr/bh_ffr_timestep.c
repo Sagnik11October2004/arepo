@@ -1,3 +1,4 @@
+#include <float.h>
 #include <math.h>
 #include <mpi.h>
 
@@ -151,7 +152,10 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
    * maps are stable without this restriction; this controls coefficient and
    * burst-threshold evolution over one BH step.  Energy/power ratios are in
    * physical code time and are converted to Myr before timeline limiting. */
-  const double reservoir_limit_myr = All.BHInternalTimestepFactor * All.BHDiskTimeMyr;
+  const double disk_time_myr = bh_ffr_reservoir_timescale_myr(BHP[b].BHMass, BHP[b].ReservoirMass);
+  double reservoir_limit_myr = DBL_MAX;
+  if(disk_time_myr < DBL_MAX / All.BHInternalTimestepFactor)
+    reservoir_limit_myr = All.BHInternalTimestepFactor * disk_time_myr;
   double dt_limit_myr = reservoir_limit_myr;
   double wind_limit_myr = HUGE_VAL;
   double jet_limit_myr = HUGE_VAL;
@@ -291,15 +295,14 @@ void bh_ffr_step(void)
        * full-gravity-tree hook only refreshes the transient DM environment. */
       bh_ffr_apply_cached_dynamical_friction(p, dt_code);
 
-      /* Exact reservoir processing and Iteration-6 inner-flow partition are
-       * committed together.  The update drains only the analytically
-       * processable mass and assigns it exactly to horizon + wind channels. */
-      bh_ffr_update_reservoir_state(p, dt_myr, dt_code);
+      /* Freeze the PDF reservoir time at the beginning of this BH transaction,
+       * after capture but before drainage. The same t_d controls reservoir
+       * processing and persistent jet-direction memory. */
+      const double disk_time_myr =
+          bh_ffr_reservoir_timescale_myr(BHP[b].BHMass, BHP[b].ReservoirMass);
 
-      /* Persistent JetDir is a memory axis, not a physical spin vector.
-       * Coherent reservoirs rotate it analytically toward DiscDir; incoherent
-       * reservoirs leave it frozen. */
-      bh_ffr_update_jet_direction(p, dt_myr);
+      bh_ffr_update_reservoir_state(p, dt_myr, dt_code, disk_time_myr);
+      bh_ffr_update_jet_direction(p, dt_myr, disk_time_myr);
 
       BHP[b].LastProcessedTi = All.Ti_Current;
     }

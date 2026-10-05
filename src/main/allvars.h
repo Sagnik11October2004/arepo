@@ -890,9 +890,10 @@ extern struct global_data_all_processes
                      processor. */
 
 #ifdef BLACKHOLE_FFR
-  /* FFR-MACER runtime controls. The current specification uses a constant
-   * reservoir processing time and intentionally does not impose a fixed
-   * cold-state retention fraction or a hard Eddington mass-accretion cap. */
+  /* FFR-MACER runtime controls. BHDiskTimeMyr is the PDF normalization
+   * t_d,0 and BHDiskTimeExponent is p_d in
+   * t_d=t_d,0(1+M_BH/M_d)^p_d. The no-hard-Eddington-cap and cold
+   * Gofford-root changes remain intentional later improvements. */
   double BHAccretionRadius;
   double BHFeedbackRadius;
 
@@ -905,8 +906,10 @@ extern struct global_data_all_processes
   double BHSeedMaxDonorFraction;
   double BHFreeFallA;
   double BHFreeFallAlpha;
+  int BHUseFullCentralMass;
   double BHMaxSinkFraction;
   double BHDiskTimeMyr;
+  double BHDiskTimeExponent;
   double BHRHotMaxInRs;
   double BHRadiativeEfficiency;
   double BHWindBurstFactor;

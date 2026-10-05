@@ -135,7 +135,8 @@ A copied checkpoint can be supplied with CHECKPOINT as for the other restart hel
 
 The production limiter combines the nearest-gas hydro bin with the internal accuracy bound
 
-    dt_BH <= f_int min(tau_d, Eth_w/P_w, Eth_j/P_j)
+    t_d = BHDiskTimeMyr * (1 + M_BH/M_d)^BHDiskTimeExponent
+    dt_BH <= f_int min(t_d, Eth_w/P_w, Eth_j/P_j)
 
 using physical time before AREPO performs its normal power-of-two timebin quantization. If a surviving wind or jet buffer still contains at least BHMaxPacketsPerStep thresholds, it additionally forces at least one finer gravity bin, so a packet-cap backlog cannot wait on a coarse collisionless timestep.
 

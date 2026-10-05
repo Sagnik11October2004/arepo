@@ -42,6 +42,7 @@ struct bh_ffr_feedback_event
   MyDouble PacketMomentum;
   MyDouble Q;
   MyDouble LobeMass[2];
+  MyDouble LobeUtherm[2];
   long long LobeCount[2];
   MyDouble EnergyBefore;
   MyDouble MassBefore;
@@ -68,6 +69,7 @@ typedef struct
   MyDouble PacketMass;
   MyDouble Q;
   MyDouble LobeMass[2];
+  MyDouble LobeUtherm[2];
   int Firstnode;
 } data_in;
 
@@ -78,6 +80,7 @@ typedef struct
   MyDouble EnclosedMass;
   MyDouble LobeMass[2];
   MyDouble LobeProjectedMomentum[2];
+  MyDouble LobeThermalMassWeighted[2];
   long long LobeCount[2];
   int Conflict;
 
@@ -156,6 +159,8 @@ static void particle2in(data_in *in, int target, int firstnode)
   in->Q = ev->Q;
   in->LobeMass[0] = ev->LobeMass[0];
   in->LobeMass[1] = ev->LobeMass[1];
+  in->LobeUtherm[0] = ev->LobeUtherm[0];
+  in->LobeUtherm[1] = ev->LobeUtherm[1];
   in->Firstnode = firstnode;
 }
 
@@ -175,6 +180,7 @@ static void out2particle(data_out *out, int target, int mode)
         {
           res->LobeMass[l] += out->LobeMass[l];
           res->LobeProjectedMomentum[l] += out->LobeProjectedMomentum[l];
+          res->LobeThermalMassWeighted[l] += out->LobeThermalMassWeighted[l];
           res->LobeCount[l] += out->LobeCount[l];
         }
       if(out->Conflict)
@@ -327,6 +333,10 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
 
           out.LobeCount[lobe]++;
           out.LobeMass[lobe] += P[j].Mass;
+          if(!isfinite(SphP[j].Utherm) || SphP[j].Utherm < 0)
+            terminate("BH_FFR: invalid target internal energy u=%g for gas ID=%llu",
+                      (double)SphP[j].Utherm, (unsigned long long)P[j].ID);
+          out.LobeThermalMassWeighted[lobe] += P[j].Mass * SphP[j].Utherm;
 
           double vdot = 0.0;
           for(int k = 0; k < 3; k++)
@@ -372,7 +382,9 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
       P[j].Mass += dm;
       for(int k = 0; k < 3; k++)
         SphP[j].Momentum[k] += dm * in->BHVel[k];
-      SphP[j].Energy += 0.5 * dm * bh_v2;
+      /* Return mass with the lobe-weighted ambient specific internal
+       * energy; the mechanical packet remains a separate kinetic increment. */
+      SphP[j].Energy += dm * (0.5 * bh_v2 + a * a * in->LobeUtherm[lobe]);
 
       double dp_phys[3], v_phys[3];
       const double sign = (lobe == 0) ? 1.0 : -1.0;
@@ -476,7 +488,7 @@ static void bh_ffr_feedback_prepare_candidates(void)
       double vbind2 = sigma2;
 
       if(All.BHUseCentralBindingTerm)
-        vbind2 += 2.0 * All.G * P[p].Mass / All.BHFeedbackRadius;
+        vbind2 += 2.0 * All.G * bh_ffr_central_mass_code(p) / All.BHFeedbackRadius;
 
       if(!isfinite(vbind2) || vbind2 < 0 || !isfinite(res->EnclosedMass) || res->EnclosedMass < 0)
         terminate("BH_FFR: invalid wind threshold environment Menc=%g vbind2=%g for ID=%llu", res->EnclosedMass, vbind2,
@@ -525,6 +537,13 @@ static void bh_ffr_feedback_prepare_candidates(void)
       ev->LobeMass[1] = res->LobeMass[1];
       ev->LobeCount[0] = res->LobeCount[0];
       ev->LobeCount[1] = res->LobeCount[1];
+      for(int l = 0; l < 2; l++)
+        {
+          ev->LobeUtherm[l] = res->LobeThermalMassWeighted[l] / res->LobeMass[l];
+          if(!isfinite(ev->LobeUtherm[l]) || ev->LobeUtherm[l] < 0)
+            terminate("BH_FFR: invalid lobe internal energy=%g for ID=%llu lobe=%d",
+                      ev->LobeUtherm[l], (unsigned long long)P[p].ID, l);
+        }
 
       if(!isfinite(frac) || frac <= 0 || frac > 1.0 + 2.0e-12 || !isfinite(ev->PacketMass) || ev->PacketMass < 0 ||
          ev->PacketMass > ev->MassBefore * (1.0 + 2.0e-12))

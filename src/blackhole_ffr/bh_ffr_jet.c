@@ -1,3 +1,4 @@
+#include <float.h>
 #include <math.h>
 #include <mpi.h>
 #include <stdio.h>
@@ -218,7 +219,7 @@ static void bh_ffr_slerp_axis(const MyDouble from_in[3], const MyDouble to_in[3]
   bh_ffr_normalize3(out, "slerp/general");
 }
 
-void bh_ffr_update_jet_direction(int p, double dt_myr)
+void bh_ffr_update_jet_direction(int p, double dt_myr, double disk_time_myr)
 {
   if(p < 0 || p >= NumPart || P[p].Type != BH_FFR_PARTICLE_TYPE)
     terminate("BH_FFR: invalid particle index=%d in jet-direction update", p);
@@ -243,7 +244,11 @@ void bh_ffr_update_jet_direction(int p, double dt_myr)
   if(dt_myr == 0 || coherence < All.BHMinCoherence)
     return;
 
-  const double tdir_myr = All.BHJetDirectionTimeFactor * All.BHDiskTimeMyr;
+  if(!isfinite(disk_time_myr) || !(disk_time_myr > 0))
+    terminate("BH_FFR: invalid frozen reservoir time=%g Myr in jet-direction update", disk_time_myr);
+  double tdir_myr = DBL_MAX;
+  if(disk_time_myr < DBL_MAX / All.BHJetDirectionTimeFactor)
+    tdir_myr = All.BHJetDirectionTimeFactor * disk_time_myr;
   if(!isfinite(tdir_myr) || !(tdir_myr > 0))
     terminate("BH_FFR: invalid jet alignment time=%g Myr", tdir_myr);
 
@@ -587,7 +592,7 @@ static void bh_ffr_jet_prepare_candidates(void)
       const double sigma2 = BHP[b].SigmaDM * BHP[b].SigmaDM;
       double vbind2 = sigma2;
       if(All.BHUseCentralBindingTerm)
-        vbind2 += 2.0 * All.G * P[p].Mass / All.BHFeedbackRadius;
+        vbind2 += 2.0 * All.G * bh_ffr_central_mass_code(p) / All.BHFeedbackRadius;
 
       if(!isfinite(vbind2) || vbind2 < 0 || !isfinite(res->EnclosedMass) || res->EnclosedMass < 0)
         terminate("BH_FFR: invalid jet threshold environment Menc=%g vbind2=%g for ID=%llu", res->EnclosedMass, vbind2,

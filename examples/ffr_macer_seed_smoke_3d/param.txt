@@ -123,14 +123,15 @@ BHSeedMaxDonorFraction                  0.5
 % Intentionally disabled for this test so any mass change is from seeding only.
 BHFreeFallA                             0.0
 BHFreeFallAlpha                         0.0
+BHUseFullCentralMass                    1
 BHMaxSinkFraction                       0.25
 
 %---- Reservoir/state and persistent FFR parameters
-% BHDiskTimeMyr is the constant physical reservoir processing time tau_d.
-% Iteration 6 drains only the exact finite-step processable mass and partitions
-% it conservatively into horizon + unresolved-wind channels.  This canonical
-% file keeps capture disabled; run_inner_restart.sh enables BHFreeFallA=1e-3.
+% PDF law: t_d = t_d,0 (1 + M_BH/M_d)^p_d. BHDiskTimeMyr is t_d,0.
+% The smoke normalization is deliberately short; production should test 10, 20,
+% and the source-faithful 42 Myr.
 BHDiskTimeMyr                           1.0
+BHDiskTimeExponent                      0.4
 BHRHotMaxInRs                           1200.0
 BHRadiativeEfficiency                   0.1
 BHWindBurstFactor                       0.01
@@ -145,6 +146,6 @@ BHMinActiveTargetMassFrac               0.5
 BHMaxPacketsPerStep                     4
 % Nearest Type-1 DM sample used for the cached 1D local velocity dispersion.
 BHDMNeighbours                          64
-% Internal BH accuracy factor in dt <= f_int min(tau_d, Eth_w/P_w, Eth_j/P_j).
+% Internal BH accuracy factor in dt <= f_int min(t_d, Eth_w/P_w, Eth_j/P_j).
 % This smoke default is intentionally loose; production convergence should test ~0.25.
 BHInternalTimestepFactor                1.0
