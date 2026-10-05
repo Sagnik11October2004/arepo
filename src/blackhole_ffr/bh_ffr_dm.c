@@ -759,13 +759,18 @@ static void bh_ffr_dm_self_test(void)
   bh_ffr_dm_insert(&res, 1.0, 1.0, v1);
   bh_ffr_dm_insert(&res, 2.0, 1.0, v2);
 
-  if(res.Count != 3 || res.C[0].R2 != 1.0 || res.C[1].R2 != 2.0 || res.C[2].R2 != 4.0)
-    terminate("BH_FFR: DM nearest-neighbour ordering self-test failed");
+  const int expected_count = dmin(All.BHDMNeighbours, 3);
+  if(expected_count < 2 || res.Count != expected_count ||
+     res.C[0].R2 != 1.0 || res.C[1].R2 != 2.0 ||
+     (expected_count == 3 && res.C[2].R2 != 4.0))
+    terminate("BH_FFR: DM nearest-neighbour ordering self-test failed count=%d expected=%d",
+              res.Count, expected_count);
 
   const double sigma = bh_ffr_dm_sigma_1d(&res);
-  const double expected = sqrt(2.0 / 9.0);
+  const double expected = (expected_count == 3) ? sqrt(2.0 / 9.0) : sqrt(1.0 / 12.0);
   if(fabs(sigma - expected) > 1.0e-13)
-    terminate("BH_FFR: DM dispersion self-test failed sigma=%g expected=%g", sigma, expected);
+    terminate("BH_FFR: DM dispersion self-test failed sigma=%g expected=%g count=%d",
+              sigma, expected, expected_count);
 
   memset(&res, 0, sizeof(res));
   bh_ffr_dm_insert(&res, 1.0, 1.0, v0);
