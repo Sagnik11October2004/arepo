@@ -7,7 +7,10 @@
 #include "blackhole_ffr.h"
 #include "../main/proto.h"
 
-/* Iteration 4: two-pass, order-independent resolved free-fall capture. */
+/* Three-pass benchmark capture:
+ * (1) a common fixed-aperture environment, (2) overlap-safe sink coefficients,
+ * (3) conservative per-BH shares.  The validated FFR path is recovered when
+ * BHBenchmarkAccretionModel=FFR and the target is the reservoir. */
 
 enum bh_ffr_capture_pass
 {
@@ -28,7 +31,7 @@ struct bh_ffr_capture_result
   MyDouble EnvGasMass;
   MyDouble EnvVolume;
   MyDouble EnvSoundVolumeWeighted;
-  MyDouble EnvVelocityMassWeighted[3];
+  MyDouble EnvVelocityVolumeWeighted[3];
   MyDouble EnvAngularMomentum[3];
   MyDouble EnvFFRRawRate;
 
@@ -76,7 +79,7 @@ typedef struct
   MyDouble EnvGasMass;
   MyDouble EnvVolume;
   MyDouble EnvSoundVolumeWeighted;
-  MyDouble EnvVelocityMassWeighted[3];
+  MyDouble EnvVelocityVolumeWeighted[3];
   MyDouble EnvAngularMomentum[3];
   MyDouble EnvFFRRawRate;
   int MinHydroTimeBin;
@@ -184,7 +187,7 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvFFRRawRate = out->EnvFFRRawRate;
           for(int k = 0; k < 3; k++)
             {
-              res->EnvVelocityMassWeighted[k] = out->EnvVelocityMassWeighted[k];
+              res->EnvVelocityVolumeWeighted[k] = out->EnvVelocityVolumeWeighted[k];
               res->EnvAngularMomentum[k] = out->EnvAngularMomentum[k];
             }
         }
@@ -196,7 +199,7 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvFFRRawRate += out->EnvFFRRawRate;
           for(int k = 0; k < 3; k++)
             {
-              res->EnvVelocityMassWeighted[k] += out->EnvVelocityMassWeighted[k];
+              res->EnvVelocityVolumeWeighted[k] += out->EnvVelocityVolumeWeighted[k];
               res->EnvAngularMomentum[k] += out->EnvAngularMomentum[k];
             }
         }
@@ -381,7 +384,7 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
             {
               const double vphys = P[j].Vel[k] / a;
               const double bhvphys = bh->Vel[k] / a;
-              out.EnvVelocityMassWeighted[k] += P[j].Mass * vphys;
+              out.EnvVelocityVolumeWeighted[k] += SphP[j].Volume * vphys;
               dv[k] = vphys - bhvphys;
             }
 
@@ -504,7 +507,7 @@ static void bh_ffr_prepare_benchmark_rates(void)
           double j2 = 0.0;
           for(int k = 0; k < 3; k++)
             {
-              const double vbulk = res->EnvVelocityMassWeighted[k] / res->EnvGasMass;
+              const double vbulk = res->EnvVelocityVolumeWeighted[k] / res->EnvVolume;
               const double vbh = P[p].Vel[k] / a;
               const double dv = vbulk - vbh;
               vrel2 += dv * dv;
