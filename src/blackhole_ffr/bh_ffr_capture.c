@@ -46,6 +46,7 @@ struct bh_ffr_capture_result
   MyDouble UniformLambda;
 
   int MinHydroTimeBin;
+  MyDouble ActiveApertureGasMass;
   int SinkMinHydroTimeBin;
   int SinkMaxHydroTimeBin;
   long long SinkCellCount;
@@ -88,6 +89,7 @@ typedef struct
   MyDouble EnvAngularMomentum[3];
   MyDouble EnvFFRRawRate;
   int MinHydroTimeBin;
+  MyDouble ActiveApertureGasMass;
   int SinkMinHydroTimeBin;
   int SinkMaxHydroTimeBin;
   long long SinkCellCount;
@@ -226,6 +228,7 @@ static void out2particle(data_out *out, int target, int mode)
           res->CoherenceIncrement[k] = out->CoherenceIncrement[k];
         }
       res->MinHydroTimeBin = out->MinHydroTimeBin;
+      res->ActiveApertureGasMass = out->ActiveApertureGasMass;
       res->SinkMinHydroTimeBin = out->SinkMinHydroTimeBin;
       res->SinkMaxHydroTimeBin = out->SinkMaxHydroTimeBin;
       res->SinkCellCount = out->SinkCellCount;
@@ -243,6 +246,7 @@ static void out2particle(data_out *out, int target, int mode)
         }
       if(out->MinHydroTimeBin < res->MinHydroTimeBin)
         res->MinHydroTimeBin = out->MinHydroTimeBin;
+      res->ActiveApertureGasMass += out->ActiveApertureGasMass;
       if(out->SinkMinHydroTimeBin < res->SinkMinHydroTimeBin)
         res->SinkMinHydroTimeBin = out->SinkMinHydroTimeBin;
       if(out->SinkMaxHydroTimeBin > res->SinkMaxHydroTimeBin)
@@ -438,6 +442,9 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
 
       if(!bh_ffr_gas_is_active(j) || !bh->CaptureEnabled)
         continue;
+
+      if(CapturePass == BH_FFR_CAPTURE_PASS_SHARES)
+        out.ActiveApertureGasMass += P[j].Mass;
 
       const double lambda = bh_ffr_capture_lambda(bh, r);
       if(!(lambda > 0))
@@ -883,13 +890,20 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
           BHP[b].BenchmarkCumulativeBHMassGrowth += dm;
         }
 
+      const double active_aperture_fraction =
+          res->EnvGasMass > 0 ? res->ActiveApertureGasMass / res->EnvGasMass : 0.0;
+      if(!isfinite(active_aperture_fraction) || active_aperture_fraction < 0 ||
+         active_aperture_fraction > 1.0 + 2.0e-12)
+        terminate("BH_BENCHMARK: invalid active accretion-aperture mass fraction=%g for ID=%llu",
+                  active_aperture_fraction, (unsigned long long)P[p].ID);
+
       printf("BH_BENCHMARK: sink ID=%llu task=%d raw=%g operational=%g realized=%g "
-             "R_sink=%g dM=%g cumRealized=%g sinkMinBin=%d sinkMaxBin=%d "
+             "R_sink=%g dM=%g cumRealized=%g activeGasFrac=%g sinkMinBin=%d sinkMaxBin=%d "
              "sinkCells=%lld heterogeneous=%d\n",
              (unsigned long long)P[p].ID, ThisTask,
              BHP[b].BenchmarkMdotRaw, BHP[b].BenchmarkMdotOperational,
              BHP[b].BenchmarkMdotRealized, BHP[b].BenchmarkSinkRateRatio, dm,
-             BHP[b].BenchmarkCumulativeRealizedMass,
+             BHP[b].BenchmarkCumulativeRealizedMass, active_aperture_fraction,
              res->SinkMinHydroTimeBin, res->SinkMaxHydroTimeBin,
              res->SinkCellCount,
              res->SinkMinHydroTimeBin > 0 &&

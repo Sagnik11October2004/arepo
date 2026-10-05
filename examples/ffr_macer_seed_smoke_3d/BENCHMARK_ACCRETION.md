@@ -94,9 +94,16 @@ The finite-step diagnostic
 `R_sink = Mdot_realized / Mdot_operational`
 
 is written as `BH_BenchmarkSinkRateRatio` and in every
-`BH_BENCHMARK: sink` transaction log.  For fixed instantaneous hazard the
-exponential sink approaches `R_sink=1` as the synchronized gas timesteps
-shrink; exact equality at finite timestep is not assumed.
+`BH_BENCHMARK: sink` transaction log.  The same log records
+`activeGasFrac`, the fraction of the full accretion-aperture gas mass that
+is hydro-active on that BH transaction.  For a fully active aperture and a
+fixed instantaneous hazard, the exponential sink approaches `R_sink=1` as
+the synchronized gas timesteps shrink; exact equality at finite timestep is
+not assumed.  On an intermediate asynchronous transaction with
+`activeGasFrac<1`, `R_sink` need not be close to unity even for a perfectly
+resolved hazard because only the synchronized gas subset is eligible to sink.
+The cumulative operational-versus-realized mass ledger is therefore the
+robust convergence diagnostic across heterogeneous/asynchronous timebins.
 
 Cumulative diagnostic ledgers record the operational-rate time integral,
 actual gas mass removed, and actual BH mass growth.  These are diagnostics

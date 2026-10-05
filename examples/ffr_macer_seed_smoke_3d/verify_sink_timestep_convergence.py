@@ -16,21 +16,30 @@ def relerr(a,b):
 def tag(frac):
     return ("%g" % frac).replace(".","p")
 
-def metrics(log):
+def metrics(log, full_active_fraction):
     text=log.read_text(errors="replace")
     sink=[fields(x) for x in text.splitlines() if "BH_BENCHMARK: sink" in x]
     physical=[]
+    full_active=[]
     hetero=0
+    partial=0
     for d in sink:
         cells=int(d.get("sinkCells","0"))
         if cells > 0:
             r=float(d["R_sink"])
-            if not math.isfinite(r):
-                raise AssertionError(f"{log}: non-finite R_sink")
+            af=float(d["activeGasFrac"])
+            if not math.isfinite(r) or not math.isfinite(af):
+                raise AssertionError(f"{log}: non-finite sink diagnostic")
             physical.append(r)
+            if af >= full_active_fraction:
+                full_active.append(r)
+            else:
+                partial += 1
             hetero += int(d.get("heterogeneous","0") != "0")
     if not physical:
         raise AssertionError(f"{log}: no physical sink samples")
+    if not full_active:
+        raise AssertionError(f"{log}: no fully active aperture transaction for instantaneous R_sink test")
 
     led=[fields(x) for x in text.splitlines() if "BH_BENCHMARK: mass-ledger" in x]
     if not led:
@@ -43,11 +52,12 @@ def metrics(log):
         raise AssertionError(f"{log}: direct BH-growth ledger does not close")
 
     return {
-        "maxerr": max(abs(1-r) for r in physical),
-        "meanerr": sum(abs(1-r) for r in physical)/len(physical),
+        "maxerr": max(abs(1-r) for r in full_active),
+        "meanerr": sum(abs(1-r) for r in full_active)/len(full_active),
         "cumerr": relerr(cop,creal) if cop > 0 or creal > 0 else 0.0,
         "hetero": hetero,
-        "n": len(physical),
+        "partial": partial,
+        "n": len(full_active),
     }
 
 def main():
@@ -56,20 +66,21 @@ def main():
     ap.add_argument("--step-fracs", nargs="+", type=float, required=True)
     ap.add_argument("--finest-rsink-tol", type=float, default=1e-3)
     ap.add_argument("--trend-slack", type=float, default=0.10)
+    ap.add_argument("--full-active-fraction", type=float, default=1.0-1e-8)
     args=ap.parse_args()
 
     root=Path(args.root)
     fracs=sorted(args.step_fracs, reverse=True)
     allm={case:[] for case in CASES}
 
-    print("model            step_frac    N   max|1-R|    mean|1-R|   cumulative_mass_err  hetero")
+    print("model            step_frac  Nfull max|1-R|    mean|1-R|   cumulative_mass_err  hetero partial")
     for frac in fracs:
         d=root/f"step_{tag(frac)}"
         for case in CASES:
-            m=metrics(d/f"run_acc_{case}.log")
+            m=metrics(d/f"run_acc_{case}.log", args.full_active_fraction)
             allm[case].append((frac,m))
             print(f"{case:16s} {frac:10.6g} {m['n']:3d} {m['maxerr']:11.3e} "
-                  f"{m['meanerr']:11.3e} {m['cumerr']:19.3e} {m['hetero']:7d}")
+                  f"{m['meanerr']:11.3e} {m['cumerr']:19.3e} {m['hetero']:7d} {m['partial']:7d}")
 
     for case, rows in allm.items():
         coarse=rows[0][1]

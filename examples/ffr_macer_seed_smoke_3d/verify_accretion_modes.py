@@ -92,19 +92,29 @@ def check_case(name, model, model_name, args):
 
     sink=[fields(x) for x in text.splitlines() if "BH_BENCHMARK: sink" in x]
     physical=[]
+    full_active=[]
     hetero=0
+    partial=0
     for d in sink:
         r=fval(d,"R_sink")
+        active_frac=fval(d,"activeGasFrac")
         cells=int(d.get("sinkCells","0"))
         if int(d.get("heterogeneous","0")):
             hetero += 1
         if cells > 0:
             physical.append(r)
+            if active_frac >= args.full_active_fraction:
+                full_active.append(r)
+            else:
+                partial += 1
     if not physical:
         raise AssertionError(f"{name}: no physical sink transaction with sinkCells>0")
-    worst=max(abs(1.0-r) for r in physical)
+    if not full_active:
+        raise AssertionError(f"{name}: no transaction had a fully active accretion aperture; "
+                             "cannot apply the per-transaction R_sink unity check")
+    worst=max(abs(1.0-r) for r in full_active)
     if worst > args.rsink_tol:
-        raise AssertionError(f"{name}: worst |1-R_sink|={worst:.6g} > {args.rsink_tol}")
+        raise AssertionError(f"{name}: fully-active worst |1-R_sink|={worst:.6g} > {args.rsink_tol}")
 
     ledgers=[fields(x) for x in text.splitlines() if "BH_BENCHMARK: mass-ledger" in x]
     if not ledgers:
@@ -118,14 +128,15 @@ def check_case(name, model, model_name, args):
     cumulative_mismatch = relerr(cop,creal) if cop > 0 or creal > 0 else 0.0
 
     print(f"{name:16s} N={len(acc):2d} raw_drift={drift:.3e} "
-          f"max|1-R_sink|={worst:.3e} cumulative_op_vs_real={cumulative_mismatch:.3e} "
-          f"heterogeneous_sink_txn={hetero}")
+          f"full-active max|1-R_sink|={worst:.3e} cumulative_op_vs_real={cumulative_mismatch:.3e} "
+          f"heterogeneous_sink_txn={hetero} partial-active_txn={partial}")
     return {
         "transactions": len(acc),
         "raw_drift": drift,
         "worst_rsink": worst,
         "cumulative_mismatch": cumulative_mismatch,
         "heterogeneous": hetero,
+        "partial_active": partial,
     }
 
 def main():
@@ -135,6 +146,7 @@ def main():
     ap.add_argument("--raw-operational-tol", type=float, default=1e-10)
     ap.add_argument("--mass-closure-tol", type=float, default=2e-10)
     ap.add_argument("--expected-edd-factor", type=float, default=1e30)
+    ap.add_argument("--full-active-fraction", type=float, default=1.0-1e-8)
     ap.add_argument("--min-transactions", type=int, default=2)
     ap.add_argument("--max-transactions", type=int, default=12)
     args=ap.parse_args()
