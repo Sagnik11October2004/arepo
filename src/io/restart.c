@@ -1209,7 +1209,7 @@ static void contents_restart_file(int modus)
    * restart stream. Restart files written by an older FFR binary without this
    * marker must be resumed with that matching binary. */
   int ffr_restart_magic = 0x46465231; /* ASCII "FFR1" */
-  int ffr_restart_version = 2;
+  int ffr_restart_version = 3;
   int ffr_restart_record_size = (int)sizeof(struct bh_ffr_particle_data);
   int ffr_df_restart_record_size = (int)sizeof(struct bh_ffr_df_restart_entry);
 
@@ -1219,11 +1219,11 @@ static void contents_restart_file(int modus)
   in(&ffr_df_restart_record_size, modus);
 
   if(modus == MODUS_READ)
-    if(ffr_restart_magic != 0x46465231 || ffr_restart_version != 2 ||
+    if(ffr_restart_magic != 0x46465231 || ffr_restart_version != 3 ||
        ffr_restart_record_size != (int)sizeof(struct bh_ffr_particle_data) ||
        ffr_df_restart_record_size != (int)sizeof(struct bh_ffr_df_restart_entry))
       terminate("BH_FFR: incompatible native restart state magic=0x%x version=%d BHP_size=%d DF_size=%d; "
-                "expected magic=0x%x version=2 BHP_size=%zu DF_size=%zu. Resume with the binary that wrote this restart "
+                "expected magic=0x%x version=3 BHP_size=%zu DF_size=%zu. Resume with the binary that wrote this restart "
                 "or regenerate a compatible restart.",
                 ffr_restart_magic, ffr_restart_version, ffr_restart_record_size, ffr_df_restart_record_size,
                 0x46465231, sizeof(struct bh_ffr_particle_data), sizeof(struct bh_ffr_df_restart_entry));
