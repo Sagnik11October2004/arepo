@@ -895,14 +895,22 @@ void check_parameters()
 {
   int i, errorFlag = 0;
 
-  /* check whether time max is larger than max timestep */
-  if(All.TimeMax - All.TimeBegin <= All.MaxSizeTimestep)
+  /* MaxSizeTimestep is expressed in the integration time variable.
+   * For cosmological runs AREPO evolves on a logarithmic scale-factor
+   * timeline (see init.c: Timebase_interval = ln(TimeMax/TimeBegin)/TIMEBASE),
+   * whereas non-cosmological runs use linear time.  Compare like with like:
+   * using TimeMax-TimeBegin here for a cosmological run spuriously forces
+   * O(1/a) extra global steps at high redshift. */
+  double total_timebase_interval =
+      All.ComovingIntegrationOn ? log(All.TimeMax / All.TimeBegin) : (All.TimeMax - All.TimeBegin);
+
+  if(total_timebase_interval <= All.MaxSizeTimestep)
     {
-      printf("PARAMETERS: check_parameters: TimeBegin = %g, TimeMax = %g, MaxSizeTimestep = %g \n", All.TimeBegin, All.TimeMax,
-             All.MaxSizeTimestep);
+      printf("PARAMETERS: check_parameters: TimeBegin = %g, TimeMax = %g, integration interval = %g, MaxSizeTimestep = %g \n",
+             All.TimeBegin, All.TimeMax, total_timebase_interval, All.MaxSizeTimestep);
       terminate(
-          "check_parameters: Your total runtime is smaller than the maximum allowed timestep! Choose an appropriate value for "
-          "MaxSizeTimestep < TimeMax-TimeBegin! \n");
+          "check_parameters: total integration interval is smaller than the maximum allowed timestep! "
+          "Choose MaxSizeTimestep below the integration interval.\n");
     }
 
   /* check softening types */
