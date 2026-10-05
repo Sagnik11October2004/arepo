@@ -192,6 +192,11 @@ Additional Type-5 output fields are:
 
 - `BH_BenchmarkMdotRaw`
 - `BH_BenchmarkMdotOperational`
+- `BH_BenchmarkMdotRealized`
+- `BH_BenchmarkSinkRateRatio`
+- `BH_BenchmarkCumulativeOperationalMass`
+- `BH_BenchmarkCumulativeRealizedMass`
+- `BH_BenchmarkCumulativeBHMassGrowth`
 - `BH_TNGMode`
 - `BH_TNGRawEddRatio`
 - `BH_TNGModeThreshold`
@@ -199,12 +204,43 @@ Additional Type-5 output fields are:
 - `BH_TNGThermalEnergyBuffer`
 - `BH_TNGKineticEnergyBuffer`
 - `BH_TNGKineticThresholdEnergy`
+- `BH_TNGCumulativeGeneratedEnergy`
+- `BH_TNGCumulativeInjectedEnergy`
+- `BH_TNGActiveTargetMassFraction`
+- `BH_TNGThermalBufferAgeCodeTime`
+- `BH_TNGKineticBufferAgeCodeTime`
+- `BH_TNGThermalBufferAgeTransactions`
+- `BH_TNGKineticBufferAgeTransactions`
+
+The cumulative TNG model-energy ledger is checked as
+
+[
+E_{m generated}
+=
+E_{m injected}
++
+E_{m thermal,buf}
++
+E_{m kinetic,buf}.
+]
+
+For kinetic events, (E_{m injected}) is the quadratic kick energy that
+defines the TNG feedback reservoir; the separately logged lab-frame energy
+change can differ because of the pre-existing-velocity cross term.
+
+The active feedback mass fraction
+(M_{m active,fb}/M_{m enc,fb}), current thermal/kinetic buffers, and
+buffer ages in both code time and BH transactions are logged and output.
+These diagnostics are intended to quantify any delayed coupling caused by
+active-only public-AREPO feedback, especially when
+`BHFeedbackRadius > BHAccretionRadius`.  They do not change the coupling
+algorithm.
 
 The existing MACER diagnostics are unchanged.
 
 ## Restart format
 
 Persistent TNG feedback buffers extend the benchmark BHP state. Native restart
-files written by this branch therefore use FFR restart version 3 and reject
+files written by this branch therefore use FFR restart version 4 and reject
 older incompatible records explicitly. The validated `ffr-macer` branch is
 untouched and retains its own existing restart format.

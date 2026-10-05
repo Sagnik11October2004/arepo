@@ -201,7 +201,7 @@ For multimass zoom ICs, set BH_FFR_DM_TYPEMASK at compile time to the sum of the
 
 The nearest-neighbour communication payload now defaults to 64 entries, which covers the fiducial 40-neighbour estimator and the 64-neighbour smoke test without carrying the previous 256-candidate result structure for every exported BH. Runs that deliberately need a larger sample can set `BH_FFR_DM_MAX_NEIGHBOURS=<N>` in Config.sh; parameter validation uses the compiled capacity.
 
-The convergence-benchmark branch now uses FFR native restart version 3 because the benchmark TNG feedback model adds persistent energy reservoirs and diagnostics to BHP. The restart stores the BHP record size and the separate DF-cache record size and fails explicitly on an incompatible layout rather than interpreting shifted bytes as valid state. The validated `ffr-macer` branch is unchanged; restart files written by older binaries should be resumed with the matching binary.
+The convergence-benchmark branch now uses FFR native restart version 4 because the benchmark TNG feedback model adds persistent energy reservoirs and diagnostics to BHP. The restart stores the BHP record size and the separate DF-cache record size and fails explicitly on an incompatible layout rather than interpreting shifted bytes as valid state. The validated `ffr-macer` branch is unchanged; restart files written by older binaries should be resumed with the matching binary.
 
 After pulling the hardening branch, rerun the regression chain before coupled validation. The regression runners automatically invoke build.sh if ArepoSeedTest is missing:
 
@@ -215,3 +215,29 @@ The merger verifier accepts both explicit per-particle Masses datasets and the s
 ## Why the boosted sigma8?
 
 The purpose here is to exercise MPI FoF seeding and conservative gas-to-BH conversion quickly in a tiny box. sigma8=2.0 is deliberately non-production. After this passes, repeat at 256^3 with the intended physical cosmology/threshold before treating the seeding prescription as scientifically validated.
+
+## Convergence-benchmark cleanup regressions
+
+The benchmark accretion smoke runner now uses a durable standalone
+`accretion_source.hdf5`, direct target, feedback `NONE`, and an effectively
+inactive Eddington cap so the first-stage comparison isolates the raw
+estimators. Prepare the source and run:
+
+```bash
+./prepare_accretion_source.sh /path/to/one_bh_source_snapshot.hdf5
+NTASKS=16 ./run_accretion_modes.sh
+NTASKS=16 ./run_sink_timestep_convergence.sh
+```
+
+All short comoving runners now set their test maximum timestep from
+`STEP_FRAC * log(a_max/a_0)`; they no longer mix linear `Delta a` with the
+integration coordinate. The physical `MinSizeTimestep` is not modified.
+
+TNG feedback accounting can be checked on any thermal/kinetic run log with:
+
+```bash
+python3 verify_tng_ledgers.py run_tng.log
+```
+
+Do not start the paper L0/L1/L2 IC campaign until the four-model committed
+smoke runner and the explicit sink-timestep convergence runner pass.

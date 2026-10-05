@@ -4,21 +4,42 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 
-SOURCE="${SOURCE:-$HERE/output_dm/snap_003.hdf5}"
+SOURCE="${SOURCE:-$HERE/accretion_source.hdf5}"
 DA="${DA:-8.0e-8}"
+STEP_FRAC="${STEP_FRAC:-0.45}"
 NTASKS="${NTASKS:-16}"
 EXEC="${EXEC:-$ROOT/ArepoFFRSnapshotTest}"
+ESTIMATOR_EDD_FACTOR="${ESTIMATOR_EDD_FACTOR:-1.0e30}"
+RSINK_TOL="${RSINK_TOL:-1.0e-3}"
+RAW_STABILITY_TOL="${RAW_STABILITY_TOL:-5.0e-2}"
 
 if [[ ! -x "$EXEC" ]]; then
   echo "Missing $EXEC; run ./build_snapshot_ic.sh first." >&2
   exit 1
 fi
 if [[ ! -f "$SOURCE" ]]; then
-  echo "Missing source snapshot: $SOURCE" >&2
+  echo "Missing durable source snapshot: $SOURCE" >&2
+  echo "Create it with: ./prepare_accretion_source.sh /path/to/source_snapshot.hdf5" >&2
   exit 1
 fi
+if [[ -L "$SOURCE" ]]; then
+  echo "Refusing symlinked accretion source $SOURCE; use prepare_accretion_source.sh to make a standalone copy." >&2
+  exit 1
+fi
+case "$SOURCE" in
+  *.hdf5) ;;
+  *) echo "Accretion source must end in .hdf5: $SOURCE" >&2; exit 1 ;;
+esac
 
-python3 - "$SOURCE" <<'PY'
+SOURCE_ABS="$(python3 - "$SOURCE" <<'PY'
+from pathlib import Path
+import sys
+print(Path(sys.argv[1]).resolve())
+PY
+)"
+SOURCE_STEM="${SOURCE_ABS%.hdf5}"
+
+python3 - "$SOURCE_ABS" <<'PY'
 import h5py, sys
 p=sys.argv[1]
 with h5py.File(p,"r") as f:
@@ -33,27 +54,35 @@ with h5py.File(p,"r") as f:
         raise SystemExit(f"Direct-backend smoke test requires zero BH_DiskMass; found {float(disk[0])}")
     if wind is not None and float(wind[0]) != 0.0:
         raise SystemExit(f"Direct-backend smoke test requires zero BH_WindBufferMass; found {float(wind[0])}")
-print(f"Using source: a={a:.15f} z={z:.9f} N_BH={nbh}")
+print(f"Using durable source: {p} a={a:.15f} z={z:.9f} N_BH={nbh}")
 PY
 
-ln -sfn "$SOURCE" "$HERE/accretion_source.hdf5"
-
-read A0 AMAX MAXSTEP <<<"$(python3 - "$SOURCE" "$DA" <<'PY'
+read A0 AMAX DLOGA MAXSTEP <<<"$(python3 - "$SOURCE_ABS" "$DA" "$STEP_FRAC" <<'PY'
 import h5py, math, sys
 p=sys.argv[1]
 da=float(sys.argv[2])
+step_frac=float(sys.argv[3])
+if not da > 0:
+    raise SystemExit(f"DA must be positive, got {da}")
+if not (0.0 < step_frac < 1.0):
+    raise SystemExit(f"STEP_FRAC must lie in (0,1), got {step_frac}")
 with h5py.File(p,"r") as f:
     a=float(f["Header"].attrs["Time"])
 amax=a+da
 dloga=math.log(amax/a)
-maxstep=0.45*min(da,dloga)
-print(f"{a:.15f} {amax:.15f} {maxstep:.15e}")
+maxstep=step_frac*dloga
+if not (0.0 < maxstep < dloga):
+    raise SystemExit(f"invalid comoving MaxSizeTimestep={maxstep} for dloga={dloga}")
+print(f"{a:.15f} {amax:.15f} {dloga:.15e} {maxstep:.15e}")
 PY
 )"
 
 echo "TimeBegin       = $A0"
 echo "TimeMax         = $AMAX"
+echo "Delta ln(a)     = $DLOGA"
+echo "STEP_FRAC       = $STEP_FRAC"
 echo "MaxSizeTimestep = $MAXSTEP"
+echo "Estimator-only Eddington factor = $ESTIMATOR_EDD_FACTOR"
 
 run_one()
 {
@@ -65,7 +94,7 @@ run_one()
 
   cp "$HERE/param.txt" "$param"
 
-  python3 - "$param" "$A0" "$AMAX" "$MAXSTEP" "$model" "$out" <<'PY'
+  python3 - "$param" "$A0" "$AMAX" "$MAXSTEP" "$model" "$out" "$SOURCE_STEM" "$ESTIMATOR_EDD_FACTOR" <<'PY'
 from pathlib import Path
 import sys
 
@@ -73,17 +102,19 @@ p=Path(sys.argv[1])
 a0,amax,maxstep=sys.argv[2:5]
 model=sys.argv[5]
 out=sys.argv[6]
+source_stem=sys.argv[7]
+edd_factor=sys.argv[8]
 
 updates={
-    "InitCondFile":"./accretion_source",
+    "InitCondFile":source_stem,
     "OutputDir":out,
     "TimeBegin":a0,
     "TimeMax":amax,
     "MaxSizeTimestep":maxstep,
     "OutputListOn":"0",
     # In comoving mode AREPO explicitly requires TimeBetSnapshot > 1.
-    # First snapshot time is far beyond this very short smoke run, so no
-    # snapshot is actually written.
+    # First snapshot time is beyond this short run, so no science snapshot is
+    # requested by the smoke harness.
     "TimeBetSnapshot":"2.0",
     "TimeOfFirstSnapshot":"1.0",
     "BHSeedMinRedshift":"100.0",
@@ -92,6 +123,10 @@ updates={
     "BHDMNeighbours":"2",
     "BHBenchmarkAccretionModel":model,
     "BHBenchmarkAccretionTarget":"1",
+    "BHBenchmarkFeedbackModel":"0",
+    # Estimator-only phase: prevent the TNG backend cap from hiding differences
+    # in the raw resolved prescriptions. Fiducial TNG runs restore this to 1.
+    "BHBenchmarkEddingtonFactor":edd_factor,
 }
 
 lines=p.read_text().splitlines()
@@ -122,26 +157,24 @@ PY
 
   echo
   echo "=================================================="
-  echo " Running $name   model=$model"
+  echo " Running $name   model=$model direct + NONE"
   echo "=================================================="
 
   (
     cd "$HERE"
     mpirun -np "$NTASKS" "$EXEC" "$(basename "$param")" 2>&1 | tee "$log"
   )
-
-  echo
-  echo "Accretion diagnostics for $name:"
-  grep "BH_BENCHMARK: accretion" "$log" || {
-    echo "ERROR: no BH_BENCHMARK accretion diagnostic was produced." >&2
-    return 1
-  }
 }
 
 run_one tng_bondi 0
 run_one boosted_bondi 1
 run_one am_bondi 2
 run_one ffr 3
+
+python3 "$HERE/verify_accretion_modes.py" \
+  --rsink-tol "$RSINK_TOL" \
+  --raw-stability-tol "$RAW_STABILITY_TOL" \
+  --expected-edd-factor "$ESTIMATOR_EDD_FACTOR"
 
 echo
 echo "================ first diagnostic from each model ================"

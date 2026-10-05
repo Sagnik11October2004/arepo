@@ -67,9 +67,9 @@ if not (0.0 < step_frac < 1.0):
 tmax=a+da
 # Keep the startup inequality, but avoid the old ~10-cycle test-only cap.
 dloga=math.log(tmax/a)
-maxstep=step_frac*min(dloga, da)
-if not (0.0 < maxstep < da):
-    raise SystemExit(f"invalid short-run MaxSizeTimestep={maxstep} for da={da}")
+maxstep=step_frac*dloga
+if not (0.0 < maxstep < dloga):
+    raise SystemExit(f"invalid short-run MaxSizeTimestep={maxstep} for dloga={dloga}")
 print(f"{a:.15f} {tmax:.15f} {maxstep:.15e}")
 PY
 )"

@@ -56,9 +56,11 @@ Set `BHBenchmarkAccretionTarget` to:
   `BHBenchmarkRadiativeEfficiency` used in the Eddington rate.  The default
   values are 1 and 0.2, respectively.
 
-Direct mode intentionally bypasses the FFR reservoir, MACER state machine,
-wind and jet injection in this iteration.  TNG thermal/kinetic feedback is
-not implemented yet.
+Direct mode bypasses the FFR reservoir and MACER inner-flow/feedback path.
+The benchmark branch also implements the TNG thermal/kinetic feedback law;
+that feedback is selected independently with `BHBenchmarkFeedbackModel=1`.
+For a clean estimator-only experiment use direct target plus
+`BHBenchmarkFeedbackModel=0`.
 
 ## Conservative sink
 
@@ -76,7 +78,35 @@ uniform aperture coefficient
 
 The existing exact finite-step cell sink, per-cell sink cap, overlap
 partition, gas momentum removal and global mass/momentum ledger are then
-used unchanged.
+used unchanged. The exponential sink is not linearized.
+
+Three rates are kept separate:
+
+- **raw estimator rate** `BH_BenchmarkMdotRaw`: the algebraic resolved
+  prescription before backend limits;
+- **operational rate** `BH_BenchmarkMdotOperational`: the instantaneous
+  backend target/hazard after the direct Eddington cap, if enabled;
+- **realized sink rate** `BH_BenchmarkMdotRealized`: the conservative
+  finite-step sum `sum(dm_i/dt_i)`.
+
+The finite-step diagnostic
+
+`R_sink = Mdot_realized / Mdot_operational`
+
+is written as `BH_BenchmarkSinkRateRatio` and in every
+`BH_BENCHMARK: sink` transaction log.  For fixed instantaneous hazard the
+exponential sink approaches `R_sink=1` as the synchronized gas timesteps
+shrink; exact equality at finite timestep is not assumed.
+
+Cumulative diagnostic ledgers record the operational-rate time integral,
+actual gas mass removed, and actual BH mass growth.  These are diagnostics
+only and do not alter the sink.
+
+For the first estimator-convergence phase, `run_accretion_modes.sh` uses
+direct target, feedback `NONE`, and an intentionally very large
+`BHBenchmarkEddingtonFactor` so the Eddington cap does not hide differences
+between raw estimators.  Actual TNG-backend experiments must restore the
+fiducial `BHBenchmarkEddingtonFactor=1`.
 
 The runtime log line beginning with `BH_BENCHMARK: accretion` records the
 common environment, raw model rate, Eddington rate, operational rate, boost
@@ -93,3 +123,48 @@ The checked-in smoke-test parameter file uses
 which recovers the validated FFR-MACER capture/reservoir path.  The added
 common-environment pass changes only diagnostic/search work, not the FFR
 capture coefficient or mass partition.
+
+## Committed smoke and timestep-convergence harness
+
+Create a durable one-BH source once, rather than symlinking into an output
+directory that a later runner may delete:
+
+```bash
+./prepare_accretion_source.sh /path/to/source_snapshot.hdf5
+```
+
+Then run the four estimator-only smoke cases:
+
+```bash
+NTASKS=16 ./run_accretion_modes.sh
+```
+
+The runner enforces direct target, feedback `NONE`, an inactive estimator
+Eddington cap, and `MaxSizeTimestep = STEP_FRAC * Delta ln(a)`.  The
+verifier asserts selectors, finite rates, absence of TNG/MACER events,
+short-run transaction count, raw-rate stability, direct mass-ledger closure,
+and `R_sink` proximity to unity.
+
+The explicit timestep study is:
+
+```bash
+NTASKS=16 ./run_sink_timestep_convergence.sh
+```
+
+It repeats the committed four-model runner at progressively smaller
+`STEP_FRAC`, archives the logs, and checks both instantaneous `R_sink` and
+the cumulative operational-versus-realized mass mismatch.  It also reports
+whether any contributing gas cells had heterogeneous hydro timebins.
+
+## Deferred follow-up issues
+
+The following are documented but are not blockers for the first controlled
+one-BH convergence experiment:
+
+- the post-merger direct/TNG Eddington diagnostic still uses the MACER
+  radiative-efficiency helper until the next direct capture refresh;
+- seed-donor momentum removal still contains the older `1-keep` precision
+  pattern, which is not expected to matter at the much larger seed-removal
+  fractions;
+- multi-BH merger semantics and diagnostic-age combination are not part of
+  the one-BH benchmark campaign.
