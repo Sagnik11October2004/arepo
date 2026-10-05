@@ -376,6 +376,9 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
           out.EnvVolume += SphP[j].Volume;
           out.EnvSoundVolumeWeighted += SphP[j].Volume * cs;
 
+          /* AREPO's NEAREST_[XYZ] periodic-wrapping macros use these
+           * scratch variables internally, so they must exist in scope. */
+          double xtmp, ytmp, ztmp;
           double dr[3] = {NEAREST_X(P[j].Pos[0] - bh->Pos[0]) * a,
                           NEAREST_Y(P[j].Pos[1] - bh->Pos[1]) * a,
                           NEAREST_Z(P[j].Pos[2] - bh->Pos[2]) * a};
