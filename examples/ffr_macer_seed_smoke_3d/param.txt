@@ -166,3 +166,18 @@ BHBenchmarkAMViscosity                  6.283185307179586
 % TNG-like direct backend defaults.
 BHBenchmarkRadiativeEfficiency          0.2
 BHBenchmarkEddingtonFactor              1.0
+
+%---- Convergence-benchmark feedback selector
+% FeedbackModel: 0=none, 1=TNG thermal/kinetic law, 2=validated MACER wind+jet.
+% Default 2 preserves the validated FFR-MACER configuration above.
+BHBenchmarkFeedbackModel                 2
+% Weinberger et al. (2017) / IllustrisTNG fiducials.
+BHBenchmarkTNGChi0                       0.002
+BHBenchmarkTNGChiBeta                    2.0
+BHBenchmarkTNGChiMax                     0.1
+BHBenchmarkTNGThermalCoupling            0.1
+BHBenchmarkTNGKineticMaxEfficiency       0.2
+BHBenchmarkTNGKineticDensityFactor       0.05
+% Physical hydrogen-number-density proxy for the star-formation threshold [cm^-3].
+BHBenchmarkTNGSFThresholdNH              0.1
+BHBenchmarkTNGKineticBurstFactor         20.0
