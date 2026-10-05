@@ -471,6 +471,32 @@ void bh_ffr_feedback_self_test(void)
   const double Bmass = 1.0 / (mplus + 0.5 * mpacket) + 1.0 / (mminus + 0.5 * mpacket);
   if(!isfinite(Bmass) || !(Bmass > 0))
     terminate("BH_FFR: feedback self-test failed mass-weighted B coefficient");
+
+  /* Regression for PDF eq. (77): returned wind mass advects the lobe-weighted
+   * ambient internal energy in addition to its BH-bulk kinetic energy. With no
+   * mechanical kick and a common bulk velocity, this must preserve the
+   * mass-weighted specific internal energy. The a^2 factors exercise AREPO's
+   * cosmological conserved-energy convention directly. */
+  const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+  if(!isfinite(a) || !(a > 0))
+    terminate("BH_FFR: feedback self-test invalid scale factor=%g", a);
+
+  const double m0 = 2.0, m1 = 3.0;
+  const double u0 = 4.0, u1 = 10.0;
+  const double m_before = m0 + m1;
+  const double u_return = (m0 * u0 + m1 * u1) / m_before;
+  const double v_bulk = 0.7;
+  const double dm_return = 0.5;
+  const double e_before = 0.5 * m_before * v_bulk * v_bulk + a * a * (m0 * u0 + m1 * u1);
+  const double e_after =
+      e_before + dm_return * (0.5 * v_bulk * v_bulk + a * a * u_return);
+  const double m_after = m_before + dm_return;
+  const double p_after = m_after * v_bulk;
+  const double u_after =
+      (e_after / m_after - 0.5 * (p_after / m_after) * (p_after / m_after)) / (a * a);
+
+  if(!isfinite(u_after) || fabs(u_after - u_return) > 2.0e-13 * fmax(fabs(u_return), 1.0))
+    terminate("BH_FFR: feedback self-test failed wind thermal return got=%g expected=%g", u_after, u_return);
 }
 
 static void bh_ffr_feedback_prepare_candidates(void)

@@ -450,7 +450,7 @@ static int bh_ffr_seed_one_candidate(struct bh_ffr_seed_candidate *candidate, do
              candidate->GrNr, All.cf_redshift,
              candidate->HaloMass * All.UnitMass_in_g / (All.HubbleParam * SOLAR_MASS), All.BHSeedMassMsun,
              (unsigned long long)central.ID);
-  mpi_printf("BH_FFR: seed axis ID=%llu source=%s coherence=%g.\n",
+  mpi_printf("BH_FFR: seed axis ID=%llu axis_source=%s coherence=%g.\n",
              (unsigned long long)central.ID, candidate->HasCoherentAxis ? "local-gas" : "deterministic-fallback",
              seed_coherence);
   return 1;

@@ -19,6 +19,7 @@ EXPECTED_SEED_MSUN = 1.0e5
 ZMIN = 20.0
 PRESEED_TARGET_A = 0.02050
 PRESEED_A_TOL = 1.0e-5
+MIN_COHERENCE = 0.30
 
 
 def fail(msg):
@@ -60,6 +61,25 @@ if not events:
 
 first_seed_z = float(events[0][1])
 
+axis_re = re.compile(
+    r"BH_FFR: seed axis ID=(\d+) axis_source=(local-gas|deterministic-fallback) "
+    r"coherence=([0-9eE+\-.]+)"
+)
+axis_events = axis_re.findall(log)
+if not axis_events:
+    fail("no seed-axis source/coherence diagnostic was reported in run.log")
+
+axis_by_id = {}
+for pid, source, ctxt in axis_events:
+    coherence = float(ctxt)
+    if not (math.isfinite(coherence) and 0.0 <= coherence <= 1.0 + 1.0e-10):
+        fail(f"seed ID {pid}: invalid axis coherence {coherence}")
+    if source == "local-gas" and coherence + 1.0e-12 < MIN_COHERENCE:
+        fail(f"seed ID {pid}: local-gas axis used below BHMinCoherence={MIN_COHERENCE}")
+    if source == "deterministic-fallback" and coherence > MIN_COHERENCE + 1.0e-12:
+        fail(f"seed ID {pid}: deterministic fallback used despite coherent local gas")
+    axis_by_id[int(pid)] = (source, coherence)
+
 for gr, ztxt, mtxt, pid in events:
     z = float(ztxt)
     m = float(mtxt)
@@ -67,6 +87,8 @@ for gr, ztxt, mtxt, pid in events:
         fail(f"seed group {gr} formed at z={z}, not strictly above z={ZMIN}")
     if not math.isclose(m, EXPECTED_SEED_MSUN, rel_tol=1.0e-8, abs_tol=1.0e-6):
         fail(f"seed group {gr} reported MBH={m} Msun instead of {EXPECTED_SEED_MSUN} Msun")
+    if int(pid) not in axis_by_id:
+        fail(f"seed ID {pid}: missing axis_source/coherence diagnostic")
 
 snaps = sorted(glob.glob(os.path.join(OUTPUT, "snap_*.hdf5")))
 if len(snaps) < 2:
@@ -194,6 +216,10 @@ if not first_bh_ids.issubset(final_ids):
 
 print("PASS: FFR-MACER FoF seeding smoke test")
 print(f"  seed events in log : {len(events)}")
+print(f"  seed axis diagnostics: {len(axis_events)}")
+for pid in sorted(int(x[3]) for x in events):
+    source, coherence = axis_by_id[pid]
+    print(f"    ID {pid}: axis_source={source}, coherence={coherence:.6g}")
 print(f"  snapshots checked  : {len(records)}")
 print(f"  pre-seed checkpoint: {preseed[0]} (a={preseed[1]:.8f}, z={preseed[2]:.6f}, N_BH=0)")
 print(f"  first seed in log  : z={first_seed_z:.6f}")

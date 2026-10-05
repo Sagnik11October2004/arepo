@@ -74,7 +74,8 @@ The run writes output/ and run.log.
 A passing test requires all of the following:
 
 1. at least one "BH_FFR: seeded FoF group" event at z>20;
-2. Type-5 BHs in an HDF5 snapshot;
+2. every seed has a `BH_FFR: seed axis ... axis_source=local-gas|deterministic-fallback coherence=...` diagnostic consistent with `BHMinCoherence`;
+3. Type-5 BHs in an HDF5 snapshot;
 3. BH_Mass = 1e5 Msun;
 4. BH_DiskMass = BH_MdotSupply = 0 because resolved capture is disabled;
 5. N_gas + N_BH = 128^3 in every snapshot;
@@ -115,7 +116,7 @@ The wind-feedback test uses the same BH-free checkpoint, enables capture, enlarg
     python3 verify_feedback.py
     python3 inspect_bh.py output_feedback
 
-The runtime kernel checks each fired packet for exact returned wind mass, zero net bipolar kick momentum, and the requested kinetic-energy increment. The verifier additionally requires both lobes to satisfy BHMinTargetsPerLobe. The helper raises BHJetBurstFactor to 1e30 so this remains an isolated wind regression after Iteration 8.
+The runtime kernel checks each fired packet for exact returned wind mass, zero net bipolar kick momentum, and the requested kinetic-energy increment. Its startup self-test also checks that returned wind mass carrying the lobe-weighted ambient internal energy preserves the intended specific internal energy, including AREPO's cosmological `a^2` conserved-energy factor, before any mechanical kick. The verifier additionally requires both lobes to satisfy BHMinTargetsPerLobe. The helper raises BHJetBurstFactor to 1e30 so this remains an isolated wind regression after Iteration 8.
 
 A copied checkpoint can be supplied with CHECKPOINT in the same way as the inner-flow helper.
 
