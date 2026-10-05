@@ -70,6 +70,25 @@ enum bh_benchmark_boost_mode
   BH_BENCHMARK_BOOST_DENSITY = 1
 };
 
+/* Feedback is selected independently of the resolved accretion estimator.
+ * NONE is useful for accretion-only convergence tests. TNG is the
+ * Weinberger et al. thermal/kinetic law on the benchmark's controlled fixed
+ * proper aperture. MACER selects the already-validated FFR-MACER wind+jet
+ * implementation without changing its physics. */
+enum bh_benchmark_feedback_model
+{
+  BH_BENCHMARK_FEEDBACK_NONE = 0,
+  BH_BENCHMARK_FEEDBACK_TNG = 1,
+  BH_BENCHMARK_FEEDBACK_MACER = 2
+};
+
+enum bh_benchmark_tng_feedback_mode
+{
+  BH_BENCHMARK_TNG_MODE_UNINITIALIZED = -1,
+  BH_BENCHMARK_TNG_MODE_KINETIC = 0,
+  BH_BENCHMARK_TNG_MODE_THERMAL = 1
+};
+
 struct bh_benchmark_environment
 {
   double GasMass;
@@ -138,7 +157,21 @@ struct bh_ffr_particle_data
   MyDouble WindThresholdEnergy;
   MyDouble JetThresholdEnergy;
 
+  /* Benchmark-only TNG feedback state.  The thermal buffer is normally
+   * emptied on the same synchronization point; it remains persistent so the
+   * active-cell-only public-AREPO coupling never discards energy.  The kinetic
+   * buffer is the physical burst reservoir of the TNG model. */
+  MyDouble BenchmarkMdotRaw;
+  MyDouble BenchmarkMdotOperational;
+  MyDouble TNGThermalEnergyBuffer;
+  MyDouble TNGKineticEnergyBuffer;
+  MyDouble TNGFeedbackPower;
+  MyDouble TNGKineticThresholdEnergy;
+  MyDouble TNGEddingtonRatio;
+  MyDouble TNGModeThreshold;
+
   int AccretionState;
+  int TNGFeedbackMode;
 };
 
 extern struct bh_ffr_particle_data *BHP;
@@ -213,6 +246,9 @@ double bh_benchmark_eddington_rate_code(double bh_mass);
 void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, double bh_mass,
                                     struct bh_benchmark_rate_result *out);
 void bh_benchmark_accretion_self_test(void);
+void bh_benchmark_tng_feedback_accumulate(void);
+void bh_benchmark_tng_feedback_inject(void);
+void bh_benchmark_tng_feedback_self_test(void);
 double bh_ffr_central_mass_code(int p);
 double bh_ffr_reservoir_timescale_myr(double bh_mass, double reservoir_mass);
 double bh_ffr_reservoir_processable_mass(double reservoir_mass, double dt_myr, double tau_myr);
