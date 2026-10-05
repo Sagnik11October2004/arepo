@@ -444,10 +444,16 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
       const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
       for(int k = 0; k < 3; k++)
         {
-          const double dp = share * P[j].Vel[k];
+          /* Transfer exactly the specific momentum represented by AREPO's
+           * conserved gas variable. P[j].Vel is reconstructed from this state
+           * but can differ at roundoff level after kick/update ordering; using
+           * it here while removing SphP.Momentum below creates a false ledger
+           * mismatch for very small sink masses. */
+          const double vcons = SphP[j].Momentum[k] / P[j].Mass;
+          const double dp = share * vcons;
           out.CapturedMomentum[k] += dp;
           out.CapturedAbsMomentum[k] += fabs(dp);
-          const double vphys = P[j].Vel[k] / a;
+          const double vphys = vcons / a;
           vphys2 += vphys * vphys;
         }
       out.CapturedKineticEnergy += 0.5 * share * vphys2;
