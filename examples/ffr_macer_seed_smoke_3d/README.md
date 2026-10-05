@@ -74,7 +74,7 @@ The run writes output/ and run.log.
 A passing test requires all of the following:
 
 1. at least one "BH_FFR: seeded FoF group" event at z>20;
-2. every seed has a `BH_FFR: seed axis ... axis_source=local-gas|deterministic-fallback coherence=...` diagnostic consistent with `BHMinCoherence`;
+2. every seed has a `BH_FFR: seed axis ... axis_source=local-gas|deterministic-fallback coherence=...` diagnostic consistent with `BHMinCoherence`; the local-gas estimate samples all resolved gas inside the proper `BHAccretionRadius` around the selected central cell before conversion;
 3. Type-5 BHs in an HDF5 snapshot;
 4. BH_Mass = 1e5 Msun;
 5. BH_DiskMass = BH_MdotSupply = 0 because resolved capture is disabled;
@@ -139,7 +139,7 @@ The production limiter combines the nearest-gas hydro bin with the internal accu
     t_d = BHDiskTimeMyr * (1 + M_BH/M_d)^BHDiskTimeExponent
     dt_BH <= f_int min(t_d, Eth_w/P_w, Eth_j/P_j)
 
-using physical time before AREPO performs its normal power-of-two timebin quantization. If a surviving wind or jet buffer still contains at least BHMaxPacketsPerStep thresholds, it additionally forces at least one finer gravity bin, so a packet-cap backlog cannot wait on a coarse collisionless timestep.
+using physical time before AREPO performs its normal power-of-two timebin quantization. For a BH that completed an FFR transaction at the current synchronization point, the limiter reuses the exact beginning-of-transaction `t_d` already used by reservoir drainage and jet-axis relaxation; the timestep log records this as `tdFrozen=1`. Startup/new-seed/post-merger fallback states may recompute from the current state. If a surviving wind or jet buffer still contains at least BHMaxPacketsPerStep thresholds, it additionally forces at least one finer gravity bin, so a packet-cap backlog cannot wait on a coarse collisionless timestep.
 
 The dedicated stress helper intentionally uses BHInternalTimestepFactor=4 and BHMaxPacketsPerStep=1. Those values are test-only: they make the ordinary accuracy limit loose enough that the independent backlog branch must activate. The backlog step is anchored to the gas+accuracy-limited candidate and may reduce it by only one additional factor of two per assignment; it is not recursively referenced to the already-shortened current BH bin. The same regression also checks that BH_MdotSupply is assembled as sum(dm_i/dt_i,hydro), avoiding diagnostic spikes when the BH timestep is shorter than the synchronized gas step. The run is shortened to a=0.02055 and still starts from the saved BH-free checkpoint:
 
