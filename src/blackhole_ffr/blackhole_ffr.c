@@ -60,6 +60,7 @@ static void bh_ffr_initialize_record(struct bh_ffr_particle_data *bh, int p, int
   bh->BHMass = P[p].Mass;
   bh->ReservoirMass = 0;
   bh->AccretionState = BH_FFR_STATE_UNINITIALIZED;
+  bh->TNGFeedbackMode = BH_BENCHMARK_TNG_MODE_UNINITIALIZED;
 
   bh_ffr_deterministic_axis(P[p].ID, bh->DiscDir);
   for(int k = 0; k < 3; k++)
@@ -197,6 +198,14 @@ void bh_ffr_validate_state(const char *where)
              !isfinite(BHP[b].JetPower) || BHP[b].JetPower < 0 ||
              !isfinite(BHP[b].WindThresholdEnergy) || BHP[b].WindThresholdEnergy < 0 ||
              !isfinite(BHP[b].JetThresholdEnergy) || BHP[b].JetThresholdEnergy < 0 ||
+             !isfinite(BHP[b].BenchmarkMdotRaw) || BHP[b].BenchmarkMdotRaw < 0 ||
+             !isfinite(BHP[b].BenchmarkMdotOperational) || BHP[b].BenchmarkMdotOperational < 0 ||
+             !isfinite(BHP[b].TNGThermalEnergyBuffer) || BHP[b].TNGThermalEnergyBuffer < 0 ||
+             !isfinite(BHP[b].TNGKineticEnergyBuffer) || BHP[b].TNGKineticEnergyBuffer < 0 ||
+             !isfinite(BHP[b].TNGFeedbackPower) || BHP[b].TNGFeedbackPower < 0 ||
+             !isfinite(BHP[b].TNGKineticThresholdEnergy) || BHP[b].TNGKineticThresholdEnergy < 0 ||
+             !isfinite(BHP[b].TNGEddingtonRatio) || BHP[b].TNGEddingtonRatio < 0 ||
+             !isfinite(BHP[b].TNGModeThreshold) || BHP[b].TNGModeThreshold < 0 ||
              !isfinite(BHP[b].ColdBlendWeight) || BHP[b].ColdBlendWeight < 0 || BHP[b].ColdBlendWeight > 1)
             terminate("BH_FFR: invalid mass/rate/energetics buffer for particle ID=%llu in %s",
                       (unsigned long long)P[i].ID, where);
@@ -204,6 +213,11 @@ void bh_ffr_validate_state(const char *where)
           if(BHP[b].AccretionState < BH_FFR_STATE_UNINITIALIZED || BHP[b].AccretionState > BH_FFR_STATE_COLD)
             terminate("BH_FFR: invalid accretion state=%d for particle ID=%llu in %s", BHP[b].AccretionState,
                       (unsigned long long)P[i].ID, where);
+
+          if(BHP[b].TNGFeedbackMode < BH_BENCHMARK_TNG_MODE_UNINITIALIZED ||
+             BHP[b].TNGFeedbackMode > BH_BENCHMARK_TNG_MODE_THERMAL)
+            terminate("BH_TNG: invalid feedback mode=%d for particle ID=%llu in %s",
+                      BHP[b].TNGFeedbackMode, (unsigned long long)P[i].ID, where);
 
           /* Old Iteration-5 native restarts can legitimately contain a
            * diagnostic MdotProcessed with zero horizon/wind rates.  Enforce
