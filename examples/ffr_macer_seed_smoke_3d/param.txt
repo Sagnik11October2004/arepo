@@ -179,5 +179,5 @@ BHBenchmarkTNGThermalCoupling            0.1
 BHBenchmarkTNGKineticMaxEfficiency       0.2
 BHBenchmarkTNGKineticDensityFactor       0.05
 % Physical hydrogen-number-density proxy for the star-formation threshold [cm^-3].
-BHBenchmarkTNGSFThresholdNH              0.1
+BHBenchmarkTNGSFThresholdNH              0.1065
 BHBenchmarkTNGKineticBurstFactor         20.0
