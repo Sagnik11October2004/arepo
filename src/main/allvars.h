@@ -924,6 +924,20 @@ extern struct global_data_all_processes
   int BHMaxPacketsPerStep;
   int BHDMNeighbours;
   double BHInternalTimestepFactor;
+
+  /* Convergence-benchmark accretion controls.  ACC_FFR +
+   * TARGET_RESERVOIR reproduces the validated FFR-MACER capture path.
+   * Direct targets are Eddington-limited and intentionally bypass the
+   * FFR reservoir/inner-flow/feedback machinery until TNG feedback is added. */
+  int BHBenchmarkAccretionModel;
+  int BHBenchmarkAccretionTarget;
+  int BHBenchmarkBoostMode;
+  double BHBenchmarkBoostAlpha;
+  double BHBenchmarkBoostDensityThreshold;
+  double BHBenchmarkBoostBeta;
+  double BHBenchmarkAMViscosity;
+  double BHBenchmarkRadiativeEfficiency;
+  double BHBenchmarkEddingtonFactor;
 #endif /* #ifdef BLACKHOLE_FFR */
 
 #if defined(COOLING)
