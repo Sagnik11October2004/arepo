@@ -809,6 +809,13 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
         terminate("BH_FFR: invalid captured supply rate=%g for particle ID=%llu", res->CapturedRate,
                   (unsigned long long)P[p].ID);
 
+      /* Preserve the algebraic estimator separately from the realized
+       * conservative gas sink.  TNG selects its feedback state from the
+       * uncapped estimator/Eddington ratio, while its energy budget below is
+       * tied to the mass that was actually captured. */
+      BHP[b].BenchmarkMdotRaw = res->ModelRawRate;
+      BHP[b].BenchmarkMdotOperational = res->ModelOperationalRate;
+
       /* Each gas sink is integrated over that gas cell's own synchronized
        * hydro step.  Summing dm_i/dt_i avoids spuriously dividing a gas-step
        * capture event by a much shorter feedback-limited BH timestep. */
