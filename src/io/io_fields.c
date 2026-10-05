@@ -201,6 +201,51 @@ static void io_func_bh_ffr_ethjet(int particle, int components, void *out_buffer
 {
   ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->JetThresholdEnergy;
 }
+
+static void io_func_bh_bench_mdotraw(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->BenchmarkMdotRaw;
+}
+
+static void io_func_bh_bench_mdotop(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->BenchmarkMdotOperational;
+}
+
+static void io_func_bh_tng_mode(int particle, int components, void *out_buffer, int mode)
+{
+  ((int *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGFeedbackMode;
+}
+
+static void io_func_bh_tng_fedd(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGEddingtonRatio;
+}
+
+static void io_func_bh_tng_chi(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGModeThreshold;
+}
+
+static void io_func_bh_tng_power(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGFeedbackPower;
+}
+
+static void io_func_bh_tng_etherm(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGThermalEnergyBuffer;
+}
+
+static void io_func_bh_tng_ekin(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGKineticEnergyBuffer;
+}
+
+static void io_func_bh_tng_ethkin(int particle, int components, void *out_buffer, int mode)
+{
+  ((MyOutputFloat *)out_buffer)[0] = io_bh_ffr_data(particle)->TNGKineticThresholdEnergy;
+}
 #endif /* #ifdef BLACKHOLE_FFR */
 
 #ifdef OUTPUT_TASK
@@ -746,6 +791,42 @@ void init_io_fields()
   init_field(IO_BH_FFR_ETHJET, "BHTJ", "BH_EthJet", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
              io_func_bh_ffr_ethjet, BHS_ONLY);
   init_units(IO_BH_FFR_ETHJET, 0., -1., 0., 1., 2., All.UnitEnergy_in_cgs);
+
+  init_field(IO_BH_BENCH_MDOTRAW, "BHBR", "BH_BenchmarkMdotRaw", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_bench_mdotraw, BHS_ONLY);
+  init_units(IO_BH_BENCH_MDOTRAW, 0., 0., -1., 1., 1., All.UnitMass_in_g / All.UnitTime_in_s);
+
+  init_field(IO_BH_BENCH_MDOTOP, "BHBO", "BH_BenchmarkMdotOperational", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_bench_mdotop, BHS_ONLY);
+  init_units(IO_BH_BENCH_MDOTOP, 0., 0., -1., 1., 1., All.UnitMass_in_g / All.UnitTime_in_s);
+
+  init_field(IO_BH_TNG_MODE, "BHTM", "BH_TNGMode", MEM_NONE, FILE_INT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_mode, BHS_ONLY);
+  init_units(IO_BH_TNG_MODE, 0., 0., 0., 0., 0., 0.);
+
+  init_field(IO_BH_TNG_FEDD, "BHTF", "BH_TNGRawEddRatio", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_fedd, BHS_ONLY);
+  init_units(IO_BH_TNG_FEDD, 0., 0., 0., 0., 0., 0.);
+
+  init_field(IO_BH_TNG_CHI, "BHTC", "BH_TNGModeThreshold", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_chi, BHS_ONLY);
+  init_units(IO_BH_TNG_CHI, 0., 0., 0., 0., 0., 0.);
+
+  init_field(IO_BH_TNG_POWER, "BHTP", "BH_TNGFeedbackPower", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_power, BHS_ONLY);
+  init_units(IO_BH_TNG_POWER, 0., 0., -1., 1., 3., All.UnitEnergy_in_cgs / All.UnitTime_in_s);
+
+  init_field(IO_BH_TNG_ETHERM, "BHTH", "BH_TNGThermalEnergyBuffer", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_etherm, BHS_ONLY);
+  init_units(IO_BH_TNG_ETHERM, 0., -1., 0., 1., 2., All.UnitEnergy_in_cgs);
+
+  init_field(IO_BH_TNG_EKIN, "BHTK", "BH_TNGKineticEnergyBuffer", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_ekin, BHS_ONLY);
+  init_units(IO_BH_TNG_EKIN, 0., -1., 0., 1., 2., All.UnitEnergy_in_cgs);
+
+  init_field(IO_BH_TNG_ETHKIN, "BHTQ", "BH_TNGKineticThresholdEnergy", MEM_NONE, FILE_MY_IO_FLOAT, FILE_NONE, 1, A_NONE, 0,
+             io_func_bh_tng_ethkin, BHS_ONLY);
+  init_units(IO_BH_TNG_ETHKIN, 0., -1., 0., 1., 2., All.UnitEnergy_in_cgs);
 #endif /* #ifdef BLACKHOLE_FFR */
 
 #ifdef OUTPUTPOTENTIAL
