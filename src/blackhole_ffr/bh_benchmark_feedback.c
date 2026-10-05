@@ -211,6 +211,58 @@ static double bh_tng_kinetic_efficiency(double nh, double density_factor,
   return eps;
 }
 
+/* Weinberger et al. (2017), equation (13):
+ *
+ *   E_inj,min = f_re (1/2) sigma_DM^2 m_enc .
+ *
+ * sigma_DM is the cached one-dimensional physical peculiar velocity
+ * dispersion and m_enc is the gas mass in the feedback region. */
+static double bh_tng_kinetic_threshold(double enclosed_mass, double sigma_dm,
+                                       double burst_factor)
+{
+  if(!isfinite(enclosed_mass) || enclosed_mass < 0 ||
+     !isfinite(sigma_dm) || sigma_dm < 0 ||
+     !isfinite(burst_factor) || !(burst_factor > 0))
+    terminate("BH_TNG: invalid kinetic-threshold inputs Menc=%g sigmaDM=%g f_re=%g",
+              enclosed_mass, sigma_dm, burst_factor);
+
+  const double eth =
+      0.5 * burst_factor * enclosed_mass * sigma_dm * sigma_dm;
+  if(!isfinite(eth) || eth < 0)
+    terminate("BH_TNG: invalid kinetic threshold=%g", eth);
+  return eth;
+}
+
+/* Equations (7) and (8).  mdot is the Eddington-limited operational
+ * accretion rate; the uncapped rate is used only for the mode switch. */
+static double bh_tng_feedback_power(int mode, double mdot, double c_internal,
+                                    double radiative_efficiency,
+                                    double thermal_coupling,
+                                    double kinetic_efficiency)
+{
+  if(!isfinite(mdot) || mdot < 0 ||
+     !isfinite(c_internal) || !(c_internal > 0) ||
+     !isfinite(radiative_efficiency) || radiative_efficiency < 0 ||
+     !isfinite(thermal_coupling) || thermal_coupling < 0 ||
+     !isfinite(kinetic_efficiency) || kinetic_efficiency < 0)
+    terminate("BH_TNG: invalid feedback-power inputs mode=%d mdot=%g c=%g epsr=%g epsth=%g epskin=%g",
+              mode, mdot, c_internal, radiative_efficiency,
+              thermal_coupling, kinetic_efficiency);
+
+  double efficiency;
+  if(mode == BH_BENCHMARK_TNG_MODE_THERMAL)
+    efficiency = thermal_coupling * radiative_efficiency;
+  else if(mode == BH_BENCHMARK_TNG_MODE_KINETIC)
+    efficiency = kinetic_efficiency;
+  else
+    terminate("BH_TNG: invalid feedback mode=%d in power calculation", mode);
+
+  const double power = efficiency * mdot * c_internal * c_internal;
+  if(!isfinite(power) || power < 0)
+    terminate("BH_TNG: invalid feedback power=%g", power);
+  return power;
+}
+
 static uint64_t bh_tng_splitmix64(uint64_t x)
 {
   x += UINT64_C(0x9e3779b97f4a7c15);
@@ -616,17 +668,11 @@ void bh_benchmark_tng_feedback_accumulate(void)
           fedd_raw >= chi ? BH_BENCHMARK_TNG_MODE_THERMAL
                           : BH_BENCHMARK_TNG_MODE_KINETIC;
 
-      double power;
-      if(mode == BH_BENCHMARK_TNG_MODE_THERMAL)
-        power = All.BHBenchmarkTNGThermalCoupling *
-                All.BHBenchmarkRadiativeEfficiency *
-                BHP[b].BenchmarkMdotOperational * c_internal * c_internal;
-      else
-        power = epskin * BHP[b].BenchmarkMdotOperational * c_internal * c_internal;
-
-      if(!isfinite(power) || power < 0)
-        terminate("BH_TNG: invalid feedback power=%g for ID=%llu",
-                  power, (unsigned long long)P[p].ID);
+      const double power =
+          bh_tng_feedback_power(mode, BHP[b].BenchmarkMdotOperational,
+                                c_internal,
+                                All.BHBenchmarkRadiativeEfficiency,
+                                All.BHBenchmarkTNGThermalCoupling, epskin);
 
       double dt_code = 0.0;
       if(BHP[b].LastProcessedTi != All.Ti_Current)
@@ -646,12 +692,8 @@ void bh_benchmark_tng_feedback_accumulate(void)
         BHP[b].TNGKineticEnergyBuffer += denergy;
 
       const double eth =
-          0.5 * All.BHBenchmarkTNGKineticBurstFactor * res->EnclosedMass *
-          BHP[b].SigmaDM * BHP[b].SigmaDM;
-
-      if(!isfinite(eth) || eth < 0)
-        terminate("BH_TNG: invalid kinetic threshold=%g for ID=%llu",
-                  eth, (unsigned long long)P[p].ID);
+          bh_tng_kinetic_threshold(res->EnclosedMass, BHP[b].SigmaDM,
+                                   All.BHBenchmarkTNGKineticBurstFactor);
 
       BHP[b].TNGFeedbackPower = power;
       BHP[b].TNGKineticThresholdEnergy = eth;
@@ -732,11 +774,18 @@ static void bh_tng_prepare_events(int channel, int round)
       else
         {
           const double eth =
-              0.5 * All.BHBenchmarkTNGKineticBurstFactor * res->EnclosedMass *
-              BHP[b].SigmaDM * BHP[b].SigmaDM;
+              bh_tng_kinetic_threshold(res->EnclosedMass, BHP[b].SigmaDM,
+                                       All.BHBenchmarkTNGKineticBurstFactor);
           BHP[b].TNGKineticThresholdEnergy = eth;
 
-          if(!(eth > 0) || BHP[b].TNGKineticEnergyBuffer < eth)
+          /* Equation (13) legitimately tends to zero when sigma_DM tends to
+           * zero. In that limit there is no burst-energy floor, so any
+           * positive accumulated kinetic energy is eligible for immediate
+           * release. Requiring eth>0 here would incorrectly trap the kinetic
+           * reservoir forever. */
+          if(!(BHP[b].TNGKineticEnergyBuffer > 0))
+            continue;
+          if(eth > 0 && BHP[b].TNGKineticEnergyBuffer < eth)
             continue;
 
           ev->EnergyBefore = BHP[b].TNGKineticEnergyBuffer;
@@ -905,6 +954,27 @@ void bh_benchmark_tng_feedback_self_test(void)
   const double eps_cap = bh_tng_kinetic_efficiency(1.0, 0.05, 0.1, 0.2);
   if(fabs(eps_cap - 0.2) > 2.0e-14)
     terminate("BH_TNG: self-test efficiency cap got=%g expected=0.2", eps_cap);
+
+  /* Source-law regression checks.  Fiducial TNG has eps_r=0.2,
+   * eps_f,high=0.1 -> total thermal efficiency 0.02, while the saturated
+   * kinetic efficiency is 0.2. */
+  const double pth =
+      bh_tng_feedback_power(BH_BENCHMARK_TNG_MODE_THERMAL, 3.0, 5.0,
+                            0.2, 0.1, 0.2);
+  const double pkin =
+      bh_tng_feedback_power(BH_BENCHMARK_TNG_MODE_KINETIC, 3.0, 5.0,
+                            0.2, 0.1, 0.2);
+  if(fabs(pth - 1.5) > 2.0e-13)
+    terminate("BH_TNG: self-test thermal power got=%g expected=1.5", pth);
+  if(fabs(pkin - 15.0) > 2.0e-12)
+    terminate("BH_TNG: self-test kinetic power got=%g expected=15", pkin);
+
+  const double eth = bh_tng_kinetic_threshold(4.0, 3.0, 20.0);
+  if(fabs(eth - 360.0) > 2.0e-12)
+    terminate("BH_TNG: self-test kinetic threshold got=%g expected=360", eth);
+  const double eth_zero = bh_tng_kinetic_threshold(4.0, 0.0, 20.0);
+  if(eth_zero != 0.0)
+    terminate("BH_TNG: self-test zero-dispersion threshold got=%g expected=0", eth_zero);
 
   double dir[3];
   bh_tng_random_direction((MyIDType)1234567, (integertime)42, 0, dir);
