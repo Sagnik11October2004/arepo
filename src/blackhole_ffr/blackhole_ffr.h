@@ -50,12 +50,25 @@ enum bh_ffr_accretion_state
 
 /* Accretion-law selector for convergence benchmarks.  The default branch
  * behaviour is recovered with ACC_FFR + TARGET_RESERVOIR. */
+/* Benchmark-only shell-FFR closure.  It averages the local m/t_ff supply
+ * over one logarithmic radial shell instead of summing every resolved radius.
+ * The defaults are intentionally compile-time controls so production parameter
+ * files and persistent restart layouts remain unchanged.  Override in Config.sh
+ * only for convergence experiments. */
+#ifndef BH_BENCHMARK_FFR_SHELL_INNER_FRACTION
+#define BH_BENCHMARK_FFR_SHELL_INNER_FRACTION 0.6
+#endif
+#ifndef BH_BENCHMARK_FFR_SHELL_NORMALIZATION
+#define BH_BENCHMARK_FFR_SHELL_NORMALIZATION 1.4142135623730950488
+#endif
+
 enum bh_benchmark_accretion_model
 {
   BH_BENCHMARK_ACC_TNG_BONDI = 0,
   BH_BENCHMARK_ACC_BOOSTED_BONDI = 1,
   BH_BENCHMARK_ACC_AM_BONDI = 2,
-  BH_BENCHMARK_ACC_FFR = 3
+  BH_BENCHMARK_ACC_FFR = 3,
+  BH_BENCHMARK_ACC_FFR_SHELL = 4
 };
 
 enum bh_benchmark_accretion_target
@@ -98,6 +111,7 @@ struct bh_benchmark_environment
   double Vphi;
   double HydrogenNumberDensity;
   double FFRRawRate;
+  double FFRShellRawRate;
 };
 
 struct bh_benchmark_rate_result
