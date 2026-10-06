@@ -124,7 +124,8 @@ The comparison intentionally does not force one denominator on every flow.
 For gamma=5/3 BHL tests, subsonic cases use the Bondi rate with lambda=1/4
 computed from the asymptotic IC state; trans/supersonic cases use the
 Foglizzo-Ruffert interpolation as a literature baseline rather than exact
-truth. Rotating and turbulent cases use the net resolved shell supply of the
-same resolution through 10--12.5 pc, while also reporting the continuum
-1e-4 Msun/yr IC target. No event-horizon truth is assigned to rotating or
+truth. Rotating and turbulent cases use the analytic continuum IC supply
+(1e-4 Msun/yr) as the primary physical reference. The net resolved shell
+flux of the same resolution through 10--12.5 pc is reported separately as a
+discretization diagnostic. No event-horizon truth is assigned to rotating or
 turbulent cases because angular-momentum/disc transport is unresolved.

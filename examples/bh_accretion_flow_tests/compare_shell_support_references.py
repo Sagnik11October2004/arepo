@@ -17,9 +17,11 @@ Reference hierarchy:
       Foglizzo-Ruffert/Ruffert-Arnett-style interpolation, evaluated from the
       asymptotic IC state. It is a literature baseline, not exact truth.
   Rotating/turbulent:
-      the actual discrete net inward shell flux of THAT resolution through
-      10--12.5 pc. The continuum IC target (1e-4 Msun/yr) is also reported
-      separately. These are capture/supply references, not event-horizon rates.
+      the analytic continuum supply used to construct the IC,
+      1e-4 Msun/yr, is the primary physical reference.  The discrete net
+      shell flux of each resolution through 10--12.5 pc is reported separately
+      as a resolution/discretization diagnostic.  Neither is an event-horizon
+      BH accretion rate.
 
 No analytic event-horizon "truth" is asserted for rotating/turbulent runs,
 because angular-momentum transport and unresolved disc physics determine the
@@ -160,15 +162,15 @@ def supply_reference(meta: dict) -> dict[str, float | str]:
     inward = float(flux["inward_10_12p5_msun_per_yr"])
     continuum = float(meta["mdot_true_msun_per_yr"])
     return {
-        "reference_mdot_msun_yr": net,
-        "reference_low_msun_yr": net,
-        "reference_high_msun_yr": net,
-        "reference_kind": "same-resolution-resolved-shell-supply",
+        "reference_mdot_msun_yr": continuum,
+        "reference_low_msun_yr": continuum,
+        "reference_high_msun_yr": continuum,
+        "reference_kind": "analytic-continuum-IC-supply",
         "reference_status": (
-            "direct capture/supply reference at Racc; not an event-horizon BH rate"
+            "physical supply imposed by the IC construction; not an event-horizon BH rate"
         ),
-        "continuum_target_mdot_msun_yr": continuum,
-        "resolved_inward_shell_mdot_msun_yr": inward,
+        "same_resolution_net_shell_mdot_msun_yr": net,
+        "same_resolution_inward_shell_mdot_msun_yr": inward,
         "resolved_net_over_continuum": net / continuum,
     }
 
@@ -265,6 +267,12 @@ def main() -> None:
                     "support_factor": rates["support_factor"],
                     **ref,
                 }
+                if family != "bhl":
+                    net = float(ref["same_resolution_net_shell_mdot_msun_yr"])
+                    support_mdot = float(rates["SHELL_SUPPORT"]) * RATE_CODE_TO_MSUN_YR
+                    row["SHELL_SUPPORT_over_discrete_shell"] = (
+                        support_mdot / net if net != 0 else math.nan
+                    )
 
                 for key in (*BASE_KEYS, "FFR_SHELL_GEOM", "SHELL_DYN", "SHELL_SUPPORT"):
                     mdot = float(rates[key]) * RATE_CODE_TO_MSUN_YR
@@ -302,8 +310,8 @@ def main() -> None:
     print("Reference policy:")
     print("  BHL M<1: gamma=5/3 Bondi rate from asymptotic IC state.")
     print("  BHL M>=1: Foglizzo-Ruffert interpolation baseline; not exact truth.")
-    print("  Rotating/turbulent: same-resolution resolved net shell supply at Racc.")
-    print("  Continuum 1e-4 Msun/yr target is retained separately for rotating/turbulent.")
+    print("  Rotating/turbulent: analytic continuum IC supply (1e-4 Msun/yr).")
+    print("  Same-resolution resolved shell flux is retained separately as a discretization diagnostic.")
     print("  No event-horizon truth is assigned to rotating/turbulent cases.")
 
 
