@@ -60,13 +60,11 @@ enum bh_benchmark_accretion_model
   BH_BENCHMARK_ACC_AM_BONDI = 2,
   BH_BENCHMARK_ACC_FFR = 3,
   BH_BENCHMARK_ACC_FFR_SHELL = 4,
-  /* Cell-wise force-corrected free-fall shell model.  Every shell cell keeps
-   * the original m/t_ff backbone.  Its local free-fall time is lengthened or
-   * shortened by the ratio of central gravity to the resolved net inward
-   * acceleration from gravity, the local pressure-gradient projection,
-   * centrifugal support, and outward radial motion.  No spherical gas
-   * profile, aperture-level Mach switch, or Bondi cap is used. */
-  BH_BENCHMARK_ACC_FORCE_FFR = 5,
+  /* Empirically corrected shell free-fall model.  The Weinberger-style
+   * shell m/t_ff law remains untouched; a single bounded shell-level
+   * environmental efficiency modifies its normalization using thermal
+   * support, coherent bulk motion, and rotational support. */
+  BH_BENCHMARK_ACC_ENV_SHELL_FFR = 5,
   BH_BENCHMARK_ACC_COUNT = 6
 };
 
@@ -112,7 +110,21 @@ struct bh_benchmark_environment
   double FFRRawRate;
   double FFRShellRawRate;
   double FFRShellGeometricRate;
-  double FFRForceRate;
+  double FFREnvShellRate;
+  double EnvFactor;
+  double EnvThermalFactor;
+  double EnvWindFactor;
+  double EnvRotationFactor;
+  double EnvThermalX;
+  double EnvWindX;
+  double EnvRotationX;
+  double EnvVelocityCoherence;
+  double EnvCoherentMach;
+  double EnvShellRadius;
+  double EnvShellSoundSpeed;
+  double EnvShellBulkSpeed;
+  double EnvShellVphi;
+  double EnvShellVdyn;
 };
 
 struct bh_benchmark_rate_result
@@ -122,7 +134,10 @@ struct bh_benchmark_rate_result
   double EddingtonRate;
   double BoostFactor;
   double AngularMomentumLimiter;
-  double ForceTimeFactorMean;
+  double EnvFactor;
+  double EnvThermalFactor;
+  double EnvWindFactor;
+  double EnvRotationFactor;
 };
 
 /*! Persistent sub-grid state for one Type-5 FFR-MACER black hole.
@@ -279,7 +294,7 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
 void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *env, double bh_mass,
                                         double raw_rates[BH_BENCHMARK_ACC_COUNT],
                                         double *boost_factor, double *am_limiter,
-                                        double *force_time_factor_mean);
+                                        double *env_factor);
 void bh_benchmark_accretion_self_test(void);
 void bh_benchmark_tng_feedback_accumulate(void);
 void bh_benchmark_tng_feedback_inject(void);

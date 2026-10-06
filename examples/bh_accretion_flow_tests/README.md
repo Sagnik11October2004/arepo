@@ -176,3 +176,18 @@ python3 compare_force_ffr_references.py
 The comparison script computes BHL references independently from the asymptotic
 IC state and uses the analytic 1e-4 Msun/yr continuum supply for rotating and
 turbulent ICs.
+
+
+### Development mode 5 update
+
+Mode 5 is now an environment-corrected shell FFR rather than the experimental
+force-gradient closure.  The underlying shell free-fall rate is unchanged:
+
+```text
+Mdot_env = F_env Mdot_shell
+```
+
+The bounded empirical factor uses shell-level thermal support, coherent bulk
+motion, and net rotation.  The intended validation target is now the evolving
+isolated-galaxy test in `examples/bh_accretion_galaxy_test`; the 42 idealized
+flow boxes remain useful diagnostics but are no longer the calibration target.

@@ -1,0 +1,11 @@
+ics/*.hdf5
+outputs/
+logs/
+param_galaxy.txt
+outputlists/galaxy_times.txt
+galaxy_test_metadata.json
+galaxy_accretion_estimators.csv
+galaxy_bh_state.csv
+galaxy_accretion_rates.png
+galaxy_environment_factors.png
+galaxy_bh_reservoir_rates.png

@@ -938,6 +938,9 @@ extern struct global_data_all_processes
   double BHBenchmarkAMViscosity;
   double BHBenchmarkRadiativeEfficiency;
   double BHBenchmarkEddingtonFactor;
+  double BHBenchmarkEnvThermalFloor;
+  double BHBenchmarkEnvRotationBeta;
+  double BHBenchmarkStartTimeMyr;
 
   /* Independent benchmark feedback selector and TNG fiducial parameters.
    * The TNG law is evaluated on the same fixed proper benchmark aperture as

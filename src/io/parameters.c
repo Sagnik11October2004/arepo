@@ -525,6 +525,18 @@ void read_parameter_file(char *fname)
       addr[nt] = &All.BHBenchmarkEddingtonFactor;
       id[nt++] = REAL;
 
+      strcpy(tag[nt], "BHBenchmarkEnvThermalFloor");
+      addr[nt] = &All.BHBenchmarkEnvThermalFloor;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkEnvRotationBeta");
+      addr[nt] = &All.BHBenchmarkEnvRotationBeta;
+      id[nt++] = REAL;
+
+      strcpy(tag[nt], "BHBenchmarkStartTimeMyr");
+      addr[nt] = &All.BHBenchmarkStartTimeMyr;
+      id[nt++] = REAL;
+
       strcpy(tag[nt], "BHBenchmarkFeedbackModel");
       addr[nt] = &All.BHBenchmarkFeedbackModel;
       id[nt++] = INT;
@@ -941,6 +953,8 @@ void check_parameters()
      !isfinite(All.BHBenchmarkBoostAlpha) || !isfinite(All.BHBenchmarkBoostDensityThreshold) ||
      !isfinite(All.BHBenchmarkBoostBeta) || !isfinite(All.BHBenchmarkAMViscosity) ||
      !isfinite(All.BHBenchmarkRadiativeEfficiency) || !isfinite(All.BHBenchmarkEddingtonFactor) ||
+     !isfinite(All.BHBenchmarkEnvThermalFloor) || !isfinite(All.BHBenchmarkEnvRotationBeta) ||
+     !isfinite(All.BHBenchmarkStartTimeMyr) ||
      !isfinite(All.BHBenchmarkTNGChi0) || !isfinite(All.BHBenchmarkTNGChiBeta) ||
      !isfinite(All.BHBenchmarkTNGChiMax) || !isfinite(All.BHBenchmarkTNGThermalCoupling) ||
      !isfinite(All.BHBenchmarkTNGKineticMaxEfficiency) ||
@@ -989,7 +1003,7 @@ void check_parameters()
                   BH_FFR_DM_MAX_NEIGHBOURS);
   if(All.BHBenchmarkAccretionModel < 0 || All.BHBenchmarkAccretionModel >= BH_BENCHMARK_ACC_COUNT)
     mpi_terminate("BHBenchmarkAccretionModel must be 0(TNG Bondi), 1(boosted Bondi), 2(AM Bondi), "
-                  "3(FFR), 4(shell FFR), or 5(force-corrected free-fall shell FFR).\n");
+                  "3(FFR), 4(shell FFR), or 5(environment-corrected shell FFR).\n");
   if(All.BHBenchmarkAccretionTarget < 0 || All.BHBenchmarkAccretionTarget > 1)
     mpi_terminate("BHBenchmarkAccretionTarget must be 0(reservoir/MACER) or 1(direct/TNG backend).\n");
   if(All.BHBenchmarkBoostMode < 0 || All.BHBenchmarkBoostMode > 1)
@@ -1002,6 +1016,14 @@ void check_parameters()
     mpi_terminate("BHBenchmarkRadiativeEfficiency must lie in (0,1).\n");
   if(All.BHBenchmarkEddingtonFactor <= 0)
     mpi_terminate("BHBenchmarkEddingtonFactor must be positive.\n");
+  if(All.BHBenchmarkEnvThermalFloor < 0 || All.BHBenchmarkEnvThermalFloor > 1)
+    mpi_terminate("BHBenchmarkEnvThermalFloor must lie in [0,1].\n");
+  if(All.BHBenchmarkEnvRotationBeta < 0)
+    mpi_terminate("BHBenchmarkEnvRotationBeta must be non-negative.\n");
+  if(All.BHBenchmarkStartTimeMyr < 0)
+    mpi_terminate("BHBenchmarkStartTimeMyr must be non-negative.\n");
+  if(All.ComovingIntegrationOn && All.BHBenchmarkStartTimeMyr > 0)
+    mpi_terminate("BHBenchmarkStartTimeMyr>0 is supported only for non-cosmological benchmark runs.\n");
 
   if(All.BHBenchmarkFeedbackModel < BH_BENCHMARK_FEEDBACK_NONE ||
      All.BHBenchmarkFeedbackModel > BH_BENCHMARK_FEEDBACK_MACER)
