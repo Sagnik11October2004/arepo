@@ -649,7 +649,8 @@ static void bh_ffr_prepare_benchmark_rates(void)
 
       printf("BH_BENCHMARK_ALL: ID=%llu task=%d selected=%s target=%s feedback=%d "
              "Mgas=%.17g rho=%.17g cs=%.17g vrel=%.17g Vphi=%.17g nH=%.17g "
-             "TNG=%.17g BOOSTED=%.17g AM=%.17g FFR_VOLUME=%.17g FFR_SHELL=%.17g MACH_FFR=%.17g "
+             "TNG=%.17g BOOSTED=%.17g AM=%.17g FFR_VOLUME=%.17g FFR_SHELL=%.17g "
+             "FFR_SHELL_GEOM=%.17g MACH_FFR=%.17g "
              "boost=%.17g amlim=%.17g machsup=%.17g\n",
              (unsigned long long)P[p].ID, ThisTask,
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
@@ -662,6 +663,7 @@ static void bh_ffr_prepare_benchmark_rates(void)
              raw_all[BH_BENCHMARK_ACC_AM_BONDI],
              raw_all[BH_BENCHMARK_ACC_FFR],
              raw_all[BH_BENCHMARK_ACC_FFR_SHELL],
+             env.FFRShellGeometricRate,
              raw_all[BH_BENCHMARK_ACC_MACH_FFR_SHELL],
              all_boost_factor, all_am_limiter, all_mach_suppressor);
       fflush(stdout);
