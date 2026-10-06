@@ -102,6 +102,11 @@ Both configurations include `INPUT_IN_DOUBLEPRECISION`,
 NTASKS=8 ./run_to_z20.sh
 ```
 
+The checked-in rare-peak parameter files use `MaxMemSize=1500` MB per MPI
+rank.  This is intentionally a per-rank cap: for example, 16 ranks advertise
+at most 24 GB to AREPO's startup memory guard, leaving headroom on a 32 GB
+workstation.  Do not interpret `MaxMemSize` as a node-wide total.
+
 The runner:
 
 1. evolves z=99 -> z=22 with no BH;
