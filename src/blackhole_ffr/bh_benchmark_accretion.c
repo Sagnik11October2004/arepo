@@ -70,70 +70,6 @@ static double bh_benchmark_density_boost_core(double n_h, int mode, double alpha
   return 1.0;
 }
 
-/* Unified shell-support closure.
- *
- * Start from the unit-efficiency shell free-fall estimate.  The existing
- * shell estimator uses CentralMass in t_ff.  For mode 5 we approximate the
- * dynamical mass driving the resolved shell as
- *
- *   M_dyn = M_central + M_gas(<R_acc),
- *
- * rescale the free-fall rate by sqrt(M_dyn/M_central), and lengthen the fall
- * time continuously for thermal plus coherent bulk support:
- *
- *   f_support = [1 + (c_s^2 + v_bulk^2)/v_g^2]^(-3/2),
- *   v_g^2     = G M_dyn / R_acc.
- *
- * Thus Mdot_5 = Mdot_shell,geom sqrt(M_dyn/M_central) f_support.
- * In the cold/free-fall limit f_support -> 1.  In the strongly supported
- * limit the same shell law approaches Bondi/BHL-like scaling without a hard
- * switch or an explicit low-seed-mass suppression factor.
- */
-static double bh_benchmark_shell_support_core(double shell_geometric_rate,
-                                              double g, double central_mass,
-                                              double dynamical_mass,
-                                              double accretion_radius,
-                                              double cs, double vrel,
-                                              double *support_factor,
-                                              double *dynamical_shell_rate,
-                                              double *gravity_speed)
-{
-  if(!isfinite(shell_geometric_rate) || shell_geometric_rate < 0 ||
-     !isfinite(g) || !(g > 0) ||
-     !isfinite(central_mass) || !(central_mass > 0) ||
-     !isfinite(dynamical_mass) || dynamical_mass < central_mass ||
-     !isfinite(accretion_radius) || !(accretion_radius > 0) ||
-     !isfinite(cs) || cs < 0 || !isfinite(vrel) || vrel < 0)
-    terminate("BH_BENCHMARK: invalid shell-support inputs shell=%g G=%g Mcen=%g Mdyn=%g Racc=%g cs=%g vrel=%g",
-              shell_geometric_rate, g, central_mass, dynamical_mass,
-              accretion_radius, cs, vrel);
-
-  const double mass_scale = sqrt(dynamical_mass / central_mass);
-  const double dyn_rate = shell_geometric_rate * mass_scale;
-  const double vg2 = g * dynamical_mass / accretion_radius;
-  if(!isfinite(vg2) || !(vg2 > 0))
-    terminate("BH_BENCHMARK: invalid shell-support vg2=%g", vg2);
-
-  const double q = (cs * cs + vrel * vrel) / vg2;
-  const double support = 1.0 / ((1.0 + q) * sqrt(1.0 + q));
-  const double rate = dyn_rate * support;
-
-  if(!isfinite(dyn_rate) || dyn_rate < 0 ||
-     !isfinite(support) || support < 0 || support > 1.0 ||
-     !isfinite(rate) || rate < 0)
-    terminate("BH_BENCHMARK: invalid shell-support result rate=%g dyn=%g support=%g q=%g",
-              rate, dyn_rate, support, q);
-
-  if(support_factor != NULL)
-    *support_factor = support;
-  if(dynamical_shell_rate != NULL)
-    *dynamical_shell_rate = dyn_rate;
-  if(gravity_speed != NULL)
-    *gravity_speed = sqrt(vg2);
-
-  return rate;
-}
-
 static double bh_benchmark_am_limiter_core(double cs, double vphi, double cvisc)
 {
   if(!isfinite(cs) || cs < 0 || !isfinite(vphi) || vphi < 0 || !isfinite(cvisc) || !(cvisc > 0))
@@ -164,8 +100,8 @@ const char *bh_benchmark_accretion_model_name(int model)
         return "ffr";
       case BH_BENCHMARK_ACC_FFR_SHELL:
         return "ffr-shell";
-      case BH_BENCHMARK_ACC_SHELL_SUPPORT_FFR:
-        return "shell-support-ffr";
+      case BH_BENCHMARK_ACC_EFFECTIVE_INFLOW_FFR:
+        return "effective-infall-ffr";
       default:
         return "unknown";
     }
@@ -198,22 +134,17 @@ double bh_benchmark_eddington_rate_code(double bh_mass)
 void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *env, double bh_mass,
                                         double raw_rates[BH_BENCHMARK_ACC_COUNT],
                                         double *boost_factor, double *am_limiter,
-                                        double *shell_support_factor,
-                                        double *shell_dynamical_rate,
-                                        double *shell_gravity_speed)
+                                        double *effective_support_mean)
 {
   if(env == NULL || raw_rates == NULL || boost_factor == NULL || am_limiter == NULL ||
-     shell_support_factor == NULL || shell_dynamical_rate == NULL ||
-     shell_gravity_speed == NULL)
+     effective_support_mean == NULL)
     terminate("BH_BENCHMARK_ALL: null diagnostic input/output");
 
   for(int model = 0; model < BH_BENCHMARK_ACC_COUNT; model++)
     raw_rates[model] = 0.0;
   *boost_factor = 1.0;
   *am_limiter = 1.0;
-  *shell_support_factor = 1.0;
-  *shell_dynamical_rate = 0.0;
-  *shell_gravity_speed = 0.0;
+  *effective_support_mean = 1.0;
 
   if(env->GasMass <= 0 || bh_mass <= 0)
     return;
@@ -237,12 +168,9 @@ void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *e
   raw_rates[BH_BENCHMARK_ACC_FFR] = env->FFRRawRate;
   raw_rates[BH_BENCHMARK_ACC_FFR_SHELL] = env->FFRShellRawRate;
 
-  raw_rates[BH_BENCHMARK_ACC_SHELL_SUPPORT_FFR] =
-      bh_benchmark_shell_support_core(env->FFRShellGeometricRate, All.G,
-                                      env->CentralMass, env->DynamicalMass,
-                                      env->AccretionRadius, env->SoundSpeed,
-                                      env->RelativeSpeed, shell_support_factor,
-                                      shell_dynamical_rate, shell_gravity_speed);
+  raw_rates[BH_BENCHMARK_ACC_EFFECTIVE_INFLOW_FFR] = env->FFREffectiveInfallRate;
+  if(env->FFRShellGeometricRate > 0)
+    *effective_support_mean = env->FFREffectiveInfallRate / env->FFRShellGeometricRate;
 
   for(int model = 0; model < BH_BENCHMARK_ACC_COUNT; model++)
     if(!isfinite(raw_rates[model]) || raw_rates[model] < 0)
@@ -261,23 +189,18 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
      !isfinite(env->FFRRawRate) || env->FFRRawRate < 0 ||
      !isfinite(env->FFRShellRawRate) || env->FFRShellRawRate < 0 ||
      !isfinite(env->FFRShellGeometricRate) || env->FFRShellGeometricRate < 0 ||
-     !isfinite(env->CentralMass) || env->CentralMass < 0 ||
-     !isfinite(env->DynamicalMass) || env->DynamicalMass < env->CentralMass ||
-     !isfinite(env->AccretionRadius) || env->AccretionRadius <= 0)
+     !isfinite(env->FFREffectiveInfallRate) || env->FFREffectiveInfallRate < 0)
     terminate("BH_BENCHMARK: invalid common environment Mgas=%g rho=%g cs=%g vrel=%g Vphi=%g nH=%g "
-              "ffr=%g shell=%g shellGeom=%g Mcen=%g Mdyn=%g Racc=%g",
+              "ffr=%g shell=%g shellGeom=%g effective=%g",
               env->GasMass, env->Density, env->SoundSpeed, env->RelativeSpeed, env->Vphi,
               env->HydrogenNumberDensity, env->FFRRawRate, env->FFRShellRawRate,
-              env->FFRShellGeometricRate, env->CentralMass, env->DynamicalMass,
-              env->AccretionRadius);
+              env->FFRShellGeometricRate, env->FFREffectiveInfallRate);
 
   memset(out, 0, sizeof(*out));
   out->BoostFactor = 1.0;
   out->AngularMomentumLimiter = 1.0;
-  out->ShellSupportFactor = 1.0;
-  out->ShellDynamicalRate = env->FFRShellGeometricRate;
-  out->ShellGravitySpeed = 0.0;
-  out->ShellDynamicalMass = env->DynamicalMass;
+  out->EffectiveSupportMean =
+      env->FFRShellGeometricRate > 0 ? env->FFREffectiveInfallRate / env->FFRShellGeometricRate : 1.0;
   out->EddingtonRate = bh_benchmark_eddington_rate_code(bh_mass);
 
   if(env->GasMass <= 0 || bh_mass <= 0)
@@ -313,14 +236,8 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
         out->RawRate = env->FFRShellRawRate;
         break;
 
-      case BH_BENCHMARK_ACC_SHELL_SUPPORT_FFR:
-        out->RawRate =
-            bh_benchmark_shell_support_core(env->FFRShellGeometricRate, All.G,
-                                            env->CentralMass, env->DynamicalMass,
-                                            env->AccretionRadius, env->SoundSpeed,
-                                            env->RelativeSpeed, &out->ShellSupportFactor,
-                                            &out->ShellDynamicalRate,
-                                            &out->ShellGravitySpeed);
+      case BH_BENCHMARK_ACC_EFFECTIVE_INFLOW_FFR:
+        out->RawRate = env->FFREffectiveInfallRate;
         break;
 
       default:
@@ -375,29 +292,5 @@ void bh_benchmark_accretion_self_test(void)
   if(!(bhl > 0) || !(bhl < b))
     terminate("BH_BENCHMARK: BHL relative-velocity self-test failed BHL=%g TNG=%g", bhl, b);
 
-  double sf = 0.0, dyn = 0.0, vg = 0.0;
-  const double shell = 13.0;
-  const double mcen = 4.0;
-  const double mdyn = 9.0;
-  const double racc = 5.0;
-  const double shell_support =
-      bh_benchmark_shell_support_core(shell, g, mcen, mdyn, racc, cs, v,
-                                      &sf, &dyn, &vg);
-  const double expected_dyn = shell * sqrt(mdyn / mcen);
-  const double expected_vg2 = g * mdyn / racc;
-  const double expected_sf =
-      pow(1.0 + (cs * cs + v * v) / expected_vg2, -1.5);
-  if(fabs(dyn / expected_dyn - 1.0) > 2.0e-14 ||
-     fabs(vg * vg / expected_vg2 - 1.0) > 2.0e-14 ||
-     fabs(sf / expected_sf - 1.0) > 2.0e-14 ||
-     fabs(shell_support / (expected_dyn * expected_sf) - 1.0) > 2.0e-14)
-    terminate("BH_BENCHMARK: shell-support self-test failed rate=%g dyn=%g sf=%g vg=%g",
-              shell_support, dyn, sf, vg);
 
-  const double weak_support =
-      bh_benchmark_shell_support_core(shell, g, mcen, 100.0 * mdyn, racc,
-                                      0.01 * cs, 0.01 * v, &sf, &dyn, &vg);
-  if(!(weak_support > shell))
-    terminate("BH_BENCHMARK: shell-support dynamical-mass self-test failed rate=%g shell=%g",
-              weak_support, shell);
 }

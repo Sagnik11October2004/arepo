@@ -989,7 +989,7 @@ void check_parameters()
                   BH_FFR_DM_MAX_NEIGHBOURS);
   if(All.BHBenchmarkAccretionModel < 0 || All.BHBenchmarkAccretionModel >= BH_BENCHMARK_ACC_COUNT)
     mpi_terminate("BHBenchmarkAccretionModel must be 0(TNG Bondi), 1(boosted Bondi), 2(AM Bondi), "
-                  "3(FFR), 4(shell FFR), or 5(unified shell-support FFR).\n");
+                  "3(FFR), 4(shell FFR), or 5(cell-wise effective-infall shell FFR).\n");
   if(All.BHBenchmarkAccretionTarget < 0 || All.BHBenchmarkAccretionTarget > 1)
     mpi_terminate("BHBenchmarkAccretionTarget must be 0(reservoir/MACER) or 1(direct/TNG backend).\n");
   if(All.BHBenchmarkBoostMode < 0 || All.BHBenchmarkBoostMode > 1)

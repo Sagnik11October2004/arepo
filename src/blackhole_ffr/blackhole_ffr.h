@@ -60,11 +60,12 @@ enum bh_benchmark_accretion_model
   BH_BENCHMARK_ACC_AM_BONDI = 2,
   BH_BENCHMARK_ACC_FFR = 3,
   BH_BENCHMARK_ACC_FFR_SHELL = 4,
-  /* Unified shell-support model.  The shell free-fall rate remains the
-   * backbone; total resolved gas mass inside R_acc augments the dynamical
-   * mass and thermal/coherent-bulk support lengthens the effective fall time.
-   * No hard Bondi/free-fall regime switch is used. */
-  BH_BENCHMARK_ACC_SHELL_SUPPORT_FFR = 5,
+  /* Cell-wise effective-infall shell model.  Every shell cell keeps the
+   * free-fall m/t_ff backbone.  Thermal, transverse/rotational, and outward
+   * radial motion lengthen its effective fall time, while inward radial
+   * motion shortens that delay.  No aperture-level Mach switch or Bondi cap
+   * is used. */
+  BH_BENCHMARK_ACC_EFFECTIVE_INFLOW_FFR = 5,
   BH_BENCHMARK_ACC_COUNT = 6
 };
 
@@ -110,9 +111,7 @@ struct bh_benchmark_environment
   double FFRRawRate;
   double FFRShellRawRate;
   double FFRShellGeometricRate;
-  double CentralMass;
-  double DynamicalMass;
-  double AccretionRadius;
+  double FFREffectiveInfallRate;
 };
 
 struct bh_benchmark_rate_result
@@ -122,10 +121,7 @@ struct bh_benchmark_rate_result
   double EddingtonRate;
   double BoostFactor;
   double AngularMomentumLimiter;
-  double ShellSupportFactor;
-  double ShellDynamicalRate;
-  double ShellGravitySpeed;
-  double ShellDynamicalMass;
+  double EffectiveSupportMean;
 };
 
 /*! Persistent sub-grid state for one Type-5 FFR-MACER black hole.
@@ -282,9 +278,7 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
 void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *env, double bh_mass,
                                         double raw_rates[BH_BENCHMARK_ACC_COUNT],
                                         double *boost_factor, double *am_limiter,
-                                        double *shell_support_factor,
-                                        double *shell_dynamical_rate,
-                                        double *shell_gravity_speed);
+                                        double *effective_support_mean);
 void bh_benchmark_accretion_self_test(void);
 void bh_benchmark_tng_feedback_accumulate(void);
 void bh_benchmark_tng_feedback_inject(void);
