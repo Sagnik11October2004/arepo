@@ -83,7 +83,7 @@ def main() -> None:
                 "TimeBegin": f"{a0:.17g}",
                 "TimeMax": f"{amax:.17g}",
                 "MaxSizeTimestep": "0.001",
-                "BHSeedMinRedshift": "100.0",
+                "BHSeedMinRedshift": "20.0",
                 "BHFreeFallA": "1.0e-3",
                 "BHBenchmarkAccretionModel": str(model),
                 "BHBenchmarkAccretionTarget": str(target),
