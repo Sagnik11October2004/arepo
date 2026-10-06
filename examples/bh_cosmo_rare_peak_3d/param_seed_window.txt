@@ -1,6 +1,6 @@
 % Rare-peak cosmology stage B: seed-window evolution from z=22 to z=20.
 % Starts from the already-split z=22 gas+DM checkpoint from stage A.
-% Only 20 < z < 22 is traversed; BHSeedMinRedshift=20 closes seeding at z=20.
+% Strict seed gate: BHSeedMinRedshift=20 and Config's BH_FFR_SEED_MAX_REDSHIFT=22.
 
 InitCondFile                            ./ics/z22_preseed
 OutputDir                               ./output_seed_window
