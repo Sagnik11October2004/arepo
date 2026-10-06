@@ -61,6 +61,13 @@ static int CaptureNTargets;
 static int CapturePass;
 static int CaptureSelfTestDone;
 
+/* Benchmark-only shell geometry.  Keep this source-local rather than as a
+ * Config.sh macro so AREPO's compile-option checker does not treat it as a
+ * user-facing build option.  The robustness scan selected 0.6 as the default
+ * from a broad 0.5--0.9 plateau; sqrt(2) is the analytic free-fall
+ * normalization used only by this controlled benchmark model. */
+static const double BenchmarkFFRShellInnerFraction = 0.6;
+
 typedef struct
 {
   MyDouble Pos[3];
@@ -131,15 +138,15 @@ static int bh_benchmark_uses_ffr_shell(void)
 
 static double bh_benchmark_ffr_shell_normalization(void)
 {
-  const double fin = BH_BENCHMARK_FFR_SHELL_INNER_FRACTION;
-  const double norm = BH_BENCHMARK_FFR_SHELL_NORMALIZATION;
+  const double fin = BenchmarkFFRShellInnerFraction;
+  const double norm = sqrt(2.0);
 
-  if(!isfinite(fin) || !(fin > 0) || !(fin < 1) || !isfinite(norm) || !(norm > 0))
-    terminate("BH_BENCHMARK: invalid shell-FFR controls fin=%g norm=%g", fin, norm);
+  if(!isfinite(fin) || !(fin > 0) || !(fin < 1))
+    terminate("BH_BENCHMARK: invalid shell-FFR inner fraction fin=%g", fin);
 
   const double dlnr = log(1.0 / fin);
-  if(!isfinite(dlnr) || !(dlnr > 0))
-    terminate("BH_BENCHMARK: invalid shell-FFR logarithmic width fin=%g dlnr=%g", fin, dlnr);
+  if(!isfinite(dlnr) || !(dlnr > 0) || !isfinite(norm) || !(norm > 0))
+    terminate("BH_BENCHMARK: invalid shell-FFR normalization fin=%g dlnr=%g norm=%g", fin, dlnr, norm);
 
   return norm / dlnr;
 }
@@ -468,7 +475,7 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
               out.EnvFFRRawRate += P[j].Mass * lambda_ffr;
 
               const double shell_inner_radius =
-                  BH_BENCHMARK_FFR_SHELL_INNER_FRACTION * bh->AccretionRadius;
+                  BenchmarkFFRShellInnerFraction * bh->AccretionRadius;
               if(r >= shell_inner_radius)
                 {
                   out.EnvFFRShellGasMass += P[j].Mass;
@@ -481,7 +488,7 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
         }
 
       if(bh_benchmark_uses_ffr_shell() &&
-         r < BH_BENCHMARK_FFR_SHELL_INNER_FRACTION * bh->AccretionRadius)
+         r < BenchmarkFFRShellInnerFraction * bh->AccretionRadius)
         continue;
 
       if(CapturePass == BH_FFR_CAPTURE_PASS_SHARES && bin > 0 && bin < out.MinHydroTimeBin)
