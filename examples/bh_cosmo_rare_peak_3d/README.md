@@ -25,11 +25,24 @@ It is **not** a representative cosmological volume: the box deliberately uses
 - seed window: 20 < z < 22
 - gas capture and BH feedback are disabled until the common z=20 branch state
 
-The seed window is implemented as two stages rather than changing the validated
-runtime redshift gate:
+The seed window is enforced in the source, not by a runner-time hack.  Both
+rare-peak executables define `BH_FFR_SEED_MAX_REDSHIFT=22`, while the runtime
+parameter remains `BHSeedMinRedshift=20`.  The FoF seed transaction therefore
+requires the strict condition
 
-1. z=99 -> z=22 with `BHSeedMinRedshift=100`, so seeding is disabled.
-2. z=22 -> z=20 with `BHSeedMinRedshift=20`.
+```text
+20 < z < 22
+```
+
+before any eligible halo can be seeded.  The upper edge is compile-time gated
+rather than added to `All`, so the existing BLACKHOLE_FFR restart layout and
+the default one-sided production seeding behaviour are unchanged.
+
+The run is still split into two stages for reproducibility:
+
+1. z=99 -> z=22, which must remain BH-free because the strict upper edge is not
+   yet crossed.
+2. z=22 -> z=20, where the single-most-massive eligible FoF halo may be seeded.
 
 The second stage starts from the exact BH-free z=22 hydrodynamic snapshot using
 the executable that omits `GENERATE_GAS_IN_ICS`.
@@ -95,8 +108,11 @@ The runner:
 2. verifies the last stage-A snapshot is BH-free and at z=22;
 3. copies that state to `ics/z22_preseed.hdf5`;
 4. evolves z=22 -> z=20 with FoF seeding active;
-5. requires exactly one 1e5 Msun BH;
-6. writes `ics/common_z20_seeded.hdf5`.
+5. audits the FoF seed log and requires exactly one event with `20<z<22`;
+6. records seed redshift, FoF host mass, FoF group and BH ID in
+   `ics/common_seed_metadata.json`;
+7. requires exactly one 1e5 Msun BH at z=20 with the same BH ID;
+8. writes `ics/common_z20_seeded.hdf5`.
 
 Because capture is disabled through this stage, the common BH must still have
 exactly the seed mass. If no eligible >=1e7 Msun halo appears in the requested
