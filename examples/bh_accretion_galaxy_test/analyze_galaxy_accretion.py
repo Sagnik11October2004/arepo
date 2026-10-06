@@ -10,29 +10,41 @@ import h5py
 import numpy as np
 
 HERE = Path(__file__).resolve().parent
-LOG = HERE / "logs" / "galaxy_env_shell.log"
-OUT = HERE / "outputs" / "galaxy_env_shell"
 RATE_CODE_TO_MSUN_YR = 10.2271202634
 MYR_PER_CODE = 977.792354298
+SETTLE_MYR = 20.0
 
+MODELS = {
+    0: ("tng_bondi", "TNG"),
+    1: ("boosted_bondi", "BOOSTED"),
+    2: ("am_bondi", "AM"),
+    3: ("ffr_volume", "FFR_VOLUME"),
+    4: ("ffr_shell", "FFR_SHELL"),
+    5: ("ffr_env", "FFR_ENV"),
+}
 RAW_KEYS = ("TNG", "BOOSTED", "AM", "FFR_VOLUME", "FFR_SHELL", "FFR_ENV")
 ENV_KEYS = ("FENV", "FTH", "FWIND", "FROT", "thermalX", "windX", "rotX",
             "velcoh", "Mcoh", "Rsh", "cssh", "vbulksh", "vphish", "vdynsh")
 
+
 def extract(line: str, key: str) -> float | None:
-    m = re.search(rf'(?<![A-Za-z0-9_]){re.escape(key)}='
-                  r'([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)', line)
+    m = re.search(
+        rf'(?<![A-Za-z0-9_]){re.escape(key)}='
+        r'([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?)',
+        line,
+    )
     return float(m.group(1)) if m else None
 
-def parse_log() -> list[dict]:
-    if not LOG.exists():
-        raise FileNotFoundError(LOG)
+
+def parse_log(path: Path, stage: str, model_id: int | None, model_name: str | None) -> list[dict]:
+    if not path.exists():
+        return []
     rows = []
-    with LOG.open("r", errors="replace") as f:
+    with path.open("r", errors="replace") as f:
         for line in f:
             if "BH_BENCHMARK_ALL:" not in line or "FFR_ENV=" not in line:
                 continue
-            row = {}
+            row = {"stage": stage, "model_id": model_id, "model_name": model_name}
             keys = ("time", "timeMyr", "captureon", "Mgas", "rho", "cs", "vrel",
                     "Vphi", "nH", "boost", "amlim", *RAW_KEYS, *ENV_KEYS)
             for key in keys:
@@ -41,11 +53,17 @@ def parse_log() -> list[dict]:
                     row[key] = x
             if "timeMyr" not in row:
                 continue
+            row["galaxyTimeMyr"] = row["timeMyr"] if stage == "settle" else SETTLE_MYR + row["timeMyr"]
             for key in RAW_KEYS:
                 if key in row:
                     row[f"{key}_Msun_yr"] = row[key] * RATE_CODE_TO_MSUN_YR
+            if model_id is not None:
+                selected_key = MODELS[model_id][1]
+                if selected_key in row:
+                    row["selected_raw_Msun_yr"] = row[selected_key] * RATE_CODE_TO_MSUN_YR
             rows.append(row)
     return rows
+
 
 def write_csv(path: Path, rows: list[dict]) -> None:
     if not rows:
@@ -61,6 +79,7 @@ def write_csv(path: Path, rows: list[dict]) -> None:
         w.writeheader()
         w.writerows(rows)
 
+
 def flatten_value(row: dict, key: str, value):
     arr = np.asarray(value)
     if arr.ndim == 0:
@@ -71,13 +90,22 @@ def flatten_value(row: dict, key: str, value):
         for i, x in enumerate(arr.reshape(-1)):
             row[f"{key}_{i}"] = float(x)
 
-def parse_snapshots() -> list[dict]:
+
+def parse_snapshot_dir(path: Path, stage: str, model_id: int | None, model_name: str | None) -> list[dict]:
     rows = []
-    for path in sorted(OUT.glob("snap_*.hdf5")):
-        with h5py.File(path, "r") as f:
+    for snap in sorted(path.glob("snap_*.hdf5")):
+        with h5py.File(snap, "r") as f:
             time_code = float(f["Header"].attrs["Time"])
-            row = {"snapshot": path.name, "time_code": time_code,
-                   "time_Myr": time_code * MYR_PER_CODE}
+            time_myr = time_code * MYR_PER_CODE
+            row = {
+                "stage": stage,
+                "model_id": model_id,
+                "model_name": model_name,
+                "snapshot": snap.name,
+                "time_code": time_code,
+                "time_Myr": time_myr,
+                "galaxyTimeMyr": time_myr if stage == "settle" else SETTLE_MYR + time_myr,
+            }
             if "PartType5" not in f:
                 continue
             bh = f["PartType5"]
@@ -96,96 +124,107 @@ def parse_snapshots() -> list[dict]:
             rows.append(row)
     return rows
 
-def median_in(rows, key, t0, t1):
-    vals = [r[key] for r in rows if t0 <= r.get("timeMyr", -1) < t1 and key in r]
+
+def median(vals):
+    vals = [v for v in vals if np.isfinite(v)]
     return float(np.median(vals)) if vals else math.nan
 
-def print_rate_summary(rows):
-    if not rows:
-        print("No FFR_ENV diagnostic rows found.")
-        return
-    windows = [("settled/pre-on", 15.0, 20.0),
-               ("early-on", 20.0, 30.0),
-               ("late", 50.0, 80.0001)]
-    print()
-    print("MEDIAN RAW ACCRETION ESTIMATORS [Msun/yr]")
-    print("=" * 112)
-    print(f"{'window':18s}" + "".join(f"{k:>15s}" for k in RAW_KEYS) + f"{'FENV':>12s}")
-    print("-" * 112)
-    for name, t0, t1 in windows:
-        vals = [median_in(rows, f"{k}_Msun_yr", t0, t1) for k in RAW_KEYS]
-        fenv = median_in(rows, "FENV", t0, t1)
-        print(f"{name:18s}" + "".join(f"{v:15.4e}" for v in vals) + f"{fenv:12.4f}")
-    on = [r for r in rows if r.get("captureon", 0) > 0.5]
-    off = [r for r in rows if r.get("captureon", 0) < 0.5]
-    if off and on:
-        print()
-        print(f"BH-off diagnostics: {len(off)} samples; BH-on diagnostics: {len(on)} samples")
-        print(f"First capture-on diagnostic: {min(r['timeMyr'] for r in on):.6f} Myr")
 
-def make_plots(rows, states):
+def summarize(raw_rows, state_rows):
+    settle = [r for r in raw_rows if r["stage"] == "settle" and 15 <= r["galaxyTimeMyr"] <= 20]
+    print()
+    print("COMMON SETTLED ENVIRONMENT: MEDIAN RAW ESTIMATORS AT 15-20 MYR [Msun/yr]")
+    print("=" * 98)
+    for key in RAW_KEYS:
+        vals = [r.get(f"{key}_Msun_yr", math.nan) for r in settle]
+        print(f"{key:12s} {median(vals):.6e}")
+
+    print()
+    print("POST-SETTLE BRANCH COMPARISON")
+    print("=" * 124)
+    print(f"{'model':18s} {'selected raw':>14s} {'realized':>14s} {'Mdot_H':>14s} {'Mdisk_final':>14s} {'MBH_final':>14s}")
+    print("-" * 124)
+    for model_id, (name, selected_key) in MODELS.items():
+        rr = [r for r in raw_rows if r.get("model_id") == model_id and 50 <= r["galaxyTimeMyr"] <= 80]
+        sr = [r for r in state_rows if r.get("model_id") == model_id]
+        selected = median([r.get("selected_raw_Msun_yr", math.nan) for r in rr])
+        realized = median([r.get("BH_BenchmarkMdotRealized_Msun_yr", math.nan) for r in sr if 50 <= r["galaxyTimeMyr"] <= 80])
+        horizon = median([r.get("BH_MdotHorizon_Msun_yr", math.nan) for r in sr if 50 <= r["galaxyTimeMyr"] <= 80])
+        final = max(sr, key=lambda r: r["galaxyTimeMyr"]) if sr else {}
+        mdisk = final.get("BH_DiskMass_Msun", math.nan)
+        mbh = final.get("BH_Mass_Msun", final.get("Masses_Msun", math.nan))
+        print(f"{name:18s} {selected:14.4e} {realized:14.4e} {horizon:14.4e} {mdisk:14.4e} {mbh:14.4e}")
+
+
+def make_plots(raw_rows, state_rows):
     try:
         import matplotlib.pyplot as plt
     except Exception as e:
         print(f"Plotting skipped: {e}")
         return
-    if rows:
-        fig, ax = plt.subplots()
-        t = np.array([r["timeMyr"] for r in rows])
-        for key in RAW_KEYS:
-            y = np.array([r.get(f"{key}_Msun_yr", np.nan) for r in rows])
-            ax.plot(t, y, label=key)
-        ax.axvline(20.0, linestyle="--")
-        ax.set_yscale("log")
-        ax.set_xlabel("Time [Myr]")
-        ax.set_ylabel("Raw accretion estimator [Msun/yr]")
-        ax.legend(fontsize=8, ncol=2)
-        fig.tight_layout()
-        fig.savefig(HERE / "galaxy_accretion_rates.png", dpi=180)
-        plt.close(fig)
 
+    fig, ax = plt.subplots()
+    for model_id, (name, _) in MODELS.items():
+        rr = [r for r in raw_rows if r.get("model_id") == model_id]
+        if not rr:
+            continue
+        ax.plot([r["galaxyTimeMyr"] for r in rr],
+                [r.get("selected_raw_Msun_yr", np.nan) for r in rr],
+                label=name)
+    ax.axvline(SETTLE_MYR, linestyle="--")
+    ax.set_yscale("log")
+    ax.set_xlabel("Galaxy time [Myr]")
+    ax.set_ylabel("Selected raw supply estimator [Msun/yr]")
+    ax.legend(fontsize=8, ncol=2)
+    fig.tight_layout()
+    fig.savefig(HERE / "galaxy_branch_selected_rates.png", dpi=180)
+    plt.close(fig)
+
+    fig, ax = plt.subplots()
+    for model_id, (name, _) in MODELS.items():
+        sr = [r for r in state_rows if r.get("model_id") == model_id]
+        if not sr:
+            continue
+        ax.plot([r["galaxyTimeMyr"] for r in sr],
+                [r.get("BH_Mass_Msun", r.get("Masses_Msun", np.nan)) for r in sr],
+                marker="o", label=name)
+    ax.set_xlabel("Galaxy time [Myr]")
+    ax.set_ylabel("BH mass [Msun]")
+    ax.legend(fontsize=8, ncol=2)
+    fig.tight_layout()
+    fig.savefig(HERE / "galaxy_branch_bh_mass.png", dpi=180)
+    plt.close(fig)
+
+    env = [r for r in raw_rows if r.get("model_id") == 5]
+    if env:
         fig, ax = plt.subplots()
         for key in ("FENV", "FTH", "FWIND", "FROT"):
-            y = np.array([r.get(key, np.nan) for r in rows])
-            ax.plot(t, y, label=key)
-        ax.axvline(20.0, linestyle="--")
-        ax.set_xlabel("Time [Myr]")
-        ax.set_ylabel("Environmental factor")
+            ax.plot([r["galaxyTimeMyr"] for r in env], [r.get(key, np.nan) for r in env], label=key)
+        ax.set_xlabel("Galaxy time [Myr]")
+        ax.set_ylabel("Mode-5 environmental factor")
         ax.set_ylim(0.0, 1.05)
         ax.legend()
         fig.tight_layout()
         fig.savefig(HERE / "galaxy_environment_factors.png", dpi=180)
         plt.close(fig)
 
-    if states:
-        fig, ax = plt.subplots()
-        t = np.array([r["time_Myr"] for r in states])
-        for key in ("BH_MdotSupply_Msun_yr", "BH_MdotFeed_Msun_yr",
-                    "BH_MdotHorizon_Msun_yr", "BH_MdotWind_Msun_yr"):
-            y = np.array([r.get(key, np.nan) for r in states])
-            ax.plot(t, y, marker="o", label=key.replace("_Msun_yr", ""))
-        ax.axvline(20.0, linestyle="--")
-        ax.set_yscale("symlog", linthresh=1.0e-12)
-        ax.set_xlabel("Time [Myr]")
-        ax.set_ylabel("Selected-path rate [Msun/yr]")
-        ax.legend(fontsize=8)
-        fig.tight_layout()
-        fig.savefig(HERE / "galaxy_bh_reservoir_rates.png", dpi=180)
-        plt.close(fig)
 
 def main():
-    rows = parse_log()
-    states = parse_snapshots()
-    write_csv(HERE / "galaxy_accretion_estimators.csv", rows)
-    write_csv(HERE / "galaxy_bh_state.csv", states)
-    print_rate_summary(rows)
+    raw_rows = parse_log(HERE / "logs" / "settle.log", "settle", None, None)
+    state_rows = parse_snapshot_dir(HERE / "outputs" / "settle", "settle", None, None)
+
+    for model_id, (name, _) in MODELS.items():
+        raw_rows += parse_log(HERE / "logs" / f"model_{model_id}_{name}.log", "branch", model_id, name)
+        state_rows += parse_snapshot_dir(HERE / "outputs" / f"model_{model_id}_{name}", "branch", model_id, name)
+
+    write_csv(HERE / "galaxy_accretion_estimators.csv", raw_rows)
+    write_csv(HERE / "galaxy_bh_state.csv", state_rows)
+    summarize(raw_rows, state_rows)
+    make_plots(raw_rows, state_rows)
     print()
-    print(f"Raw estimator samples: {len(rows)}")
-    print(f"BH snapshot states: {len(states)}")
-    print("Saved galaxy_accretion_estimators.csv")
-    print("Saved galaxy_bh_state.csv")
-    make_plots(rows, states)
-    print("Saved comparison plots when matplotlib is available.")
+    print(f"Saved {len(raw_rows)} raw-estimator samples and {len(state_rows)} BH snapshot states.")
+    print("Outputs: galaxy_accretion_estimators.csv, galaxy_bh_state.csv, galaxy_branch_selected_rates.png, galaxy_branch_bh_mass.png")
+
 
 if __name__ == "__main__":
     main()

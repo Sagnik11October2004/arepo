@@ -361,6 +361,58 @@ BHBenchmarkTNGKineticBurstFactor        20.0
 """
     (HERE / "param_galaxy.txt").write_text(param)
 
+    def set_param(text: str, key: str, value: str) -> str:
+        lines = text.splitlines()
+        found = False
+        for i, line in enumerate(lines):
+            if line.startswith(key):
+                lines[i] = f"{key:<40s}{value}"
+                found = True
+                break
+        if not found:
+            raise KeyError(key)
+        return "\n".join(lines) + "\n"
+
+    # Stage 1: one common BH-off settling run.
+    settle_times = [5, 10, 15, 20]
+    with (HERE / "outputlists" / "settle_times.txt").open("w") as f:
+        for t in settle_times:
+            f.write(f"{t / MYR_PER_CODE:.17g} 2\n")
+
+    branch_times = [1, 5, 10, 20, 30, 40, 50, 60]
+    with (HERE / "outputlists" / "branch_times.txt").open("w") as f:
+        for t in branch_times:
+            f.write(f"{t / MYR_PER_CODE:.17g} 2\n")
+
+    settle = param
+    settle = set_param(settle, "OutputDir", "outputs/settle")
+    settle = set_param(settle, "OutputListFilename", "outputlists/settle_times.txt")
+    settle = set_param(settle, "TimeMax", f"{SETTLE_MYR / MYR_PER_CODE:.17g}")
+    settle = set_param(settle, "BHBenchmarkAccretionModel", "5")
+    settle = set_param(settle, "BHBenchmarkStartTimeMyr", "1.0e9")
+    (HERE / "param_settle.txt").write_text(settle)
+
+    # Stage 2: branch the same settled snapshot into all six accretion laws.
+    model_names = {
+        0: "tng_bondi",
+        1: "boosted_bondi",
+        2: "am_bondi",
+        3: "ffr_volume",
+        4: "ffr_shell",
+        5: "ffr_env",
+    }
+    params_dir = HERE / "params"
+    params_dir.mkdir(parents=True, exist_ok=True)
+    for model, name in model_names.items():
+        branch = param
+        branch = set_param(branch, "InitCondFile", "ics/settled_galaxy")
+        branch = set_param(branch, "OutputDir", f"outputs/model_{model}_{name}")
+        branch = set_param(branch, "OutputListFilename", "outputlists/branch_times.txt")
+        branch = set_param(branch, "TimeMax", f"{(END_MYR - SETTLE_MYR) / MYR_PER_CODE:.17g}")
+        branch = set_param(branch, "BHBenchmarkAccretionModel", str(model))
+        branch = set_param(branch, "BHBenchmarkStartTimeMyr", "0.0")
+        (params_dir / f"model_{model}_{name}.txt").write_text(branch)
+
     meta = {
         "seed": SEED,
         "box_kpc": BOX_KPC,
@@ -389,7 +441,7 @@ BHBenchmarkTNGKineticBurstFactor        20.0
     print(f"Wrote {path}")
     print(f"Particles: gas={n0}, DM={n1}, stars={n4}, BH=1; total={n0+n1+n4+1}")
     print(f"BH capture off until {SETTLE_MYR:g} Myr; run ends at {END_MYR:g} Myr")
-    print("Wrote param_galaxy.txt and outputlists/galaxy_times.txt")
+    print("Wrote common settle run plus six post-settle accretion branches")
 
 
 if __name__ == "__main__":
