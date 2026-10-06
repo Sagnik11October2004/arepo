@@ -7,3 +7,19 @@ rotating/ics/*/*.metadata.json
 turbulent/ics/*/*.metadata.json
 ic_manifest.json
 verification_report.json
+
+# Generated run matrix. The generator is the source of truth.
+bhl/params/*.txt
+rotating/params/*.txt
+turbulent/params/*.txt
+common/outputlists/*.txt
+run_manifest.json
+
+# Runtime products.
+bhl/outputs/
+rotating/outputs/
+turbulent/outputs/
+bhl/logs/
+rotating/logs/
+turbulent/logs/
+param_flow_diag_base.txt
