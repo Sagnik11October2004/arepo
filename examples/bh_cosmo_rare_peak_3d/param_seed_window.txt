@@ -16,7 +16,7 @@ CpuTimeBetRestartFile                   7200
 FlushCpuTimeDiff                        120
 ResubmitOn                              0
 ResubmitCommand                         none
-MaxMemSize                              3000
+MaxMemSize                              1500
 
 TimeBegin                               0.043478260869565216
 TimeMax                                 0.047619047619047616
