@@ -63,30 +63,45 @@ if [[ ! -f output_seed_window/end ]]; then
   exit 1
 fi
 
+python3 audit_seed_event.py \
+  logs/seed_window.log \
+  ics/common_seed_metadata.json \
+  --z-min 20 --z-max 22 --expected-seed-mass 1.0e5
+
 Z20_SNAP="$(ls output_seed_window/snap_*.hdf5 2>/dev/null | sort | tail -n 1)"
 if [[ -z "$Z20_SNAP" ]]; then
   echo "ERROR: no z=20 snapshot found." >&2
   exit 1
 fi
 
-python3 - "$Z20_SNAP" <<'PY'
-import h5py, numpy as np, sys
+python3 - "$Z20_SNAP" ics/common_seed_metadata.json <<'PY'
+import json, h5py, numpy as np, sys
 p=sys.argv[1]
+meta_path=sys.argv[2]
 h=0.68
+meta=json.load(open(meta_path))
 with h5py.File(p,"r") as f:
     z=float(f["Header"].attrs["Redshift"])
     if "PartType5" not in f:
         raise SystemExit("No BH was seeded in 20<z<22. Inspect logs/seed_window.log and the 1e7 Msun host threshold.")
     g=f["PartType5"]
     n=len(g["ParticleIDs"])
+    ids=np.asarray(g["ParticleIDs"], dtype=np.uint64)
     masses=np.asarray(g["Masses"], dtype=float)*1e10/h
 if abs(z-20.0)>2e-3:
     raise SystemExit(f"Latest seed-window snapshot is not z=20: z={z}")
 if n != 1:
     raise SystemExit(f"Single-seed run expected exactly one BH; found {n}")
+if int(ids[0]) != int(meta["bh_id"]):
+    raise SystemExit(f"Final BH ID {int(ids[0])} does not match seed-event ID {meta['bh_id']}")
 if abs(masses[0]/1e5-1.0)>2e-6:
     raise SystemExit(f"Capture-off seed should remain 1e5 Msun; found {masses[0]} Msun")
-print(f"Validated common seeded state: {p} z={z:.6f} N_BH={n} M_BH={masses[0]:.6g} Msun")
+print(
+    f"Validated common seeded state: {p} z={z:.6f} N_BH={n} "
+    f"M_BH={masses[0]:.6g} Msun BH_ID={int(ids[0])} "
+    f"seed_z={meta['seed_redshift']:.6f} "
+    f"Mhost={meta['host_fof_mass_msun']:.6e} Msun"
+)
 PY
 
 python3 make_common_branch_ic.py "$Z20_SNAP" ics/common_z20_seeded.hdf5
@@ -94,4 +109,5 @@ python3 make_common_branch_ic.py "$Z20_SNAP" ics/common_z20_seeded.hdf5
 echo
 echo "Rare-peak common state is ready:"
 echo "  $HERE/ics/common_z20_seeded.hdf5"
+echo "  $HERE/ics/common_seed_metadata.json"
 echo "Use prepare_branch_params.py / run_branches.sh for post-z=20 science branches."
