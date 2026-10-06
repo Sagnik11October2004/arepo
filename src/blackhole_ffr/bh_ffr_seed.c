@@ -520,6 +520,17 @@ int bh_ffr_seed_from_fof(void)
   if(!(All.cf_redshift > All.BHSeedMinRedshift))
     return 0;
 
+#ifdef BH_FFR_SEED_ONLY_MOST_MASSIVE
+  /* Controlled single-seed experiments may request exactly one BH in the
+   * globally most massive eligible FoF halo.  Once any Type-5 BH exists,
+   * later FoF passes must not seed another halo.  This is compile-time gated
+   * so the validated/default multi-halo seeding behaviour is unchanged. */
+  long long local_existing_bh = NumBHFFR, global_existing_bh = 0;
+  MPI_Allreduce(&local_existing_bh, &global_existing_bh, 1, MPI_LONG_LONG_INT, MPI_SUM, MPI_COMM_WORLD);
+  if(global_existing_bh > 0)
+    return 0;
+#endif
+
   const double halo_threshold_code = bh_ffr_seed_msun_to_code_mass(All.BHSeedHaloMassMsun);
   const double seed_mass_code = bh_ffr_seed_msun_to_code_mass(All.BHSeedMassMsun);
 
@@ -527,8 +538,24 @@ int bh_ffr_seed_from_fof(void)
   struct bh_ffr_seed_candidate *candidates = bh_ffr_collect_seed_candidates(&ncandidates, halo_threshold_code);
 
   int seeded_transactions = 0;
+#ifdef BH_FFR_SEED_ONLY_MOST_MASSIVE
+  int best = -1;
+  for(int c = 0; c < ncandidates; c++)
+    if(best < 0 || candidates[c].HaloMass > candidates[best].HaloMass ||
+       (candidates[c].HaloMass == candidates[best].HaloMass && candidates[c].GrNr < candidates[best].GrNr))
+      best = c;
+
+  if(best >= 0)
+    {
+      mpi_printf("BH_FFR: single-seed mode selected most massive eligible FoF group %d with Mhalo=%g Msun.\n",
+                 candidates[best].GrNr,
+                 candidates[best].HaloMass * All.UnitMass_in_g / (All.HubbleParam * SOLAR_MASS));
+      seeded_transactions += bh_ffr_seed_one_candidate(&candidates[best], seed_mass_code);
+    }
+#else
   for(int c = 0; c < ncandidates; c++)
     seeded_transactions += bh_ffr_seed_one_candidate(&candidates[c], seed_mass_code);
+#endif
 
   int local_converted = bh_ffr_rearrange_seeded_gas_cells();
   int global_converted = 0;
