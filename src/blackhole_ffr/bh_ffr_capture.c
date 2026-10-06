@@ -37,6 +37,7 @@ struct bh_ffr_capture_result
   MyDouble EnvFFRRawRate;
   MyDouble EnvFFRShellGasMass;
   MyDouble EnvFFRShellRawRate;
+  MyDouble EnvFFRShellGeometricRate;
 
   /* Algebraic model result before the conservative cell sink is applied. */
   MyDouble ModelRawRate;
@@ -99,6 +100,7 @@ typedef struct
   MyDouble EnvFFRRawRate;
   MyDouble EnvFFRShellGasMass;
   MyDouble EnvFFRShellRawRate;
+  MyDouble EnvFFRShellGeometricRate;
   int MinHydroTimeBin;
   MyDouble ActiveApertureGasMass;
   int SinkMinHydroTimeBin;
@@ -229,6 +231,7 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvFFRRawRate = out->EnvFFRRawRate;
           res->EnvFFRShellGasMass = out->EnvFFRShellGasMass;
           res->EnvFFRShellRawRate = out->EnvFFRShellRawRate;
+          res->EnvFFRShellGeometricRate = out->EnvFFRShellGeometricRate;
           for(int k = 0; k < 3; k++)
             {
               res->EnvVelocityVolumeWeighted[k] = out->EnvVelocityVolumeWeighted[k];
@@ -243,6 +246,7 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvFFRRawRate += out->EnvFFRRawRate;
           res->EnvFFRShellGasMass += out->EnvFFRShellGasMass;
           res->EnvFFRShellRawRate += out->EnvFFRShellRawRate;
+          res->EnvFFRShellGeometricRate += out->EnvFFRShellGeometricRate;
           for(int k = 0; k < 3; k++)
             {
               res->EnvVelocityVolumeWeighted[k] += out->EnvVelocityVolumeWeighted[k];
@@ -483,6 +487,11 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
                   out.EnvFFRShellGasMass += P[j].Mass;
                   out.EnvFFRShellRawRate +=
                       P[j].Mass * lambda_ffr * bh_benchmark_ffr_shell_normalization();
+
+                  const double lambda_geom =
+                      bh_ffr_capture_lambda_core(&rate_bh, r, 1.0, All.BHFreeFallAlpha);
+                  out.EnvFFRShellGeometricRate +=
+                      P[j].Mass * lambda_geom * bh_benchmark_ffr_shell_normalization();
                 }
             }
 
@@ -600,6 +609,7 @@ static void bh_ffr_prepare_benchmark_rates(void)
       env.GasMass = res->EnvGasMass;
       env.FFRRawRate = res->EnvFFRRawRate;
       env.FFRShellRawRate = res->EnvFFRShellRawRate;
+      env.FFRShellGeometricRate = res->EnvFFRShellGeometricRate;
 
       if(res->EnvGasMass > 0)
         {
@@ -672,9 +682,9 @@ static void bh_ffr_prepare_benchmark_rates(void)
         }
       else if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_MACH_FFR_SHELL)
         {
-          /* The physical cell sink is the normalized shell FFR lambda, whose
-           * unsuppressed sum is EnvFFRShellRawRate and still contains A_ff.
-           * Scale that lambda to the hybrid operational rate directly. */
+          /* The physical cell sink still uses the normalized shell FFR lambda
+           * (and therefore contains A_ff). Scale that lambda so its summed
+           * removal rate equals the unit-efficiency geometric Mach-FFR rate. */
           if(env.FFRShellRawRate > 0)
             res->LambdaScale = rate.OperationalRate / env.FFRShellRawRate;
         }

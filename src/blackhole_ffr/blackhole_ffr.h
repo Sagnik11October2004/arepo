@@ -109,6 +109,7 @@ struct bh_benchmark_environment
   double HydrogenNumberDensity;
   double FFRRawRate;
   double FFRShellRawRate;
+  double FFRShellGeometricRate;
 };
 
 struct bh_benchmark_rate_result
