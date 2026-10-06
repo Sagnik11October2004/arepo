@@ -70,35 +70,65 @@ static double bh_benchmark_density_boost_core(double n_h, int mode, double alpha
   return 1.0;
 }
 
-static double bh_benchmark_mach_suppressor_core(double cs, double vrel)
+/* Benchmark reference/capture ceiling for the gamma=5/3 controlled suite.
+ *
+ * For subsonic wind, resolved point-accretor calculations recover the
+ * spherical Bondi rate, lambda=1/4, independent of subsonic wind speed.
+ * For Mach >= 1, use the Ruffert-Arnett interpolation between Bondi and
+ * Hoyle-Lyttleton:
+ *
+ *   Mdot = Mdot_TNG * sqrt(lambda^2 + M^2) / (1 + M^2)^2
+ *
+ * where Mdot_TNG = 4*pi*G^2*M^2*rho/cs^3 and lambda=1/4.
+ */
+static double bh_benchmark_capture_ceiling_core(double g, double mass, double rho,
+                                                double cs, double vrel)
 {
-  if(!isfinite(cs) || !(cs > 0) || !isfinite(vrel) || vrel < 0)
-    terminate("BH_BENCHMARK: invalid Mach suppressor inputs cs=%g vrel=%g", cs, vrel);
+  if(!(mass > 0) || !(rho > 0))
+    return 0.0;
+  if(!(g > 0) || !(cs > 0) || vrel < 0 || !isfinite(g) || !isfinite(mass) ||
+     !isfinite(rho) || !isfinite(cs) || !isfinite(vrel))
+    terminate("BH_BENCHMARK: invalid hybrid-ceiling inputs G=%g M=%g rho=%g cs=%g vrel=%g",
+              g, mass, rho, cs, vrel);
 
+  const double lambda_bondi = 0.25;
+  const double tng = bh_benchmark_tng_bondi_core(g, mass, rho, cs);
   const double mach = vrel / cs;
-  const double q = 1.0 + mach * mach;
-  const double suppressor = 1.0 / (q * sqrt(q));
 
-  if(!isfinite(suppressor) || suppressor < 0 || suppressor > 1.0)
-    terminate("BH_BENCHMARK: invalid Mach suppressor=%g for M=%g", suppressor, mach);
+  double rate;
+  if(mach < 1.0)
+    rate = lambda_bondi * tng;
+  else
+    {
+      const double q = 1.0 + mach * mach;
+      rate = tng * sqrt(lambda_bondi * lambda_bondi + mach * mach) / (q * q);
+    }
 
-  return suppressor;
+  if(!isfinite(rate) || rate < 0)
+    terminate("BH_BENCHMARK: invalid hybrid capture ceiling=%g for Mach=%g", rate, mach);
+  return rate;
 }
 
-static double bh_benchmark_mach_ffr_shell_core(double shell_geometric_rate,
-                                                double cs, double vrel, double *suppressor)
+static double bh_benchmark_supply_limited_ffr_core(double shell_geometric_rate,
+                                                    double capture_ceiling,
+                                                    double *supply_limiter)
 {
-  if(!isfinite(shell_geometric_rate) || shell_geometric_rate < 0)
-    terminate("BH_BENCHMARK: invalid Mach-FFR geometric shell rate=%g", shell_geometric_rate);
+  if(!isfinite(shell_geometric_rate) || shell_geometric_rate < 0 ||
+     !isfinite(capture_ceiling) || capture_ceiling < 0)
+    terminate("BH_BENCHMARK: invalid supply-limited inputs shell=%g ceiling=%g",
+              shell_geometric_rate, capture_ceiling);
 
-  const double s = bh_benchmark_mach_suppressor_core(cs, vrel);
-  if(suppressor != NULL)
-    *suppressor = s;
+  double limiter = 1.0;
+  if(shell_geometric_rate > 0)
+    limiter = dmin(1.0, capture_ceiling / shell_geometric_rate);
 
-  const double rate = shell_geometric_rate * s;
-  if(!isfinite(rate) || rate < 0)
-    terminate("BH_BENCHMARK: invalid Mach-FFR rate=%g shellGeom=%g suppressor=%g",
-              rate, shell_geometric_rate, s);
+  const double rate = dmin(shell_geometric_rate, capture_ceiling);
+  if(supply_limiter != NULL)
+    *supply_limiter = limiter;
+
+  if(!isfinite(rate) || rate < 0 || !isfinite(limiter) || limiter < 0 || limiter > 1.0)
+    terminate("BH_BENCHMARK: invalid supply-limited result rate=%g limiter=%g shell=%g ceiling=%g",
+              rate, limiter, shell_geometric_rate, capture_ceiling);
 
   return rate;
 }
@@ -133,8 +163,8 @@ const char *bh_benchmark_accretion_model_name(int model)
         return "ffr";
       case BH_BENCHMARK_ACC_FFR_SHELL:
         return "ffr-shell";
-      case BH_BENCHMARK_ACC_MACH_FFR_SHELL:
-        return "mach-ffr-shell";
+      case BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR:
+        return "supply-limited-ffr";
       default:
         return "unknown";
     }
@@ -167,17 +197,19 @@ double bh_benchmark_eddington_rate_code(double bh_mass)
 void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *env, double bh_mass,
                                         double raw_rates[BH_BENCHMARK_ACC_COUNT],
                                         double *boost_factor, double *am_limiter,
-                                        double *mach_suppressor)
+                                        double *hybrid_capture_ceiling,
+                                        double *hybrid_supply_limiter)
 {
   if(env == NULL || raw_rates == NULL || boost_factor == NULL || am_limiter == NULL ||
-     mach_suppressor == NULL)
+     hybrid_capture_ceiling == NULL || hybrid_supply_limiter == NULL)
     terminate("BH_BENCHMARK_ALL: null diagnostic input/output");
 
   for(int model = 0; model < BH_BENCHMARK_ACC_COUNT; model++)
     raw_rates[model] = 0.0;
   *boost_factor = 1.0;
   *am_limiter = 1.0;
-  *mach_suppressor = 1.0;
+  *hybrid_capture_ceiling = 0.0;
+  *hybrid_supply_limiter = 1.0;
 
   if(env->GasMass <= 0 || bh_mass <= 0)
     return;
@@ -200,10 +232,14 @@ void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *e
 
   raw_rates[BH_BENCHMARK_ACC_FFR] = env->FFRRawRate;
   raw_rates[BH_BENCHMARK_ACC_FFR_SHELL] = env->FFRShellRawRate;
-  raw_rates[BH_BENCHMARK_ACC_MACH_FFR_SHELL] =
-      bh_benchmark_mach_ffr_shell_core(env->FFRShellGeometricRate,
-                                       env->SoundSpeed, env->RelativeSpeed,
-                                       mach_suppressor);
+
+  *hybrid_capture_ceiling =
+      bh_benchmark_capture_ceiling_core(All.G, bh_mass, env->Density,
+                                        env->SoundSpeed, env->RelativeSpeed);
+  raw_rates[BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR] =
+      bh_benchmark_supply_limited_ffr_core(env->FFRShellGeometricRate,
+                                           *hybrid_capture_ceiling,
+                                           hybrid_supply_limiter);
 
   for(int model = 0; model < BH_BENCHMARK_ACC_COUNT; model++)
     if(!isfinite(raw_rates[model]) || raw_rates[model] < 0)
@@ -227,7 +263,9 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
   memset(out, 0, sizeof(*out));
   out->BoostFactor = 1.0;
   out->AngularMomentumLimiter = 1.0;
-  out->MachSuppressor = 1.0;
+  out->HybridCaptureCeiling = 0.0;
+  out->HybridSupplyRate = env->FFRShellGeometricRate;
+  out->HybridSupplyLimiter = 1.0;
   out->EddingtonRate = bh_benchmark_eddington_rate_code(bh_mass);
 
   if(env->GasMass <= 0 || bh_mass <= 0)
@@ -263,11 +301,14 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
         out->RawRate = env->FFRShellRawRate;
         break;
 
-      case BH_BENCHMARK_ACC_MACH_FFR_SHELL:
+      case BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR:
+        out->HybridCaptureCeiling =
+            bh_benchmark_capture_ceiling_core(All.G, bh_mass, env->Density,
+                                              env->SoundSpeed, env->RelativeSpeed);
         out->RawRate =
-            bh_benchmark_mach_ffr_shell_core(env->FFRShellGeometricRate,
-                                             env->SoundSpeed, env->RelativeSpeed,
-                                             &out->MachSuppressor);
+            bh_benchmark_supply_limited_ffr_core(env->FFRShellGeometricRate,
+                                                 out->HybridCaptureCeiling,
+                                                 &out->HybridSupplyLimiter);
         break;
 
       default:
@@ -322,17 +363,32 @@ void bh_benchmark_accretion_self_test(void)
   if(!(bhl > 0) || !(bhl < b))
     terminate("BH_BENCHMARK: BHL relative-velocity self-test failed BHL=%g TNG=%g", bhl, b);
 
-  double ms = 0.0;
-  const double shell_geom = 1300.0;
-  const double mffr0 = bh_benchmark_mach_ffr_shell_core(shell_geom, cs, 0.0, &ms);
-  if(fabs(mffr0 / shell_geom - 1.0) > 2.0e-14 || fabs(ms - 1.0) > 2.0e-14)
-    terminate("BH_BENCHMARK: Mach-FFR zero-bulk self-test failed rate=%g suppressor=%g", mffr0, ms);
+  const double bondi_ceiling =
+      bh_benchmark_capture_ceiling_core(g, mass, rho, cs, 0.5 * cs);
+  if(fabs(bondi_ceiling / (0.25 * b) - 1.0) > 2.0e-14)
+    terminate("BH_BENCHMARK: subsonic capture-ceiling self-test failed got=%g expected=%g",
+              bondi_ceiling, 0.25 * b);
 
-  const double vmach2 = 2.0 * cs;
-  const double expected_s = 1.0 / (5.0 * sqrt(5.0));
-  const double mffr2 = bh_benchmark_mach_ffr_shell_core(shell_geom, cs, vmach2, &ms);
-  if(fabs(ms / expected_s - 1.0) > 2.0e-14 ||
-     fabs(mffr2 / (shell_geom * expected_s) - 1.0) > 2.0e-14)
-    terminate("BH_BENCHMARK: Mach-FFR M=2 self-test failed rate=%g suppressor=%g expected=%g",
-              mffr2, ms, expected_s);
+  const double mach2_ceiling =
+      bh_benchmark_capture_ceiling_core(g, mass, rho, cs, 2.0 * cs);
+  const double expected_mach2 =
+      b * sqrt(0.25 * 0.25 + 4.0) / 25.0;
+  if(fabs(mach2_ceiling / expected_mach2 - 1.0) > 2.0e-14)
+    terminate("BH_BENCHMARK: Mach-2 capture-ceiling self-test failed got=%g expected=%g",
+              mach2_ceiling, expected_mach2);
+
+  double sl = 0.0;
+  const double supply = 13.0;
+  const double hybrid_capture_limited =
+      bh_benchmark_supply_limited_ffr_core(supply, 5.0, &sl);
+  if(fabs(hybrid_capture_limited - 5.0) > 2.0e-14 ||
+     fabs(sl - 5.0 / 13.0) > 2.0e-14)
+    terminate("BH_BENCHMARK: capture-limited hybrid self-test failed rate=%g limiter=%g",
+              hybrid_capture_limited, sl);
+
+  const double hybrid_supply_limited =
+      bh_benchmark_supply_limited_ffr_core(supply, 20.0, &sl);
+  if(fabs(hybrid_supply_limited - supply) > 2.0e-14 || fabs(sl - 1.0) > 2.0e-14)
+    terminate("BH_BENCHMARK: supply-limited hybrid self-test failed rate=%g limiter=%g",
+              hybrid_supply_limited, sl);
 }

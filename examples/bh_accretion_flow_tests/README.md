@@ -77,14 +77,17 @@ The generated matrix contains 60 planned passive runs:
 All of these use direct accretion, no feedback and
 `BHBenchmarkEddingtonFactor=1e-8`, so the selected shell-FFR sink is dynamically
 negligible. The diagnostic line `BH_BENCHMARK_ALL` reports TNG Bondi, boosted
-BHL, AM-Bondi, volume FFR, shell FFR, and Mach-suppressed shell FFR raw rates
-from the same gas environment. The benchmark-only Mach-FFR mode is
+BHL, AM-Bondi, volume FFR, shell FFR, and the supply-limited hybrid raw rate
+from the same gas environment. Benchmark model 5 is
 
-`FFR_SHELL_GEOM * (1 + (v_bulk/c_s)^2)^(-3/2)`,
+`HYBRID_FFR = min(FFR_SHELL_GEOM, CAPTURE_CEILING)`.
 
-where `FFR_SHELL_GEOM` is the shell free-fall supply evaluated at unit efficiency (`A_ff=1`) and `v_bulk` is the aperture-mean gas velocity relative to the BH. Symmetric
-radial inflow is therefore not penalized by its inward speed, while a coherent
-translating BHL wind is suppressed.
+`FFR_SHELL_GEOM` is the shell free-fall supply evaluated at unit efficiency
+(`A_ff=1`). For the gamma=5/3 controlled suite, `CAPTURE_CEILING` is the
+exact spherical Bondi rate (`lambda=1/4`) for subsonic wind and the
+Ruffert-Arnett interpolation for Mach >= 1. The diagnostic line prints
+`FFR_SHELL_GEOM`, `HYBRID_FFR`, `captureceil`, and `supplylim` so the
+limiting branch is auditable.
 
 Every output-list entry uses `DumpFlag=2`: a full snapshot is written but the
 compiled FoF module is not run. FoF remains in the build only because the

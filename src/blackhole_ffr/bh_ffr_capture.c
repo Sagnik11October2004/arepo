@@ -136,7 +136,7 @@ static double bh_ffr_proper_radius_to_coordinate_radius(double proper_radius)
 static int bh_benchmark_uses_ffr_shell(void)
 {
   return All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR_SHELL ||
-         All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_MACH_FFR_SHELL;
+         All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR;
 }
 
 static double bh_benchmark_ffr_shell_normalization(void)
@@ -379,7 +379,7 @@ static double bh_ffr_capture_lambda(const data_in *bh, double coordinate_distanc
            bh_ffr_capture_lambda_core(bh, coordinate_distance, All.BHFreeFallA, All.BHFreeFallAlpha);
 
   if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR_SHELL ||
-     All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_MACH_FFR_SHELL)
+     All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR)
     return bh->LambdaScale * bh_benchmark_ffr_shell_normalization() *
            bh_ffr_capture_lambda_core(bh, coordinate_distance, All.BHFreeFallA, All.BHFreeFallAlpha);
 
@@ -642,16 +642,18 @@ static void bh_ffr_prepare_benchmark_rates(void)
       struct bh_benchmark_rate_result rate;
       bh_benchmark_compute_accretion(&env, BHP[b].BHMass, &rate);
 
-      double raw_all[BH_BENCHMARK_ACC_COUNT], all_boost_factor, all_am_limiter, all_mach_suppressor;
+      double raw_all[BH_BENCHMARK_ACC_COUNT], all_boost_factor, all_am_limiter;
+      double all_hybrid_capture_ceiling, all_hybrid_supply_limiter;
       bh_benchmark_compute_all_raw_rates(&env, BHP[b].BHMass, raw_all,
                                          &all_boost_factor, &all_am_limiter,
-                                         &all_mach_suppressor);
+                                         &all_hybrid_capture_ceiling,
+                                         &all_hybrid_supply_limiter);
 
       printf("BH_BENCHMARK_ALL: ID=%llu task=%d selected=%s target=%s feedback=%d "
              "Mgas=%.17g rho=%.17g cs=%.17g vrel=%.17g Vphi=%.17g nH=%.17g "
              "TNG=%.17g BOOSTED=%.17g AM=%.17g FFR_VOLUME=%.17g FFR_SHELL=%.17g "
-             "FFR_SHELL_GEOM=%.17g MACH_FFR=%.17g "
-             "boost=%.17g amlim=%.17g machsup=%.17g\n",
+             "FFR_SHELL_GEOM=%.17g HYBRID_FFR=%.17g "
+             "boost=%.17g amlim=%.17g captureceil=%.17g supplylim=%.17g\n",
              (unsigned long long)P[p].ID, ThisTask,
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT ? "direct" : "reservoir",
@@ -664,8 +666,9 @@ static void bh_ffr_prepare_benchmark_rates(void)
              raw_all[BH_BENCHMARK_ACC_FFR],
              raw_all[BH_BENCHMARK_ACC_FFR_SHELL],
              env.FFRShellGeometricRate,
-             raw_all[BH_BENCHMARK_ACC_MACH_FFR_SHELL],
-             all_boost_factor, all_am_limiter, all_mach_suppressor);
+             raw_all[BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR],
+             all_boost_factor, all_am_limiter,
+             all_hybrid_capture_ceiling, all_hybrid_supply_limiter);
       fflush(stdout);
 
       res->ModelRawRate = rate.RawRate;
@@ -682,11 +685,11 @@ static void bh_ffr_prepare_benchmark_rates(void)
           if(rate.RawRate > 0)
             res->LambdaScale = rate.OperationalRate / rate.RawRate;
         }
-      else if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_MACH_FFR_SHELL)
+      else if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR)
         {
-          /* The physical cell sink still uses the normalized shell FFR lambda
-           * (and therefore contains A_ff). Scale that lambda so its summed
-           * removal rate equals the unit-efficiency geometric Mach-FFR rate. */
+          /* The hybrid rate is distributed over the shell with the existing
+           * FFR radial weights.  The physical shell lambda contains A_ff, so
+           * rescale it to the supply/capture-limited operational rate. */
           if(env.FFRShellRawRate > 0)
             res->LambdaScale = rate.OperationalRate / env.FFRShellRawRate;
         }
@@ -694,7 +697,7 @@ static void bh_ffr_prepare_benchmark_rates(void)
         res->UniformLambda = rate.OperationalRate / env.GasMass;
 
       if(!isfinite(res->LambdaScale) || res->LambdaScale < 0 ||
-         (All.BHBenchmarkAccretionModel != BH_BENCHMARK_ACC_MACH_FFR_SHELL &&
+         (All.BHBenchmarkAccretionModel != BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR &&
           res->LambdaScale > 1.0 + 1.0e-12) ||
          !isfinite(res->UniformLambda) || res->UniformLambda < 0)
         terminate("BH_BENCHMARK: invalid sink normalization scale=%g uniform=%g for ID=%llu",
@@ -702,14 +705,15 @@ static void bh_ffr_prepare_benchmark_rates(void)
 
       printf("BH_BENCHMARK: accretion ID=%llu task=%d model=%s target=%s feedback=%d "
              "Mgas=%.17g rho=%.17g cs=%.17g vrel=%.17g Vphi=%.17g nH=%.17g raw=%.17g edd=%.17g operational=%.17g "
-             "boost=%.17g amlim=%.17g machsup=%.17g\n",
+             "boost=%.17g amlim=%.17g captureceil=%.17g supply=%.17g supplylim=%.17g\n",
              (unsigned long long)P[p].ID, ThisTask,
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT ? "direct" : "reservoir",
              All.BHBenchmarkFeedbackModel,
              env.GasMass, env.Density, env.SoundSpeed, env.RelativeSpeed, env.Vphi,
              env.HydrogenNumberDensity, rate.RawRate, rate.EddingtonRate, rate.OperationalRate,
-             rate.BoostFactor, rate.AngularMomentumLimiter, rate.MachSuppressor);
+             rate.BoostFactor, rate.AngularMomentumLimiter,
+             rate.HybridCaptureCeiling, rate.HybridSupplyRate, rate.HybridSupplyLimiter);
       fflush(stdout);
     }
 }
