@@ -1,6 +1,6 @@
 % Rare-peak cosmology stage A: common BH-free evolution from z=99 to z=22.
 % 0.5 cMpc/h, 128^3 parent DM -> 128^3 gas + 128^3 DM.
-% sigma8=2 is encoded in music.conf.  Seeding is disabled here by zmin=100.
+% sigma8=2 is encoded in music.conf.  The compiled strict z<22 upper gate keeps this stage BH-free.
 
 InitCondFile                            ./ics
 OutputDir                               ./output_preseed
@@ -92,7 +92,7 @@ BHFeedbackRadius                        0.10
 % Single-most-massive eligible halo is enforced by the dedicated Config flag.
 BHSeedHaloMassMsun                      1.0e7
 BHSeedMassMsun                          1.0e5
-BHSeedMinRedshift                       100.0
+BHSeedMinRedshift                       20.0
 BHSeedMaxDonorFraction                  0.5
 
 BHFreeFallA                             0.0
