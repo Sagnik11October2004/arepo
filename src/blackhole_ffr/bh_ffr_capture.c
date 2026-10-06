@@ -35,6 +35,8 @@ struct bh_ffr_capture_result
   MyDouble EnvVelocityVolumeWeighted[3];
   MyDouble EnvAngularMomentum[3];
   MyDouble EnvFFRRawRate;
+  MyDouble EnvFFRShellGasMass;
+  MyDouble EnvFFRShellRawRate;
 
   /* Algebraic model result before the conservative cell sink is applied. */
   MyDouble ModelRawRate;
@@ -88,6 +90,8 @@ typedef struct
   MyDouble EnvVelocityVolumeWeighted[3];
   MyDouble EnvAngularMomentum[3];
   MyDouble EnvFFRRawRate;
+  MyDouble EnvFFRShellGasMass;
+  MyDouble EnvFFRShellRawRate;
   int MinHydroTimeBin;
   MyDouble ActiveApertureGasMass;
   int SinkMinHydroTimeBin;
@@ -118,6 +122,26 @@ static double bh_ffr_proper_radius_to_coordinate_radius(double proper_radius)
     terminate("BH_FFR: invalid proper-radius conversion R=%g a=%g", proper_radius, a);
 
   return proper_radius / a;
+}
+
+static int bh_benchmark_uses_ffr_shell(void)
+{
+  return All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR_SHELL;
+}
+
+static double bh_benchmark_ffr_shell_normalization(void)
+{
+  const double fin = BH_BENCHMARK_FFR_SHELL_INNER_FRACTION;
+  const double norm = BH_BENCHMARK_FFR_SHELL_NORMALIZATION;
+
+  if(!isfinite(fin) || !(fin > 0) || !(fin < 1) || !isfinite(norm) || !(norm > 0))
+    terminate("BH_BENCHMARK: invalid shell-FFR controls fin=%g norm=%g", fin, norm);
+
+  const double dlnr = log(1.0 / fin);
+  if(!isfinite(dlnr) || !(dlnr > 0))
+    terminate("BH_BENCHMARK: invalid shell-FFR logarithmic width fin=%g dlnr=%g", fin, dlnr);
+
+  return norm / dlnr;
 }
 
 static int bh_ffr_capture_particle_from_target(int target, const char *where)
@@ -195,6 +219,8 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvVolume = out->EnvVolume;
           res->EnvSoundVolumeWeighted = out->EnvSoundVolumeWeighted;
           res->EnvFFRRawRate = out->EnvFFRRawRate;
+          res->EnvFFRShellGasMass = out->EnvFFRShellGasMass;
+          res->EnvFFRShellRawRate = out->EnvFFRShellRawRate;
           for(int k = 0; k < 3; k++)
             {
               res->EnvVelocityVolumeWeighted[k] = out->EnvVelocityVolumeWeighted[k];
@@ -207,6 +233,8 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvVolume += out->EnvVolume;
           res->EnvSoundVolumeWeighted += out->EnvSoundVolumeWeighted;
           res->EnvFFRRawRate += out->EnvFFRRawRate;
+          res->EnvFFRShellGasMass += out->EnvFFRShellGasMass;
+          res->EnvFFRShellRawRate += out->EnvFFRShellRawRate;
           for(int k = 0; k < 3; k++)
             {
               res->EnvVelocityVolumeWeighted[k] += out->EnvVelocityVolumeWeighted[k];
@@ -338,6 +366,10 @@ static double bh_ffr_capture_lambda(const data_in *bh, double coordinate_distanc
     return bh->LambdaScale *
            bh_ffr_capture_lambda_core(bh, coordinate_distance, All.BHFreeFallA, All.BHFreeFallAlpha);
 
+  if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR_SHELL)
+    return bh->LambdaScale * bh_benchmark_ffr_shell_normalization() *
+           bh_ffr_capture_lambda_core(bh, coordinate_distance, All.BHFreeFallA, All.BHFreeFallAlpha);
+
   if(!isfinite(bh->UniformLambda) || bh->UniformLambda < 0)
     terminate("BH_BENCHMARK: invalid uniform sink lambda=%g", bh->UniformLambda);
   return bh->UniformLambda;
@@ -432,10 +464,25 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
           const double lambda_ffr =
               bh_ffr_capture_lambda_core(&rate_bh, r, All.BHFreeFallA, All.BHFreeFallAlpha);
           if(lambda_ffr > 0)
-            out.EnvFFRRawRate += P[j].Mass * lambda_ffr;
+            {
+              out.EnvFFRRawRate += P[j].Mass * lambda_ffr;
+
+              const double shell_inner_radius =
+                  BH_BENCHMARK_FFR_SHELL_INNER_FRACTION * bh->AccretionRadius;
+              if(r >= shell_inner_radius)
+                {
+                  out.EnvFFRShellGasMass += P[j].Mass;
+                  out.EnvFFRShellRawRate +=
+                      P[j].Mass * lambda_ffr * bh_benchmark_ffr_shell_normalization();
+                }
+            }
 
           continue;
         }
+
+      if(bh_benchmark_uses_ffr_shell() &&
+         r < BH_BENCHMARK_FFR_SHELL_INNER_FRACTION * bh->AccretionRadius)
+        continue;
 
       if(CapturePass == BH_FFR_CAPTURE_PASS_SHARES && bin > 0 && bin < out.MinHydroTimeBin)
         out.MinHydroTimeBin = bin;
@@ -543,6 +590,7 @@ static void bh_ffr_prepare_benchmark_rates(void)
       memset(&env, 0, sizeof(env));
       env.GasMass = res->EnvGasMass;
       env.FFRRawRate = res->EnvFFRRawRate;
+      env.FFRShellRawRate = res->EnvFFRShellRawRate;
 
       if(res->EnvGasMass > 0)
         {
@@ -583,7 +631,8 @@ static void bh_ffr_prepare_benchmark_rates(void)
       res->LambdaScale = 0.0;
       res->UniformLambda = 0.0;
 
-      if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR)
+      if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR ||
+         All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR_SHELL)
         {
           if(rate.RawRate > 0)
             res->LambdaScale = rate.OperationalRate / rate.RawRate;
@@ -890,8 +939,10 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
           BHP[b].BenchmarkCumulativeBHMassGrowth += dm;
         }
 
+      const double eligible_gas_mass =
+          bh_benchmark_uses_ffr_shell() ? res->EnvFFRShellGasMass : res->EnvGasMass;
       const double active_aperture_fraction =
-          res->EnvGasMass > 0 ? res->ActiveApertureGasMass / res->EnvGasMass : 0.0;
+          eligible_gas_mass > 0 ? res->ActiveApertureGasMass / eligible_gas_mass : 0.0;
       if(!isfinite(active_aperture_fraction) || active_aperture_fraction < 0 ||
          active_aperture_fraction > 1.0 + 2.0e-12)
         terminate("BH_BENCHMARK: invalid active accretion-aperture mass fraction=%g for ID=%llu",
@@ -921,6 +972,10 @@ static void bh_ffr_apply_capture_to_bhs(double *local_captured_mass, double loca
 
 void bh_ffr_capture_self_test(void)
 {
+  const double shell_norm = bh_benchmark_ffr_shell_normalization();
+  if(!isfinite(shell_norm) || !(shell_norm > 0))
+    terminate("BH_BENCHMARK: shell-FFR normalization self-test failed norm=%g", shell_norm);
+
   const double lambda1 = 0.3;
   const double lambda2 = 0.7;
   const double dt = 0.4;
