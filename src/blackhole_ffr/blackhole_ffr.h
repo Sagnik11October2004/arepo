@@ -265,6 +265,8 @@ const char *bh_benchmark_accretion_model_name(int model);
 double bh_benchmark_eddington_rate_code(double bh_mass);
 void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, double bh_mass,
                                     struct bh_benchmark_rate_result *out);
+void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *env, double bh_mass,
+                                        double raw_rates[5], double *boost_factor, double *am_limiter);
 void bh_benchmark_accretion_self_test(void);
 void bh_benchmark_tng_feedback_accumulate(void);
 void bh_benchmark_tng_feedback_inject(void);

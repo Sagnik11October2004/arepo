@@ -129,6 +129,44 @@ double bh_benchmark_eddington_rate_code(double bh_mass)
   return rate_code;
 }
 
+void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *env, double bh_mass,
+                                        double raw_rates[5], double *boost_factor, double *am_limiter)
+{
+  if(env == NULL || raw_rates == NULL || boost_factor == NULL || am_limiter == NULL)
+    terminate("BH_BENCHMARK_ALL: null diagnostic input/output");
+
+  for(int model = 0; model < 5; model++)
+    raw_rates[model] = 0.0;
+  *boost_factor = 1.0;
+  *am_limiter = 1.0;
+
+  if(env->GasMass <= 0 || bh_mass <= 0)
+    return;
+
+  raw_rates[BH_BENCHMARK_ACC_TNG_BONDI] =
+      bh_benchmark_tng_bondi_core(All.G, bh_mass, env->Density, env->SoundSpeed);
+
+  const double bhl =
+      bh_benchmark_bhl_core(All.G, bh_mass, env->Density, env->SoundSpeed, env->RelativeSpeed);
+
+  *boost_factor =
+      bh_benchmark_density_boost_core(env->HydrogenNumberDensity, All.BHBenchmarkBoostMode,
+                                      All.BHBenchmarkBoostAlpha, All.BHBenchmarkBoostDensityThreshold,
+                                      All.BHBenchmarkBoostBeta);
+  raw_rates[BH_BENCHMARK_ACC_BOOSTED_BONDI] = (*boost_factor) * bhl;
+
+  *am_limiter =
+      bh_benchmark_am_limiter_core(env->SoundSpeed, env->Vphi, All.BHBenchmarkAMViscosity);
+  raw_rates[BH_BENCHMARK_ACC_AM_BONDI] = (*am_limiter) * bhl;
+
+  raw_rates[BH_BENCHMARK_ACC_FFR] = env->FFRRawRate;
+  raw_rates[BH_BENCHMARK_ACC_FFR_SHELL] = env->FFRShellRawRate;
+
+  for(int model = 0; model < 5; model++)
+    if(!isfinite(raw_rates[model]) || raw_rates[model] < 0)
+      terminate("BH_BENCHMARK_ALL: invalid raw rate model=%d rate=%g", model, raw_rates[model]);
+}
+
 void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, double bh_mass,
                                     struct bh_benchmark_rate_result *out)
 {

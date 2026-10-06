@@ -630,6 +630,28 @@ static void bh_ffr_prepare_benchmark_rates(void)
       struct bh_benchmark_rate_result rate;
       bh_benchmark_compute_accretion(&env, BHP[b].BHMass, &rate);
 
+      double raw_all[5], all_boost_factor, all_am_limiter;
+      bh_benchmark_compute_all_raw_rates(&env, BHP[b].BHMass, raw_all,
+                                         &all_boost_factor, &all_am_limiter);
+
+      printf("BH_BENCHMARK_ALL: ID=%llu task=%d selected=%s target=%s feedback=%d "
+             "Mgas=%.17g rho=%.17g cs=%.17g vrel=%.17g Vphi=%.17g nH=%.17g "
+             "TNG=%.17g BOOSTED=%.17g AM=%.17g FFR_VOLUME=%.17g FFR_SHELL=%.17g "
+             "boost=%.17g amlim=%.17g\n",
+             (unsigned long long)P[p].ID, ThisTask,
+             bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
+             All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT ? "direct" : "reservoir",
+             All.BHBenchmarkFeedbackModel,
+             env.GasMass, env.Density, env.SoundSpeed, env.RelativeSpeed, env.Vphi,
+             env.HydrogenNumberDensity,
+             raw_all[BH_BENCHMARK_ACC_TNG_BONDI],
+             raw_all[BH_BENCHMARK_ACC_BOOSTED_BONDI],
+             raw_all[BH_BENCHMARK_ACC_AM_BONDI],
+             raw_all[BH_BENCHMARK_ACC_FFR],
+             raw_all[BH_BENCHMARK_ACC_FFR_SHELL],
+             all_boost_factor, all_am_limiter);
+      fflush(stdout);
+
       res->ModelRawRate = rate.RawRate;
       res->ModelOperationalRate = rate.OperationalRate;
       res->ModelEddingtonRate = rate.EddingtonRate;
