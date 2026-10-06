@@ -61,7 +61,6 @@ ActivePartFracForNewDomainDecomp        0.01
 
 DesNumNgb                               64
 MaxNumNgbDeviation                      4
-DesLinkNgb                              20
 
 UnitLength_in_cm                        3.085678e21
 UnitMass_in_g                           1.989e43
