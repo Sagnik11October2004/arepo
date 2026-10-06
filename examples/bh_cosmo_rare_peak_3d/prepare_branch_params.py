@@ -67,8 +67,8 @@ def main() -> None:
     with (HERE / "output_branches.txt").open("w") as f:
         for z in candidate_z:
             if args.z_end < z < 20:
-                f.write(f"{1.0/(1.0+z):.17g} 2\n")
-        f.write(f"{amax:.17g} 2\n")
+                f.write(f"{1.0/(1.0+z):.17g} 1\n")
+        f.write(f"{amax:.17g} 1\n")
 
     none_target = 1 if args.none_target == "direct" else 0
 
