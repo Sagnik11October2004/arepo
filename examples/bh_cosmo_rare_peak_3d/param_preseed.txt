@@ -1,0 +1,145 @@
+% Rare-peak cosmology stage A: common BH-free evolution from z=99 to z=22.
+% 0.5 cMpc/h, 128^3 parent DM -> 128^3 gas + 128^3 DM.
+% sigma8=2 is encoded in music.conf.  Seeding is disabled here by zmin=100.
+
+InitCondFile                            ./ics
+OutputDir                               ./output_preseed
+SnapshotFileBase                        snap
+OutputListFilename                      ./output_preseed.txt
+TreecoolFile                            ../cosmo_box_star_formation_3d/TREECOOL_ep
+
+ICFormat                                3
+SnapFormat                              3
+
+TimeLimitCPU                            172800
+CpuTimeBetRestartFile                   7200
+FlushCpuTimeDiff                        120
+ResubmitOn                              0
+ResubmitCommand                         none
+MaxMemSize                              3000
+
+TimeBegin                               0.010000000000000000
+TimeMax                                 0.043478260869565216
+
+ComovingIntegrationOn                   1
+PeriodicBoundariesOn                    1
+CoolingOn                               1
+StarformationOn                         0
+
+Omega0                                  0.31
+OmegaLambda                             0.69
+OmegaBaryon                             0.048
+HubbleParam                             0.68
+BoxSize                                 500.0
+
+OutputListOn                            1
+TimeBetSnapshot                         0.0
+TimeOfFirstSnapshot                     0.0
+TimeBetStatistics                       0.002
+NumFilesPerSnapshot                     1
+NumFilesWrittenInParallel               1
+
+TypeOfTimestepCriterion                 0
+ErrTolIntAccuracy                       0.012
+CourantFac                              0.3
+MaxSizeTimestep                         0.002
+MinSizeTimestep                         1.0e-8
+
+InitGasTemp                             169.774
+MinGasTemp                              10.0
+MinimumDensityOnStartUp                 1.0e-20
+LimitUBelowThisDensity                  0.0
+LimitUBelowCertainDensityToThisValue    0.0
+MinEgySpec                              0.0
+
+TypeOfOpeningCriterion                  1
+ErrTolTheta                             0.7
+ErrTolForceAcc                          0.0025
+MultipleDomains                         4
+TopNodeFactor                           2.5
+ActivePartFracForNewDomainDecomp        0.01
+
+DesNumNgb                               64
+MaxNumNgbDeviation                      4
+DesLinkNgb                              20
+
+UnitLength_in_cm                        3.085678e21
+UnitMass_in_g                           1.989e43
+UnitVelocity_in_cm_per_s                1.0e5
+GravityConstantInternal                 0
+
+% Mean parent spacing = 500/128 = 3.90625 ckpc/h.
+SofteningComovingType0                  0.10
+SofteningComovingType1                  0.10
+SofteningMaxPhysType0                   0.025
+SofteningMaxPhysType1                   0.025
+GasSoftFactor                           2.5
+SofteningTypeOfPartType0                0
+SofteningTypeOfPartType1                1
+SofteningTypeOfPartType2                1
+SofteningTypeOfPartType3                1
+SofteningTypeOfPartType4                1
+SofteningTypeOfPartType5                1
+MinimumComovingHydroSoftening           0.0125
+AdaptiveHydroSofteningSpacing           1.2
+
+CellShapingSpeed                        0.5
+CellShapingFactor                       1.0
+
+% BH apertures are proper code lengths. Capture is disabled through z=20.
+BHAccretionRadius                       0.05
+BHFeedbackRadius                        0.10
+
+% Single-most-massive eligible halo is enforced by the dedicated Config flag.
+BHSeedHaloMassMsun                      1.0e7
+BHSeedMassMsun                          1.0e5
+BHSeedMinRedshift                       100.0
+BHSeedMaxDonorFraction                  0.5
+
+BHFreeFallA                             0.0
+BHFreeFallAlpha                         0.0
+BHUseFullCentralMass                    1
+BHMaxSinkFraction                       0.10
+
+BHDiskTimeMyr                           42.0
+BHDiskTimeExponent                      0.4
+BHRHotMaxInRs                           1200.0
+BHRadiativeEfficiency                   0.1
+BHWindBurstFactor                       0.01
+BHJetBurstFactor                        0.10
+BHUseCentralBindingTerm                 1
+BHWindConeAngleDeg                      45.0
+BHJetConeAngleDeg                       15.0
+BHMinCoherence                          0.30
+BHJetDirectionTimeFactor                1.0
+BHMinTargetsPerLobe                     8
+BHMinActiveTargetMassFrac               0.5
+BHMaxPacketsPerStep                     4
+BHDMNeighbours                          40
+BHInternalTimestepFactor                0.25
+
+% Capture stays off before branching; shell FFR is selected because A_ff=0
+% disables it exactly.  Mode 5 is intentionally not selected here because its
+% present benchmark normalization is unit-efficiency.
+BHBenchmarkAccretionModel               4
+BHBenchmarkAccretionTarget              0
+BHBenchmarkBoostMode                    1
+BHBenchmarkBoostAlpha                   100.0
+BHBenchmarkBoostDensityThreshold        0.1
+BHBenchmarkBoostBeta                    2.0
+BHBenchmarkAMViscosity                  6.283185307179586
+BHBenchmarkRadiativeEfficiency          0.2
+BHBenchmarkEddingtonFactor              1.0
+BHBenchmarkEnvThermalFloor              0.4
+BHBenchmarkEnvRotationBeta              1.0
+BHBenchmarkStartTimeMyr                 0.0
+
+BHBenchmarkFeedbackModel                0
+BHBenchmarkTNGChi0                      0.002
+BHBenchmarkTNGChiBeta                   2.0
+BHBenchmarkTNGChiMax                    0.1
+BHBenchmarkTNGThermalCoupling           0.1
+BHBenchmarkTNGKineticMaxEfficiency      0.2
+BHBenchmarkTNGKineticDensityFactor      0.05
+BHBenchmarkTNGSFThresholdNH             0.1065
+BHBenchmarkTNGKineticBurstFactor        20.0
