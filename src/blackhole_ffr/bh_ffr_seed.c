@@ -520,6 +520,19 @@ int bh_ffr_seed_from_fof(void)
   if(!(All.cf_redshift > All.BHSeedMinRedshift))
     return 0;
 
+#ifdef BH_FFR_SEED_MAX_REDSHIFT
+  /* Optional compile-time upper edge for controlled seed-window experiments.
+   * Keeping this out of All preserves the validated restart layout and leaves
+   * the production/default one-sided z>zmin behaviour unchanged unless the
+   * experiment explicitly opts in through Config.sh. */
+  const double seed_max_redshift = (double)BH_FFR_SEED_MAX_REDSHIFT;
+  if(!isfinite(seed_max_redshift) || !(seed_max_redshift > All.BHSeedMinRedshift))
+    terminate("BH_FFR: BH_FFR_SEED_MAX_REDSHIFT=%g must be finite and exceed BHSeedMinRedshift=%g",
+              seed_max_redshift, All.BHSeedMinRedshift);
+  if(!(All.cf_redshift < seed_max_redshift))
+    return 0;
+#endif
+
 #ifdef BH_FFR_SEED_ONLY_MOST_MASSIVE
   /* Controlled single-seed experiments may request exactly one BH in the
    * globally most massive eligible FoF halo.  Once any Type-5 BH exists,
