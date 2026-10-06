@@ -218,6 +218,7 @@ BHBenchmarkBoostBeta                    2.0
 BHBenchmarkAMViscosity                  6.283185307179586
 BHBenchmarkRadiativeEfficiency          0.2
 BHBenchmarkEddingtonFactor              1.0e-8
+% Legacy mode-5 knobs retained only for parameter-file compatibility; ignored by current mode 5.
 BHBenchmarkEnvThermalFloor              0.4
 BHBenchmarkEnvRotationBeta              1.0
 BHBenchmarkStartTimeMyr                 0.0

@@ -178,16 +178,110 @@ IC state and uses the analytic 1e-4 Msun/yr continuum supply for rotating and
 turbulent ICs.
 
 
-### Development mode 5 update
+### Current development mode 5: convergence + circularization corrected shell FFR
 
-Mode 5 is now an environment-corrected shell FFR rather than the experimental
-force-gradient closure.  The underlying shell free-fall rate is unchanged:
+Mode 5 keeps the unit-efficiency shell free-fall estimator as its backbone:
 
 ```text
-Mdot_env = F_env Mdot_shell
+Mdot_5 = Mdot_shell,geom * f_Mach * f_j
 ```
 
-The bounded empirical factor uses shell-level thermal support, coherent bulk
-motion, and net rotation.  The intended validation target is now the evolving
-isolated-galaxy test in `examples/bh_accretion_galaxy_test`; the 42 idealized
-flow boxes remain useful diagnostics but are no longer the calibration target.
+All environmental quantities below are weighted by each cell's own contribution
+to the unit-efficiency shell estimator, `w_i = C_shell m_i/t_ff,i`.
+
+Define the weighted inward/outward radial-speed sums
+
+```text
+I = sum_i w_i max(-v_r,i, 0)
+O = sum_i w_i max( v_r,i, 0)
+Cconv = clamp((I-O)/(I+O), 0, 1)
+```
+
+and the weighted coherent shell bulk velocity and sound speed.  The effective
+through-flow Mach number is
+
+```text
+Mbulk = |sum_i w_i dv_i| / (sum_i w_i c_s,i)
+Meff  = (1-Cconv) Mbulk
+f_Mach = (1+Meff^2)^(-3/2)
+```
+
+so a coherent BHL-like wind is suppressed, while genuinely converging inflow
+does not get mislabeled as a high-Mach through-flow.
+
+The weighted coherent specific angular momentum is
+
+```text
+j_shell = |sum_i w_i (r_i x dv_i)| / sum_i w_i
+r_circ  = j_shell^2 / (G M_central)
+chi_j   = r_circ / R_acc
+f_j     = (1+chi_j^2)^(-1/2)
+```
+
+This is intentionally a mild outer circularization correction.  Detailed
+angular-momentum transport remains a reservoir/disc problem.
+
+The diagnostic line reports all six estimators plus
+
+```text
+FFR_SHELL_GEOM
+FFR_CONVJ
+FCORR
+FMACH
+FJ
+CCONV
+Mbulk
+Meff
+chiJ
+rcirc
+```
+
+The two legacy parameter-file entries `BHBenchmarkEnvThermalFloor` and
+`BHBenchmarkEnvRotationBeta` are still accepted only so older generated
+parameter files remain readable; current mode 5 ignores them.
+
+### Primary model-to-model comparison
+
+Rebuild and force-rerun diagnostics after changing mode 5:
+
+```bash
+./build_flow_tests.sh
+FORCE_RERUN=1 ./run_flow_stage.sh diagnostic
+python3 compare_flow_models.py
+```
+
+`compare_flow_models.py` uses the unit-efficiency geometric shell FFR as a
+common internal scale and prints TNG, boosted BHL, AM-Bondi, volume FFR, shell
+FFR, and mode 5 on the same gas state.  Configured FFR rates are also divided
+by `A_ff` in the normalized columns so their geometry can be compared without
+the deliberately small passive-sink efficiency.
+
+Use the first instead of the last available diagnostic sample with
+
+```bash
+python3 compare_flow_models.py --sample first
+```
+
+and use evolved logs with
+
+```bash
+python3 compare_flow_models.py --stage evolved
+```
+
+The script is incremental: cases without a current `FFR_CONVJ` line are
+listed as missing, while completed cases are compared immediately.
+
+### Secondary external-reference check
+
+External reference rates are retained as sanity checks, not as the primary
+calibration target:
+
+```bash
+python3 compare_flow_models.py --with-reference
+```
+
+For BHL, subsonic gamma=5/3 cases use the Bondi value and trans/supersonic
+cases use the stored BHL literature baseline.  Rotating/turbulent cases use
+the analytic continuum IC supply.  These columns should reveal gross physical
+failures, but mode 5 is not tuned to force every idealized reference ratio to
+unity.

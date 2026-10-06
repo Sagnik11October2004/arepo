@@ -1,12 +1,9 @@
 #!/usr/bin/env python3
-"""Historical force-FFR comparison.
-
-Mode 5 no longer uses the force-gradient prescription.  Use the evolving
-isolated-galaxy comparison instead:
-  cd ../bh_accretion_galaxy_test
-  python3 analyze_galaxy_accretion.py
-"""
-raise SystemExit(
-    "Mode 5 is now environment-corrected shell FFR; "
-    "use examples/bh_accretion_galaxy_test for the current validation."
-)
+"""Historical entry point; forwards to the current comparison with references."""
+import subprocess
+import sys
+from pathlib import Path
+here = Path(__file__).resolve().parent
+raise SystemExit(subprocess.call([
+    sys.executable, str(here / "compare_flow_models.py"), "--with-reference", *sys.argv[1:]
+]))

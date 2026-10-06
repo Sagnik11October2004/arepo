@@ -14,7 +14,7 @@ TRUTH = FLOW / "reference_truth" / "reference_truth_summary.json"
 
 RATE_CODE_TO_MSUN_YR = 10.2271202634
 FFR_A = 1.0e-3
-MODES = ("TNG", "BOOSTED", "AM", "FFR_VOLUME", "FFR_SHELL")
+MODES = ("TNG", "BOOSTED", "AM", "FFR_VOLUME", "FFR_SHELL", "FFR_CONVJ")
 
 
 def first_all_line(log: Path) -> str | None:
@@ -126,7 +126,7 @@ def main() -> None:
     print("=" * 126)
     print(
         f"{'CASE':24s} {'actual':>11s} {'TNG':>9s} {'BOOST':>9s} {'AM':>9s} "
-        f"{'FFRv':>9s} {'FFRs':>9s}"
+        f"{'FFRv':>9s} {'FFRs':>9s} {'CONVJ':>9s}"
     )
     print("-" * 126)
 
@@ -140,6 +140,7 @@ def main() -> None:
             f" {r['AM_over_actual']:9.3f}"
             f" {r['FFR_VOLUME_over_actual']:9.3f}"
             f" {r['FFR_SHELL_over_actual']:9.3f}"
+            f" {r['FFR_CONVJ_over_actual']:9.3f}"
         )
 
     print()

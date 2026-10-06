@@ -100,8 +100,8 @@ const char *bh_benchmark_accretion_model_name(int model)
         return "ffr";
       case BH_BENCHMARK_ACC_FFR_SHELL:
         return "ffr-shell";
-      case BH_BENCHMARK_ACC_ENV_SHELL_FFR:
-        return "env-shell-ffr";
+      case BH_BENCHMARK_ACC_CONVJ_SHELL_FFR:
+        return "convj-shell-ffr";
       default:
         return "unknown";
     }
@@ -168,8 +168,8 @@ void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *e
   raw_rates[BH_BENCHMARK_ACC_FFR] = env->FFRRawRate;
   raw_rates[BH_BENCHMARK_ACC_FFR_SHELL] = env->FFRShellRawRate;
 
-  raw_rates[BH_BENCHMARK_ACC_ENV_SHELL_FFR] = env->FFREnvShellRate;
-  *env_factor = env->EnvFactor;
+  raw_rates[BH_BENCHMARK_ACC_CONVJ_SHELL_FFR] = env->FFRConvJShellRate;
+  *env_factor = env->ConvJFactor;
 
   for(int model = 0; model < BH_BENCHMARK_ACC_COUNT; model++)
     if(!isfinite(raw_rates[model]) || raw_rates[model] < 0)
@@ -188,21 +188,24 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
      !isfinite(env->FFRRawRate) || env->FFRRawRate < 0 ||
      !isfinite(env->FFRShellRawRate) || env->FFRShellRawRate < 0 ||
      !isfinite(env->FFRShellGeometricRate) || env->FFRShellGeometricRate < 0 ||
-     !isfinite(env->FFREnvShellRate) || env->FFREnvShellRate < 0 ||
-     !isfinite(env->EnvFactor) || env->EnvFactor < 0 || env->EnvFactor > 1.0 + 1.0e-12)
+     !isfinite(env->FFRConvJShellRate) || env->FFRConvJShellRate < 0 ||
+     !isfinite(env->ConvJFactor) || env->ConvJFactor < 0 || env->ConvJFactor > 1.0 + 1.0e-12 ||
+     !isfinite(env->MachFactor) || env->MachFactor < 0 || env->MachFactor > 1.0 + 1.0e-12 ||
+     !isfinite(env->AngularMomentumFactor) || env->AngularMomentumFactor < 0 ||
+     env->AngularMomentumFactor > 1.0 + 1.0e-12)
     terminate("BH_BENCHMARK: invalid common environment Mgas=%g rho=%g cs=%g vrel=%g Vphi=%g nH=%g "
-              "ffr=%g shell=%g shellGeom=%g envShell=%g Fenv=%g",
+              "ffr=%g shell=%g shellGeom=%g convj=%g Fcorr=%g Fmach=%g Fj=%g",
               env->GasMass, env->Density, env->SoundSpeed, env->RelativeSpeed, env->Vphi,
               env->HydrogenNumberDensity, env->FFRRawRate, env->FFRShellRawRate,
-              env->FFRShellGeometricRate, env->FFREnvShellRate, env->EnvFactor);
+              env->FFRShellGeometricRate, env->FFRConvJShellRate, env->ConvJFactor,
+              env->MachFactor, env->AngularMomentumFactor);
 
   memset(out, 0, sizeof(*out));
   out->BoostFactor = 1.0;
   out->AngularMomentumLimiter = 1.0;
-  out->EnvFactor = env->EnvFactor;
-  out->EnvThermalFactor = env->EnvThermalFactor;
-  out->EnvWindFactor = env->EnvWindFactor;
-  out->EnvRotationFactor = env->EnvRotationFactor;
+  out->ConvJFactor = env->ConvJFactor;
+  out->MachFactor = env->MachFactor;
+  out->AngularMomentumFactor = env->AngularMomentumFactor;
   out->EddingtonRate = bh_benchmark_eddington_rate_code(bh_mass);
 
   if(env->GasMass <= 0 || bh_mass <= 0)
@@ -238,8 +241,8 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
         out->RawRate = env->FFRShellRawRate;
         break;
 
-      case BH_BENCHMARK_ACC_ENV_SHELL_FFR:
-        out->RawRate = env->FFREnvShellRate;
+      case BH_BENCHMARK_ACC_CONVJ_SHELL_FFR:
+        out->RawRate = env->FFRConvJShellRate;
         break;
 
       default:

@@ -938,6 +938,8 @@ extern struct global_data_all_processes
   double BHBenchmarkAMViscosity;
   double BHBenchmarkRadiativeEfficiency;
   double BHBenchmarkEddingtonFactor;
+  /* Legacy benchmark knobs retained so older generated parameter files
+   * remain readable.  Mode 5 no longer uses either value. */
   double BHBenchmarkEnvThermalFloor;
   double BHBenchmarkEnvRotationBeta;
   double BHBenchmarkStartTimeMyr;
