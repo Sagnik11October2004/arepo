@@ -23,3 +23,17 @@ bhl/logs/
 rotating/logs/
 turbulent/logs/
 param_flow_diag_base.txt
+
+# Generated high-resolution numerical-reference suite.
+reference_truth/*/ics/*/*.hdf5
+reference_truth/*/ics/*/*.metadata.json
+reference_truth/reference_ic_manifest.json
+reference_truth/reference_run_manifest.json
+reference_truth/*/params/
+reference_truth/common/outputlists/
+reference_truth/*/outputs/
+reference_truth/*/logs/
+reference_truth/reference_truth_summary.json
+reference_truth/reference_truth_runs.csv
+reference_truth/reference_truth_cases.csv
+models_vs_actual.csv
