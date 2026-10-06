@@ -66,7 +66,7 @@ def main() -> None:
     candidate_z = [19, 18, 17, 16, 15, 14, 12, 10, 8, 6]
     with (HERE / "output_branches.txt").open("w") as f:
         for z in candidate_z:
-            if args.z_end <= z < 20:
+            if args.z_end < z < 20:
                 f.write(f"{1.0/(1.0+z):.17g} 2\n")
         f.write(f"{amax:.17g} 2\n")
 
