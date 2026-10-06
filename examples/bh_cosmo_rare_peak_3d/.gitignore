@@ -1,0 +1,9 @@
+ics.hdf5
+ics/
+output_preseed/
+output_seed_window/
+outputs/
+logs/
+params/
+output_branches.txt
+*.log
