@@ -77,17 +77,22 @@ The generated matrix contains 60 planned passive runs:
 All of these use direct accretion, no feedback and
 `BHBenchmarkEddingtonFactor=1e-8`, so the selected shell-FFR sink is dynamically
 negligible. The diagnostic line `BH_BENCHMARK_ALL` reports TNG Bondi, boosted
-BHL, AM-Bondi, volume FFR, shell FFR, and the supply-limited hybrid raw rate
-from the same gas environment. Benchmark model 5 is
+BHL, AM-Bondi, volume FFR, shell FFR, and the unified shell-support FFR raw
+rate from the same gas environment. Benchmark model 5 is
 
-`HYBRID_FFR = min(FFR_SHELL_GEOM, CAPTURE_CEILING)`.
+`SHELL_SUPPORT = SHELL_DYN * [1 + (c_s^2 + v_bulk^2)/v_g^2]^(-3/2)`,
 
-`FFR_SHELL_GEOM` is the shell free-fall supply evaluated at unit efficiency
-(`A_ff=1`). For the gamma=5/3 controlled suite, `CAPTURE_CEILING` is the
-exact spherical Bondi rate (`lambda=1/4`) for subsonic wind and the
-Ruffert-Arnett interpolation for Mach >= 1. The diagnostic line prints
-`FFR_SHELL_GEOM`, `HYBRID_FFR`, `captureceil`, and `supplylim` so the
-limiting branch is auditable.
+with
+
+`SHELL_DYN = FFR_SHELL_GEOM * sqrt(M_dyn/M_central)`,
+`M_dyn = M_central + M_gas(<R_acc)`, and
+`v_g^2 = G M_dyn/R_acc`.
+
+The shell free-fall estimator therefore remains the backbone. Resolved gas
+gravity shortens the dynamical fall time while thermal pressure and coherent
+bulk motion lengthen it continuously; there is no hard Bondi/free-fall switch.
+The diagnostic line prints `FFR_SHELL_GEOM`, `SHELL_SUPPORT`, `Mcen`,
+`Mdyn`, `shellDyn`, `support`, and `vg`.
 
 Every output-list entry uses `DumpFlag=2`: a full snapshot is written but the
 compiled FoF module is not run. FoF remains in the build only because the
@@ -106,3 +111,20 @@ executable, MPI launcher, or final-restart cleanup policy. Active,
 model-specific sink/feedback evolutions are intentionally not generated yet;
 their matrix should be chosen only after the passive diagnostic/evolved-flow
 results are inspected.
+
+### Case-appropriate reference comparison
+
+Use:
+
+```bash
+python3 compare_shell_support_references.py
+```
+
+The comparison intentionally does not force one denominator on every flow.
+For gamma=5/3 BHL tests, subsonic cases use the Bondi rate with lambda=1/4
+computed from the asymptotic IC state; trans/supersonic cases use the
+Foglizzo-Ruffert interpolation as a literature baseline rather than exact
+truth. Rotating and turbulent cases use the net resolved shell supply of the
+same resolution through 10--12.5 pc, while also reporting the continuum
+1e-4 Msun/yr IC target. No event-horizon truth is assigned to rotating or
+turbulent cases because angular-momentum/disc transport is unresolved.

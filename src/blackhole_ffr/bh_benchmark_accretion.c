@@ -70,68 +70,66 @@ static double bh_benchmark_density_boost_core(double n_h, int mode, double alpha
   return 1.0;
 }
 
-/* Benchmark reference/capture ceiling for the gamma=5/3 controlled suite.
+/* Unified shell-support closure.
  *
- * For subsonic wind, resolved point-accretor calculations recover the
- * spherical Bondi rate, lambda=1/4, independent of subsonic wind speed.
- * For Mach >= 1, use the Ruffert-Arnett interpolation between Bondi and
- * Hoyle-Lyttleton:
+ * Start from the unit-efficiency shell free-fall estimate.  The existing
+ * shell estimator uses CentralMass in t_ff.  For mode 5 we approximate the
+ * dynamical mass driving the resolved shell as
  *
- *   Mdot = Mdot_TNG * sqrt(lambda^2 + M^2) / (1 + M^2)^2
+ *   M_dyn = M_central + M_gas(<R_acc),
  *
- * where Mdot_TNG = 4*pi*G^2*M^2*rho/cs^3 and lambda=1/4.
+ * rescale the free-fall rate by sqrt(M_dyn/M_central), and lengthen the fall
+ * time continuously for thermal plus coherent bulk support:
+ *
+ *   f_support = [1 + (c_s^2 + v_bulk^2)/v_g^2]^(-3/2),
+ *   v_g^2     = G M_dyn / R_acc.
+ *
+ * Thus Mdot_5 = Mdot_shell,geom sqrt(M_dyn/M_central) f_support.
+ * In the cold/free-fall limit f_support -> 1.  In the strongly supported
+ * limit the same shell law approaches Bondi/BHL-like scaling without a hard
+ * switch or an explicit low-seed-mass suppression factor.
  */
-static double bh_benchmark_capture_ceiling_core(double g, double mass, double rho,
-                                                double cs, double vrel)
-{
-  if(!(mass > 0) || !(rho > 0))
-    return 0.0;
-  if(!(g > 0) || !(cs > 0) || vrel < 0 || !isfinite(g) || !isfinite(mass) ||
-     !isfinite(rho) || !isfinite(cs) || !isfinite(vrel))
-    terminate("BH_BENCHMARK: invalid hybrid-ceiling inputs G=%g M=%g rho=%g cs=%g vrel=%g",
-              g, mass, rho, cs, vrel);
-
-  const double lambda_bondi = 0.25;
-  const double tng = bh_benchmark_tng_bondi_core(g, mass, rho, cs);
-  const double mach = vrel / cs;
-
-  double rate;
-  /* Treat the exactly-sonic benchmark as transonic. Aperture averaging can
-   * move an intended Mach-1 IC a few ulps below unity, so use a small
-   * tolerance to keep L0/L1/L2 on the same branch. */
-  if(mach < 1.0 - 1.0e-6)
-    rate = lambda_bondi * tng;
-  else
-    {
-      const double q = 1.0 + mach * mach;
-      rate = tng * sqrt(lambda_bondi * lambda_bondi + mach * mach) / (q * q);
-    }
-
-  if(!isfinite(rate) || rate < 0)
-    terminate("BH_BENCHMARK: invalid hybrid capture ceiling=%g for Mach=%g", rate, mach);
-  return rate;
-}
-
-static double bh_benchmark_supply_limited_ffr_core(double shell_geometric_rate,
-                                                    double capture_ceiling,
-                                                    double *supply_limiter)
+static double bh_benchmark_shell_support_core(double shell_geometric_rate,
+                                              double g, double central_mass,
+                                              double dynamical_mass,
+                                              double accretion_radius,
+                                              double cs, double vrel,
+                                              double *support_factor,
+                                              double *dynamical_shell_rate,
+                                              double *gravity_speed)
 {
   if(!isfinite(shell_geometric_rate) || shell_geometric_rate < 0 ||
-     !isfinite(capture_ceiling) || capture_ceiling < 0)
-    terminate("BH_BENCHMARK: invalid supply-limited inputs shell=%g ceiling=%g",
-              shell_geometric_rate, capture_ceiling);
+     !isfinite(g) || !(g > 0) ||
+     !isfinite(central_mass) || !(central_mass > 0) ||
+     !isfinite(dynamical_mass) || dynamical_mass < central_mass ||
+     !isfinite(accretion_radius) || !(accretion_radius > 0) ||
+     !isfinite(cs) || cs < 0 || !isfinite(vrel) || vrel < 0)
+    terminate("BH_BENCHMARK: invalid shell-support inputs shell=%g G=%g Mcen=%g Mdyn=%g Racc=%g cs=%g vrel=%g",
+              shell_geometric_rate, g, central_mass, dynamical_mass,
+              accretion_radius, cs, vrel);
 
-  double limiter = 1.0;
-  if(shell_geometric_rate > 0)
-    limiter = dmin(1.0, capture_ceiling / shell_geometric_rate);
+  const double mass_scale = sqrt(dynamical_mass / central_mass);
+  const double dyn_rate = shell_geometric_rate * mass_scale;
+  const double vg2 = g * dynamical_mass / accretion_radius;
+  if(!isfinite(vg2) || !(vg2 > 0))
+    terminate("BH_BENCHMARK: invalid shell-support vg2=%g", vg2);
 
-  const double rate = dmin(shell_geometric_rate, capture_ceiling);
-  if(supply_limiter != NULL)
-    *supply_limiter = limiter;
+  const double q = (cs * cs + vrel * vrel) / vg2;
+  const double support = 1.0 / ((1.0 + q) * sqrt(1.0 + q));
+  const double rate = dyn_rate * support;
 
-  if(!isfinite(rate) || rate < 0 || !isfinite(limiter) || limiter < 0 || limiter > 1.0)
-    terminate("BH_BENCHMARK: invalid supply-limited result rate=%g limiter=%g shell=%g ceiling=%g",
-              rate, limiter, shell_geometric_rate, capture_ceiling);
+  if(!isfinite(dyn_rate) || dyn_rate < 0 ||
+     !isfinite(support) || support < 0 || support > 1.0 ||
+     !isfinite(rate) || rate < 0)
+    terminate("BH_BENCHMARK: invalid shell-support result rate=%g dyn=%g support=%g q=%g",
+              rate, dyn_rate, support, q);
+
+  if(support_factor != NULL)
+    *support_factor = support;
+  if(dynamical_shell_rate != NULL)
+    *dynamical_shell_rate = dyn_rate;
+  if(gravity_speed != NULL)
+    *gravity_speed = sqrt(vg2);
 
   return rate;
 }
@@ -166,8 +164,8 @@ const char *bh_benchmark_accretion_model_name(int model)
         return "ffr";
       case BH_BENCHMARK_ACC_FFR_SHELL:
         return "ffr-shell";
-      case BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR:
-        return "supply-limited-ffr";
+      case BH_BENCHMARK_ACC_SHELL_SUPPORT_FFR:
+        return "shell-support-ffr";
       default:
         return "unknown";
     }
@@ -200,19 +198,22 @@ double bh_benchmark_eddington_rate_code(double bh_mass)
 void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *env, double bh_mass,
                                         double raw_rates[BH_BENCHMARK_ACC_COUNT],
                                         double *boost_factor, double *am_limiter,
-                                        double *hybrid_capture_ceiling,
-                                        double *hybrid_supply_limiter)
+                                        double *shell_support_factor,
+                                        double *shell_dynamical_rate,
+                                        double *shell_gravity_speed)
 {
   if(env == NULL || raw_rates == NULL || boost_factor == NULL || am_limiter == NULL ||
-     hybrid_capture_ceiling == NULL || hybrid_supply_limiter == NULL)
+     shell_support_factor == NULL || shell_dynamical_rate == NULL ||
+     shell_gravity_speed == NULL)
     terminate("BH_BENCHMARK_ALL: null diagnostic input/output");
 
   for(int model = 0; model < BH_BENCHMARK_ACC_COUNT; model++)
     raw_rates[model] = 0.0;
   *boost_factor = 1.0;
   *am_limiter = 1.0;
-  *hybrid_capture_ceiling = 0.0;
-  *hybrid_supply_limiter = 1.0;
+  *shell_support_factor = 1.0;
+  *shell_dynamical_rate = 0.0;
+  *shell_gravity_speed = 0.0;
 
   if(env->GasMass <= 0 || bh_mass <= 0)
     return;
@@ -236,13 +237,12 @@ void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *e
   raw_rates[BH_BENCHMARK_ACC_FFR] = env->FFRRawRate;
   raw_rates[BH_BENCHMARK_ACC_FFR_SHELL] = env->FFRShellRawRate;
 
-  *hybrid_capture_ceiling =
-      bh_benchmark_capture_ceiling_core(All.G, bh_mass, env->Density,
-                                        env->SoundSpeed, env->RelativeSpeed);
-  raw_rates[BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR] =
-      bh_benchmark_supply_limited_ffr_core(env->FFRShellGeometricRate,
-                                           *hybrid_capture_ceiling,
-                                           hybrid_supply_limiter);
+  raw_rates[BH_BENCHMARK_ACC_SHELL_SUPPORT_FFR] =
+      bh_benchmark_shell_support_core(env->FFRShellGeometricRate, All.G,
+                                      env->CentralMass, env->DynamicalMass,
+                                      env->AccretionRadius, env->SoundSpeed,
+                                      env->RelativeSpeed, shell_support_factor,
+                                      shell_dynamical_rate, shell_gravity_speed);
 
   for(int model = 0; model < BH_BENCHMARK_ACC_COUNT; model++)
     if(!isfinite(raw_rates[model]) || raw_rates[model] < 0)
@@ -260,19 +260,24 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
      !isfinite(env->HydrogenNumberDensity) || env->HydrogenNumberDensity < 0 ||
      !isfinite(env->FFRRawRate) || env->FFRRawRate < 0 ||
      !isfinite(env->FFRShellRawRate) || env->FFRShellRawRate < 0 ||
-     !isfinite(env->FFRShellGeometricRate) || env->FFRShellGeometricRate < 0)
+     !isfinite(env->FFRShellGeometricRate) || env->FFRShellGeometricRate < 0 ||
+     !isfinite(env->CentralMass) || env->CentralMass < 0 ||
+     !isfinite(env->DynamicalMass) || env->DynamicalMass < env->CentralMass ||
+     !isfinite(env->AccretionRadius) || env->AccretionRadius <= 0)
     terminate("BH_BENCHMARK: invalid common environment Mgas=%g rho=%g cs=%g vrel=%g Vphi=%g nH=%g "
-              "ffr=%g shell=%g shellGeom=%g",
+              "ffr=%g shell=%g shellGeom=%g Mcen=%g Mdyn=%g Racc=%g",
               env->GasMass, env->Density, env->SoundSpeed, env->RelativeSpeed, env->Vphi,
               env->HydrogenNumberDensity, env->FFRRawRate, env->FFRShellRawRate,
-              env->FFRShellGeometricRate);
+              env->FFRShellGeometricRate, env->CentralMass, env->DynamicalMass,
+              env->AccretionRadius);
 
   memset(out, 0, sizeof(*out));
   out->BoostFactor = 1.0;
   out->AngularMomentumLimiter = 1.0;
-  out->HybridCaptureCeiling = 0.0;
-  out->HybridSupplyRate = env->FFRShellGeometricRate;
-  out->HybridSupplyLimiter = 1.0;
+  out->ShellSupportFactor = 1.0;
+  out->ShellDynamicalRate = env->FFRShellGeometricRate;
+  out->ShellGravitySpeed = 0.0;
+  out->ShellDynamicalMass = env->DynamicalMass;
   out->EddingtonRate = bh_benchmark_eddington_rate_code(bh_mass);
 
   if(env->GasMass <= 0 || bh_mass <= 0)
@@ -308,14 +313,14 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
         out->RawRate = env->FFRShellRawRate;
         break;
 
-      case BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR:
-        out->HybridCaptureCeiling =
-            bh_benchmark_capture_ceiling_core(All.G, bh_mass, env->Density,
-                                              env->SoundSpeed, env->RelativeSpeed);
+      case BH_BENCHMARK_ACC_SHELL_SUPPORT_FFR:
         out->RawRate =
-            bh_benchmark_supply_limited_ffr_core(env->FFRShellGeometricRate,
-                                                 out->HybridCaptureCeiling,
-                                                 &out->HybridSupplyLimiter);
+            bh_benchmark_shell_support_core(env->FFRShellGeometricRate, All.G,
+                                            env->CentralMass, env->DynamicalMass,
+                                            env->AccretionRadius, env->SoundSpeed,
+                                            env->RelativeSpeed, &out->ShellSupportFactor,
+                                            &out->ShellDynamicalRate,
+                                            &out->ShellGravitySpeed);
         break;
 
       default:
@@ -370,32 +375,29 @@ void bh_benchmark_accretion_self_test(void)
   if(!(bhl > 0) || !(bhl < b))
     terminate("BH_BENCHMARK: BHL relative-velocity self-test failed BHL=%g TNG=%g", bhl, b);
 
-  const double bondi_ceiling =
-      bh_benchmark_capture_ceiling_core(g, mass, rho, cs, 0.5 * cs);
-  if(fabs(bondi_ceiling / (0.25 * b) - 1.0) > 2.0e-14)
-    terminate("BH_BENCHMARK: subsonic capture-ceiling self-test failed got=%g expected=%g",
-              bondi_ceiling, 0.25 * b);
+  double sf = 0.0, dyn = 0.0, vg = 0.0;
+  const double shell = 13.0;
+  const double mcen = 4.0;
+  const double mdyn = 9.0;
+  const double racc = 5.0;
+  const double shell_support =
+      bh_benchmark_shell_support_core(shell, g, mcen, mdyn, racc, cs, v,
+                                      &sf, &dyn, &vg);
+  const double expected_dyn = shell * sqrt(mdyn / mcen);
+  const double expected_vg2 = g * mdyn / racc;
+  const double expected_sf =
+      pow(1.0 + (cs * cs + v * v) / expected_vg2, -1.5);
+  if(fabs(dyn / expected_dyn - 1.0) > 2.0e-14 ||
+     fabs(vg * vg / expected_vg2 - 1.0) > 2.0e-14 ||
+     fabs(sf / expected_sf - 1.0) > 2.0e-14 ||
+     fabs(shell_support / (expected_dyn * expected_sf) - 1.0) > 2.0e-14)
+    terminate("BH_BENCHMARK: shell-support self-test failed rate=%g dyn=%g sf=%g vg=%g",
+              shell_support, dyn, sf, vg);
 
-  const double mach2_ceiling =
-      bh_benchmark_capture_ceiling_core(g, mass, rho, cs, 2.0 * cs);
-  const double expected_mach2 =
-      b * sqrt(0.25 * 0.25 + 4.0) / 25.0;
-  if(fabs(mach2_ceiling / expected_mach2 - 1.0) > 2.0e-14)
-    terminate("BH_BENCHMARK: Mach-2 capture-ceiling self-test failed got=%g expected=%g",
-              mach2_ceiling, expected_mach2);
-
-  double sl = 0.0;
-  const double supply = 13.0;
-  const double hybrid_capture_limited =
-      bh_benchmark_supply_limited_ffr_core(supply, 5.0, &sl);
-  if(fabs(hybrid_capture_limited - 5.0) > 2.0e-14 ||
-     fabs(sl - 5.0 / 13.0) > 2.0e-14)
-    terminate("BH_BENCHMARK: capture-limited hybrid self-test failed rate=%g limiter=%g",
-              hybrid_capture_limited, sl);
-
-  const double hybrid_supply_limited =
-      bh_benchmark_supply_limited_ffr_core(supply, 20.0, &sl);
-  if(fabs(hybrid_supply_limited - supply) > 2.0e-14 || fabs(sl - 1.0) > 2.0e-14)
-    terminate("BH_BENCHMARK: supply-limited hybrid self-test failed rate=%g limiter=%g",
-              hybrid_supply_limited, sl);
+  const double weak_support =
+      bh_benchmark_shell_support_core(shell, g, mcen, 100.0 * mdyn, racc,
+                                      0.01 * cs, 0.01 * v, &sf, &dyn, &vg);
+  if(!(weak_support > shell))
+    terminate("BH_BENCHMARK: shell-support dynamical-mass self-test failed rate=%g shell=%g",
+              weak_support, shell);
 }

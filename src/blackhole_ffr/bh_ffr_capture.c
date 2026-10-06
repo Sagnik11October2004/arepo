@@ -136,7 +136,7 @@ static double bh_ffr_proper_radius_to_coordinate_radius(double proper_radius)
 static int bh_benchmark_uses_ffr_shell(void)
 {
   return All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR_SHELL ||
-         All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR;
+         All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_SHELL_SUPPORT_FFR;
 }
 
 static double bh_benchmark_ffr_shell_normalization(void)
@@ -382,7 +382,7 @@ static double bh_ffr_capture_lambda(const data_in *bh, double coordinate_distanc
     return bh->LambdaScale * bh_benchmark_ffr_shell_normalization() *
            bh_ffr_capture_lambda_core(bh, coordinate_distance, All.BHFreeFallA, All.BHFreeFallAlpha);
 
-  if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR)
+  if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_SHELL_SUPPORT_FFR)
     return bh->LambdaScale * bh_benchmark_ffr_shell_normalization() *
            bh_ffr_capture_lambda_core(bh, coordinate_distance, 1.0, All.BHFreeFallAlpha);
 
@@ -613,6 +613,9 @@ static void bh_ffr_prepare_benchmark_rates(void)
       env.FFRRawRate = res->EnvFFRRawRate;
       env.FFRShellRawRate = res->EnvFFRShellRawRate;
       env.FFRShellGeometricRate = res->EnvFFRShellGeometricRate;
+      env.CentralMass = bh_ffr_central_mass_code(p);
+      env.DynamicalMass = env.CentralMass + res->EnvGasMass;
+      env.AccretionRadius = All.BHAccretionRadius;
 
       if(res->EnvGasMass > 0)
         {
@@ -646,17 +649,19 @@ static void bh_ffr_prepare_benchmark_rates(void)
       bh_benchmark_compute_accretion(&env, BHP[b].BHMass, &rate);
 
       double raw_all[BH_BENCHMARK_ACC_COUNT], all_boost_factor, all_am_limiter;
-      double all_hybrid_capture_ceiling, all_hybrid_supply_limiter;
+      double all_shell_support, all_shell_dynrate, all_shell_vg;
       bh_benchmark_compute_all_raw_rates(&env, BHP[b].BHMass, raw_all,
                                          &all_boost_factor, &all_am_limiter,
-                                         &all_hybrid_capture_ceiling,
-                                         &all_hybrid_supply_limiter);
+                                         &all_shell_support,
+                                         &all_shell_dynrate,
+                                         &all_shell_vg);
 
       printf("BH_BENCHMARK_ALL: ID=%llu task=%d selected=%s target=%s feedback=%d "
              "Mgas=%.17g rho=%.17g cs=%.17g vrel=%.17g Vphi=%.17g nH=%.17g "
              "TNG=%.17g BOOSTED=%.17g AM=%.17g FFR_VOLUME=%.17g FFR_SHELL=%.17g "
-             "FFR_SHELL_GEOM=%.17g HYBRID_FFR=%.17g "
-             "boost=%.17g amlim=%.17g captureceil=%.17g supplylim=%.17g\n",
+             "FFR_SHELL_GEOM=%.17g SHELL_SUPPORT=%.17g "
+             "boost=%.17g amlim=%.17g Mcen=%.17g Mdyn=%.17g "
+             "shellDyn=%.17g support=%.17g vg=%.17g\n",
              (unsigned long long)P[p].ID, ThisTask,
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT ? "direct" : "reservoir",
@@ -669,9 +674,10 @@ static void bh_ffr_prepare_benchmark_rates(void)
              raw_all[BH_BENCHMARK_ACC_FFR],
              raw_all[BH_BENCHMARK_ACC_FFR_SHELL],
              env.FFRShellGeometricRate,
-             raw_all[BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR],
+             raw_all[BH_BENCHMARK_ACC_SHELL_SUPPORT_FFR],
              all_boost_factor, all_am_limiter,
-             all_hybrid_capture_ceiling, all_hybrid_supply_limiter);
+             env.CentralMass, env.DynamicalMass,
+             all_shell_dynrate, all_shell_support, all_shell_vg);
       fflush(stdout);
 
       res->ModelRawRate = rate.RawRate;
@@ -688,11 +694,13 @@ static void bh_ffr_prepare_benchmark_rates(void)
           if(rate.RawRate > 0)
             res->LambdaScale = rate.OperationalRate / rate.RawRate;
         }
-      else if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR)
+      else if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_SHELL_SUPPORT_FFR)
         {
-          /* Mode 5 uses the unit-efficiency shell kernel directly.  Since the
-           * hybrid is min(shell supply, capture ceiling), this scale is in
-           * [0,1] and is independent of BHFreeFallA. */
+          /* Mode 5 keeps the unit-efficiency shell radial weighting.  The
+           * scalar LambdaScale maps that shell kernel to the generalized
+           * dynamical/support rate.  It can exceed unity when resolved gas
+           * gravity shortens the fall time relative to the central-mass-only
+           * shell estimator; BHMaxSinkFraction still caps per-cell removal. */
           if(env.FFRShellGeometricRate > 0)
             res->LambdaScale = rate.OperationalRate / env.FFRShellGeometricRate;
         }
@@ -700,14 +708,15 @@ static void bh_ffr_prepare_benchmark_rates(void)
         res->UniformLambda = rate.OperationalRate / env.GasMass;
 
       if(!isfinite(res->LambdaScale) || res->LambdaScale < 0 ||
-         res->LambdaScale > 1.0 + 1.0e-12 ||
+         (All.BHBenchmarkAccretionModel != BH_BENCHMARK_ACC_SHELL_SUPPORT_FFR &&
+          res->LambdaScale > 1.0 + 1.0e-12) ||
          !isfinite(res->UniformLambda) || res->UniformLambda < 0)
         terminate("BH_BENCHMARK: invalid sink normalization scale=%g uniform=%g for ID=%llu",
                   res->LambdaScale, res->UniformLambda, (unsigned long long)P[p].ID);
 
       printf("BH_BENCHMARK: accretion ID=%llu task=%d model=%s target=%s feedback=%d "
              "Mgas=%.17g rho=%.17g cs=%.17g vrel=%.17g Vphi=%.17g nH=%.17g raw=%.17g edd=%.17g operational=%.17g "
-             "boost=%.17g amlim=%.17g captureceil=%.17g supply=%.17g supplylim=%.17g\n",
+             "boost=%.17g amlim=%.17g Mcen=%.17g Mdyn=%.17g shellDyn=%.17g support=%.17g vg=%.17g\n",
              (unsigned long long)P[p].ID, ThisTask,
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT ? "direct" : "reservoir",
@@ -715,7 +724,8 @@ static void bh_ffr_prepare_benchmark_rates(void)
              env.GasMass, env.Density, env.SoundSpeed, env.RelativeSpeed, env.Vphi,
              env.HydrogenNumberDensity, rate.RawRate, rate.EddingtonRate, rate.OperationalRate,
              rate.BoostFactor, rate.AngularMomentumLimiter,
-             rate.HybridCaptureCeiling, rate.HybridSupplyRate, rate.HybridSupplyLimiter);
+             env.CentralMass, rate.ShellDynamicalMass, rate.ShellDynamicalRate,
+             rate.ShellSupportFactor, rate.ShellGravitySpeed);
       fflush(stdout);
     }
 }
