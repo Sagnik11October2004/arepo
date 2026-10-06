@@ -59,7 +59,13 @@ enum bh_benchmark_accretion_model
   BH_BENCHMARK_ACC_BOOSTED_BONDI = 1,
   BH_BENCHMARK_ACC_AM_BONDI = 2,
   BH_BENCHMARK_ACC_FFR = 3,
-  BH_BENCHMARK_ACC_FFR_SHELL = 4
+  BH_BENCHMARK_ACC_FFR_SHELL = 4,
+  /* Shell free-fall supply with the explicit A_ff efficiency removed and a
+   * coherent bulk-Mach capture suppressor.  This benchmark-only hybrid keeps
+   * radial/free-fall supply unchanged when the aperture-mean velocity cancels,
+   * but suppresses a translating BHL wind as (1+M_bulk^2)^(-3/2). */
+  BH_BENCHMARK_ACC_MACH_FFR_SHELL = 5,
+  BH_BENCHMARK_ACC_COUNT = 6
 };
 
 enum bh_benchmark_accretion_target
@@ -112,6 +118,7 @@ struct bh_benchmark_rate_result
   double EddingtonRate;
   double BoostFactor;
   double AngularMomentumLimiter;
+  double MachSuppressor;
 };
 
 /*! Persistent sub-grid state for one Type-5 FFR-MACER black hole.
@@ -266,7 +273,9 @@ double bh_benchmark_eddington_rate_code(double bh_mass);
 void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, double bh_mass,
                                     struct bh_benchmark_rate_result *out);
 void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *env, double bh_mass,
-                                        double raw_rates[5], double *boost_factor, double *am_limiter);
+                                        double raw_rates[BH_BENCHMARK_ACC_COUNT],
+                                        double *boost_factor, double *am_limiter,
+                                        double *mach_suppressor);
 void bh_benchmark_accretion_self_test(void);
 void bh_benchmark_tng_feedback_accumulate(void);
 void bh_benchmark_tng_feedback_inject(void);

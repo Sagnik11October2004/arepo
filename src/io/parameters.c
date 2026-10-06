@@ -987,8 +987,9 @@ void check_parameters()
     mpi_terminate("BLACKHOLE_FFR requires BHMaxPacketsPerStep>=1, 2<=BHDMNeighbours<=%d, and positive "
                   "BHInternalTimestepFactor.\n",
                   BH_FFR_DM_MAX_NEIGHBOURS);
-  if(All.BHBenchmarkAccretionModel < 0 || All.BHBenchmarkAccretionModel > 4)
-    mpi_terminate("BHBenchmarkAccretionModel must be 0(TNG Bondi), 1(boosted Bondi), 2(AM Bondi), 3(FFR), or 4(shell FFR).\n");
+  if(All.BHBenchmarkAccretionModel < 0 || All.BHBenchmarkAccretionModel >= BH_BENCHMARK_ACC_COUNT)
+    mpi_terminate("BHBenchmarkAccretionModel must be 0(TNG Bondi), 1(boosted Bondi), 2(AM Bondi), "
+                  "3(FFR), 4(shell FFR), or 5(Mach-suppressed shell FFR).\n");
   if(All.BHBenchmarkAccretionTarget < 0 || All.BHBenchmarkAccretionTarget > 1)
     mpi_terminate("BHBenchmarkAccretionTarget must be 0(reservoir/MACER) or 1(direct/TNG backend).\n");
   if(All.BHBenchmarkBoostMode < 0 || All.BHBenchmarkBoostMode > 1)

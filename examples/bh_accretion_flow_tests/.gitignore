@@ -37,3 +37,5 @@ reference_truth/reference_truth_summary.json
 reference_truth/reference_truth_runs.csv
 reference_truth/reference_truth_cases.csv
 models_vs_actual.csv
+
+mach_ffr_reference_comparison.csv

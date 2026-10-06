@@ -70,6 +70,40 @@ static double bh_benchmark_density_boost_core(double n_h, int mode, double alpha
   return 1.0;
 }
 
+static double bh_benchmark_mach_suppressor_core(double cs, double vrel)
+{
+  if(!isfinite(cs) || !(cs > 0) || !isfinite(vrel) || vrel < 0)
+    terminate("BH_BENCHMARK: invalid Mach suppressor inputs cs=%g vrel=%g", cs, vrel);
+
+  const double mach = vrel / cs;
+  const double q = 1.0 + mach * mach;
+  const double suppressor = 1.0 / (q * sqrt(q));
+
+  if(!isfinite(suppressor) || suppressor < 0 || suppressor > 1.0)
+    terminate("BH_BENCHMARK: invalid Mach suppressor=%g for M=%g", suppressor, mach);
+
+  return suppressor;
+}
+
+static double bh_benchmark_mach_ffr_shell_core(double shell_raw_rate, double freefall_a,
+                                                double cs, double vrel, double *suppressor)
+{
+  if(!isfinite(shell_raw_rate) || shell_raw_rate < 0 || !isfinite(freefall_a) || !(freefall_a > 0))
+    terminate("BH_BENCHMARK: invalid Mach-FFR inputs shell=%g A_ff=%g",
+              shell_raw_rate, freefall_a);
+
+  const double s = bh_benchmark_mach_suppressor_core(cs, vrel);
+  if(suppressor != NULL)
+    *suppressor = s;
+
+  const double rate = (shell_raw_rate / freefall_a) * s;
+  if(!isfinite(rate) || rate < 0)
+    terminate("BH_BENCHMARK: invalid Mach-FFR rate=%g shell=%g A_ff=%g suppressor=%g",
+              rate, shell_raw_rate, freefall_a, s);
+
+  return rate;
+}
+
 static double bh_benchmark_am_limiter_core(double cs, double vphi, double cvisc)
 {
   if(!isfinite(cs) || cs < 0 || !isfinite(vphi) || vphi < 0 || !isfinite(cvisc) || !(cvisc > 0))
@@ -100,6 +134,8 @@ const char *bh_benchmark_accretion_model_name(int model)
         return "ffr";
       case BH_BENCHMARK_ACC_FFR_SHELL:
         return "ffr-shell";
+      case BH_BENCHMARK_ACC_MACH_FFR_SHELL:
+        return "mach-ffr-shell";
       default:
         return "unknown";
     }
@@ -130,15 +166,19 @@ double bh_benchmark_eddington_rate_code(double bh_mass)
 }
 
 void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *env, double bh_mass,
-                                        double raw_rates[5], double *boost_factor, double *am_limiter)
+                                        double raw_rates[BH_BENCHMARK_ACC_COUNT],
+                                        double *boost_factor, double *am_limiter,
+                                        double *mach_suppressor)
 {
-  if(env == NULL || raw_rates == NULL || boost_factor == NULL || am_limiter == NULL)
+  if(env == NULL || raw_rates == NULL || boost_factor == NULL || am_limiter == NULL ||
+     mach_suppressor == NULL)
     terminate("BH_BENCHMARK_ALL: null diagnostic input/output");
 
-  for(int model = 0; model < 5; model++)
+  for(int model = 0; model < BH_BENCHMARK_ACC_COUNT; model++)
     raw_rates[model] = 0.0;
   *boost_factor = 1.0;
   *am_limiter = 1.0;
+  *mach_suppressor = 1.0;
 
   if(env->GasMass <= 0 || bh_mass <= 0)
     return;
@@ -161,8 +201,12 @@ void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *e
 
   raw_rates[BH_BENCHMARK_ACC_FFR] = env->FFRRawRate;
   raw_rates[BH_BENCHMARK_ACC_FFR_SHELL] = env->FFRShellRawRate;
+  raw_rates[BH_BENCHMARK_ACC_MACH_FFR_SHELL] =
+      bh_benchmark_mach_ffr_shell_core(env->FFRShellRawRate, All.BHFreeFallA,
+                                       env->SoundSpeed, env->RelativeSpeed,
+                                       mach_suppressor);
 
-  for(int model = 0; model < 5; model++)
+  for(int model = 0; model < BH_BENCHMARK_ACC_COUNT; model++)
     if(!isfinite(raw_rates[model]) || raw_rates[model] < 0)
       terminate("BH_BENCHMARK_ALL: invalid raw rate model=%d rate=%g", model, raw_rates[model]);
 }
@@ -184,6 +228,7 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
   memset(out, 0, sizeof(*out));
   out->BoostFactor = 1.0;
   out->AngularMomentumLimiter = 1.0;
+  out->MachSuppressor = 1.0;
   out->EddingtonRate = bh_benchmark_eddington_rate_code(bh_mass);
 
   if(env->GasMass <= 0 || bh_mass <= 0)
@@ -217,6 +262,13 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
 
       case BH_BENCHMARK_ACC_FFR_SHELL:
         out->RawRate = env->FFRShellRawRate;
+        break;
+
+      case BH_BENCHMARK_ACC_MACH_FFR_SHELL:
+        out->RawRate =
+            bh_benchmark_mach_ffr_shell_core(env->FFRShellRawRate, All.BHFreeFallA,
+                                             env->SoundSpeed, env->RelativeSpeed,
+                                             &out->MachSuppressor);
         break;
 
       default:
@@ -270,4 +322,19 @@ void bh_benchmark_accretion_self_test(void)
   const double bhl = bh_benchmark_bhl_core(g, mass, rho, cs, v);
   if(!(bhl > 0) || !(bhl < b))
     terminate("BH_BENCHMARK: BHL relative-velocity self-test failed BHL=%g TNG=%g", bhl, b);
+
+  double ms = 0.0;
+  const double shell = 13.0;
+  const double aff = 0.01;
+  const double mffr0 = bh_benchmark_mach_ffr_shell_core(shell, aff, cs, 0.0, &ms);
+  if(fabs(mffr0 / (shell / aff) - 1.0) > 2.0e-14 || fabs(ms - 1.0) > 2.0e-14)
+    terminate("BH_BENCHMARK: Mach-FFR zero-bulk self-test failed rate=%g suppressor=%g", mffr0, ms);
+
+  const double vmach2 = 2.0 * cs;
+  const double expected_s = 1.0 / (5.0 * sqrt(5.0));
+  const double mffr2 = bh_benchmark_mach_ffr_shell_core(shell, aff, cs, vmach2, &ms);
+  if(fabs(ms / expected_s - 1.0) > 2.0e-14 ||
+     fabs(mffr2 / ((shell / aff) * expected_s) - 1.0) > 2.0e-14)
+    terminate("BH_BENCHMARK: Mach-FFR M=2 self-test failed rate=%g suppressor=%g expected=%g",
+              mffr2, ms, expected_s);
 }

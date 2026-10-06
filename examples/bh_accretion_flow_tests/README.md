@@ -77,7 +77,14 @@ The generated matrix contains 60 planned passive runs:
 All of these use direct accretion, no feedback and
 `BHBenchmarkEddingtonFactor=1e-8`, so the selected shell-FFR sink is dynamically
 negligible. The diagnostic line `BH_BENCHMARK_ALL` reports TNG Bondi, boosted
-BHL, AM-Bondi, volume FFR and shell FFR raw rates from the same gas environment.
+BHL, AM-Bondi, volume FFR, shell FFR, and Mach-suppressed shell FFR raw rates
+from the same gas environment. The benchmark-only Mach-FFR mode is
+
+`(FFR_SHELL / BHFreeFallA) * (1 + (v_bulk/c_s)^2)^(-3/2)`,
+
+where `v_bulk` is the aperture-mean gas velocity relative to the BH. Symmetric
+radial inflow is therefore not penalized by its inward speed, while a coherent
+translating BHL wind is suppressed.
 
 Every output-list entry uses `DumpFlag=2`: a full snapshot is written but the
 compiled FoF module is not run. FoF remains in the build only because the
