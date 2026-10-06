@@ -255,10 +255,14 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
      !isfinite(env->Density) || env->Density < 0 || !isfinite(env->SoundSpeed) || env->SoundSpeed < 0 ||
      !isfinite(env->RelativeSpeed) || env->RelativeSpeed < 0 || !isfinite(env->Vphi) || env->Vphi < 0 ||
      !isfinite(env->HydrogenNumberDensity) || env->HydrogenNumberDensity < 0 ||
-     !isfinite(env->FFRRawRate) || env->FFRRawRate < 0)
-    terminate("BH_BENCHMARK: invalid common environment Mgas=%g rho=%g cs=%g vrel=%g Vphi=%g nH=%g ffr=%g",
+     !isfinite(env->FFRRawRate) || env->FFRRawRate < 0 ||
+     !isfinite(env->FFRShellRawRate) || env->FFRShellRawRate < 0 ||
+     !isfinite(env->FFRShellGeometricRate) || env->FFRShellGeometricRate < 0)
+    terminate("BH_BENCHMARK: invalid common environment Mgas=%g rho=%g cs=%g vrel=%g Vphi=%g nH=%g "
+              "ffr=%g shell=%g shellGeom=%g",
               env->GasMass, env->Density, env->SoundSpeed, env->RelativeSpeed, env->Vphi,
-              env->HydrogenNumberDensity, env->FFRRawRate);
+              env->HydrogenNumberDensity, env->FFRRawRate, env->FFRShellRawRate,
+              env->FFRShellGeometricRate);
 
   memset(out, 0, sizeof(*out));
   out->BoostFactor = 1.0;

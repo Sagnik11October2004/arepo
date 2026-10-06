@@ -378,10 +378,13 @@ static double bh_ffr_capture_lambda(const data_in *bh, double coordinate_distanc
     return bh->LambdaScale *
            bh_ffr_capture_lambda_core(bh, coordinate_distance, All.BHFreeFallA, All.BHFreeFallAlpha);
 
-  if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR_SHELL ||
-     All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR)
+  if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR_SHELL)
     return bh->LambdaScale * bh_benchmark_ffr_shell_normalization() *
            bh_ffr_capture_lambda_core(bh, coordinate_distance, All.BHFreeFallA, All.BHFreeFallAlpha);
+
+  if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR)
+    return bh->LambdaScale * bh_benchmark_ffr_shell_normalization() *
+           bh_ffr_capture_lambda_core(bh, coordinate_distance, 1.0, All.BHFreeFallAlpha);
 
   if(!isfinite(bh->UniformLambda) || bh->UniformLambda < 0)
     terminate("BH_BENCHMARK: invalid uniform sink lambda=%g", bh->UniformLambda);
@@ -687,18 +690,17 @@ static void bh_ffr_prepare_benchmark_rates(void)
         }
       else if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR)
         {
-          /* The hybrid rate is distributed over the shell with the existing
-           * FFR radial weights.  The physical shell lambda contains A_ff, so
-           * rescale it to the supply/capture-limited operational rate. */
-          if(env.FFRShellRawRate > 0)
-            res->LambdaScale = rate.OperationalRate / env.FFRShellRawRate;
+          /* Mode 5 uses the unit-efficiency shell kernel directly.  Since the
+           * hybrid is min(shell supply, capture ceiling), this scale is in
+           * [0,1] and is independent of BHFreeFallA. */
+          if(env.FFRShellGeometricRate > 0)
+            res->LambdaScale = rate.OperationalRate / env.FFRShellGeometricRate;
         }
       else if(env.GasMass > 0)
         res->UniformLambda = rate.OperationalRate / env.GasMass;
 
       if(!isfinite(res->LambdaScale) || res->LambdaScale < 0 ||
-         (All.BHBenchmarkAccretionModel != BH_BENCHMARK_ACC_SUPPLY_LIMITED_FFR &&
-          res->LambdaScale > 1.0 + 1.0e-12) ||
+         res->LambdaScale > 1.0 + 1.0e-12 ||
          !isfinite(res->UniformLambda) || res->UniformLambda < 0)
         terminate("BH_BENCHMARK: invalid sink normalization scale=%g uniform=%g for ID=%llu",
                   res->LambdaScale, res->UniformLambda, (unsigned long long)P[p].ID);
