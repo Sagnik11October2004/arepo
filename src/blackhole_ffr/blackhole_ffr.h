@@ -49,18 +49,9 @@ enum bh_ffr_accretion_state
 
 
 /* Accretion-law selector for convergence benchmarks.  The default branch
- * behaviour is recovered with ACC_FFR + TARGET_RESERVOIR. */
-/* Benchmark-only shell-FFR closure.  It averages the local m/t_ff supply
- * over one logarithmic radial shell instead of summing every resolved radius.
- * The defaults are intentionally compile-time controls so production parameter
- * files and persistent restart layouts remain unchanged.  Override in Config.sh
- * only for convergence experiments. */
-#ifndef BH_BENCHMARK_FFR_SHELL_INNER_FRACTION
-#define BH_BENCHMARK_FFR_SHELL_INNER_FRACTION 0.6
-#endif
-#ifndef BH_BENCHMARK_FFR_SHELL_NORMALIZATION
-#define BH_BENCHMARK_FFR_SHELL_NORMALIZATION 1.4142135623730950488
-#endif
+ * behaviour is recovered with ACC_FFR + TARGET_RESERVOIR.  The shell-FFR
+ * benchmark uses source-local constants in bh_ffr_capture.c so it does not
+ * add Config.sh options or alter production parameter/restart layouts. */
 
 enum bh_benchmark_accretion_model
 {
