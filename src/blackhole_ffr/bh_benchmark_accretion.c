@@ -98,6 +98,8 @@ const char *bh_benchmark_accretion_model_name(int model)
         return "am-bondi";
       case BH_BENCHMARK_ACC_FFR:
         return "ffr";
+      case BH_BENCHMARK_ACC_FFR_SHELL:
+        return "ffr-shell";
       default:
         return "unknown";
     }
@@ -173,6 +175,10 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
 
       case BH_BENCHMARK_ACC_FFR:
         out->RawRate = env->FFRRawRate;
+        break;
+
+      case BH_BENCHMARK_ACC_FFR_SHELL:
+        out->RawRate = env->FFRShellRawRate;
         break;
 
       default:
