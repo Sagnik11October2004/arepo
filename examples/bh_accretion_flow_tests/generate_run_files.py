@@ -20,7 +20,7 @@ BOX_PC = 100.0
 BHL_CS_KMS = 5.0
 
 LEVELS = ("L0", "L1", "L2")
-NTASKS = {"L0": 2, "L1": 4, "L2": 8}
+NTASKS = {"L0": 2, "L1": 4, "L2": 16}
 
 FAMILIES = {
     "bhl": [

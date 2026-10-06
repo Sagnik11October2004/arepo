@@ -90,10 +90,9 @@ Run a complete stage only after the single-case smoke test has passed:
 ./run_flow_stage.sh evolved
 ```
 
-The stage runner defaults to 2/4/8 MPI ranks for L0/L1/L2. Set
+The stage runner defaults to 2/4/16 MPI ranks for L0/L1/L2. Set
 `EXEC`, `MPIEXEC`, or `KEEP_RESTARTS` in the environment to override the
 executable, MPI launcher, or final-restart cleanup policy. Active,
 model-specific sink/feedback evolutions are intentionally not generated yet;
 their matrix should be chosen only after the passive diagnostic/evolved-flow
 results are inspected.
-
