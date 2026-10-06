@@ -1,0 +1,9 @@
+# Generated binary ICs and machine-generated reports.
+bhl/ics/*/*.hdf5
+rotating/ics/*/*.hdf5
+turbulent/ics/*/*.hdf5
+bhl/ics/*/*.metadata.json
+rotating/ics/*/*.metadata.json
+turbulent/ics/*/*.metadata.json
+ic_manifest.json
+verification_report.json
