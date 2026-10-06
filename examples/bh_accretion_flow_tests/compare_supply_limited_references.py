@@ -88,7 +88,9 @@ def capture_ceiling_code(tng_code: float, cs: float, vrel: float) -> tuple[float
     if not (cs > 0) or vrel < 0:
         raise ValueError(f"invalid cs/vrel: {cs}, {vrel}")
     mach = vrel / cs
-    if mach < 1.0:
+    # Keep the intended Mach-1 benchmark on the transonic branch even if
+    # aperture averaging moves it a few ulps below one.
+    if mach < 1.0 - 1.0e-6:
         return (
             LAMBDA_BONDI_GAMMA_5_3 * tng_code,
             mach,

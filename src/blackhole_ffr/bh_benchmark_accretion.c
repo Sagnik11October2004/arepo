@@ -96,7 +96,10 @@ static double bh_benchmark_capture_ceiling_core(double g, double mass, double rh
   const double mach = vrel / cs;
 
   double rate;
-  if(mach < 1.0)
+  /* Treat the exactly-sonic benchmark as transonic. Aperture averaging can
+   * move an intended Mach-1 IC a few ulps below unity, so use a small
+   * tolerance to keep L0/L1/L2 on the same branch. */
+  if(mach < 1.0 - 1.0e-6)
     rate = lambda_bondi * tng;
   else
     {
