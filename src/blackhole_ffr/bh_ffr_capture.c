@@ -38,7 +38,7 @@ struct bh_ffr_capture_result
   MyDouble EnvFFRShellGasMass;
   MyDouble EnvFFRShellRawRate;
   MyDouble EnvFFRShellGeometricRate;
-  MyDouble EnvFFREffectiveInfallRate;
+  MyDouble EnvFFRForceRate;
 
   /* Algebraic model result before the conservative cell sink is applied. */
   MyDouble ModelRawRate;
@@ -102,7 +102,7 @@ typedef struct
   MyDouble EnvFFRShellGasMass;
   MyDouble EnvFFRShellRawRate;
   MyDouble EnvFFRShellGeometricRate;
-  MyDouble EnvFFREffectiveInfallRate;
+  MyDouble EnvFFRForceRate;
   int MinHydroTimeBin;
   MyDouble ActiveApertureGasMass;
   int SinkMinHydroTimeBin;
@@ -138,7 +138,7 @@ static double bh_ffr_proper_radius_to_coordinate_radius(double proper_radius)
 static int bh_benchmark_uses_ffr_shell(void)
 {
   return All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FFR_SHELL ||
-         All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_EFFECTIVE_INFLOW_FFR;
+         All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FORCE_FFR;
 }
 
 static double bh_benchmark_ffr_shell_normalization(void)
@@ -234,7 +234,7 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvFFRShellGasMass = out->EnvFFRShellGasMass;
           res->EnvFFRShellRawRate = out->EnvFFRShellRawRate;
           res->EnvFFRShellGeometricRate = out->EnvFFRShellGeometricRate;
-          res->EnvFFREffectiveInfallRate = out->EnvFFREffectiveInfallRate;
+          res->EnvFFRForceRate = out->EnvFFRForceRate;
           for(int k = 0; k < 3; k++)
             {
               res->EnvVelocityVolumeWeighted[k] = out->EnvVelocityVolumeWeighted[k];
@@ -250,7 +250,7 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvFFRShellGasMass += out->EnvFFRShellGasMass;
           res->EnvFFRShellRawRate += out->EnvFFRShellRawRate;
           res->EnvFFRShellGeometricRate += out->EnvFFRShellGeometricRate;
-          res->EnvFFREffectiveInfallRate += out->EnvFFREffectiveInfallRate;
+          res->EnvFFRForceRate += out->EnvFFRForceRate;
           for(int k = 0; k < 3; k++)
             {
               res->EnvVelocityVolumeWeighted[k] += out->EnvVelocityVolumeWeighted[k];
@@ -373,29 +373,30 @@ static double bh_ffr_capture_lambda_core(const data_in *bh, double coordinate_di
   return lambda;
 }
 
-static double bh_benchmark_effective_infall_factor_core(double vgrav2, double cs,
-                                                         double vr, double vperp2)
+static double bh_benchmark_force_ffr_factor_core(double agrav, double apress_in,
+                                                  double vperp2_over_r,
+                                                  double vrout2_over_r)
 {
-  if(!isfinite(vgrav2) || !(vgrav2 > 0) || !isfinite(cs) || cs < 0 ||
-     !isfinite(vr) || !isfinite(vperp2) || vperp2 < 0)
-    terminate("BH_BENCHMARK: invalid effective-infall inputs vg2=%g cs=%g vr=%g vperp2=%g",
-              vgrav2, cs, vr, vperp2);
+  if(!isfinite(agrav) || !(agrav > 0) || !isfinite(apress_in) ||
+     !isfinite(vperp2_over_r) || vperp2_over_r < 0 ||
+     !isfinite(vrout2_over_r) || vrout2_over_r < 0)
+    terminate("BH_BENCHMARK: invalid force-FFR inputs agrav=%g apress=%g aperp=%g arout=%g",
+              agrav, apress_in, vperp2_over_r, vrout2_over_r);
 
-  const double vr_in = dmax(-vr, 0.0);
-  const double vr_out = dmax(vr, 0.0);
-  const double support2 = cs * cs + vperp2 + vr_out * vr_out;
-  const double drive2 = vgrav2 + vr_in * vr_in;
-  const double q = support2 / drive2;
-  const double factor = 1.0 / ((1.0 + q) * sqrt(1.0 + q));
+  const double anet = agrav + apress_in - vperp2_over_r - vrout2_over_r;
+  if(!(anet > 0))
+    return 0.0;
 
-  if(!isfinite(factor) || factor < 0 || factor > 1.0)
-    terminate("BH_BENCHMARK: invalid effective-infall factor=%g q=%g", factor, q);
+  const double factor = sqrt(anet / agrav);
+  if(!isfinite(factor) || factor < 0)
+    terminate("BH_BENCHMARK: invalid force-FFR factor=%g anet=%g agrav=%g",
+              factor, anet, agrav);
 
   return factor;
 }
 
-static double bh_benchmark_effective_infall_factor(const data_in *bh, int j,
-                                                   double coordinate_distance)
+static double bh_benchmark_force_ffr_factor(const data_in *bh, int j,
+                                            double coordinate_distance)
 {
   if(!(bh->CentralMass > 0))
     return 0.0;
@@ -413,11 +414,19 @@ static double bh_benchmark_effective_infall_factor(const data_in *bh, int j,
 
   double dv2 = 0.0;
   double rdotv = 0.0;
+  double gradp_dot_rhat = 0.0;
   for(int k = 0; k < 3; k++)
     {
       const double dv = P[j].Vel[k] / a - bh->Vel[k] / a;
+      const double rhat = dr[k] / d;
       dv2 += dv * dv;
       rdotv += dr[k] * dv;
+      /* SphP.Grad.dpress is the local AREPO reconstructed pressure gradient
+       * with respect to coordinate distance.  Divide by a to convert the
+       * directional gradient to proper distance.  The benchmark suite is
+       * non-cosmological (a=1), but keeping this factor makes the projection
+       * explicit. */
+      gradp_dot_rhat += ((double)SphP[j].Grad.dpress[k] / a) * rhat;
     }
 
   const double vr = rdotv / d;
@@ -425,15 +434,22 @@ static double bh_benchmark_effective_infall_factor(const data_in *bh, int j,
   if(vperp2 < 0 && vperp2 > -1.0e-12 * dmax(dv2, 1.0))
     vperp2 = 0.0;
   if(vperp2 < 0)
-    terminate("BH_BENCHMARK: negative transverse speed squared=%g dv2=%g vr=%g", vperp2, dv2, vr);
+    terminate("BH_BENCHMARK: negative transverse speed squared=%g dv2=%g vr=%g",
+              vperp2, dv2, vr);
 
-  const double cs = get_sound_speed(j);
-  if(!isfinite(cs) || cs < 0)
-    terminate("BH_BENCHMARK: invalid cell sound speed=%g for gas ID=%llu",
-              cs, (unsigned long long)P[j].ID);
+  if(!isfinite(SphP[j].Density) || !(SphP[j].Density > 0))
+    terminate("BH_BENCHMARK: invalid gas density=%g for force-FFR ID=%llu",
+              (double)SphP[j].Density, (unsigned long long)P[j].ID);
 
-  const double vgrav2 = All.G * bh->CentralMass / d;
-  return bh_benchmark_effective_infall_factor_core(vgrav2, cs, vr, vperp2);
+  /* Inward is -rhat.  The pressure acceleration is -grad(P)/rho, hence its
+   * inward radial component is +grad(P).rhat/rho. */
+  const double apress_in = gradp_dot_rhat / SphP[j].Density;
+  const double agrav = All.G * bh->CentralMass / (d * d);
+  const double aperp = vperp2 / d;
+  const double vrout = dmax(vr, 0.0);
+  const double arout = vrout * vrout / d;
+
+  return bh_benchmark_force_ffr_factor_core(agrav, apress_in, aperp, arout);
 }
 
 static double bh_ffr_capture_lambda(const data_in *bh, int j, double coordinate_distance)
@@ -449,10 +465,10 @@ static double bh_ffr_capture_lambda(const data_in *bh, int j, double coordinate_
     return bh->LambdaScale * bh_benchmark_ffr_shell_normalization() *
            bh_ffr_capture_lambda_core(bh, coordinate_distance, All.BHFreeFallA, All.BHFreeFallAlpha);
 
-  if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_EFFECTIVE_INFLOW_FFR)
+  if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FORCE_FFR)
     return bh->LambdaScale * bh_benchmark_ffr_shell_normalization() *
            bh_ffr_capture_lambda_core(bh, coordinate_distance, 1.0, All.BHFreeFallAlpha) *
-           bh_benchmark_effective_infall_factor(bh, j, coordinate_distance);
+           bh_benchmark_force_ffr_factor(bh, j, coordinate_distance);
 
   if(!isfinite(bh->UniformLambda) || bh->UniformLambda < 0)
     terminate("BH_BENCHMARK: invalid uniform sink lambda=%g", bh->UniformLambda);
@@ -564,8 +580,8 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
                   const double shell_geom =
                       P[j].Mass * lambda_geom * bh_benchmark_ffr_shell_normalization();
                   out.EnvFFRShellGeometricRate += shell_geom;
-                  out.EnvFFREffectiveInfallRate +=
-                      shell_geom * bh_benchmark_effective_infall_factor(&rate_bh, j, r);
+                  out.EnvFFRForceRate +=
+                      shell_geom * bh_benchmark_force_ffr_factor(&rate_bh, j, r);
                 }
             }
 
@@ -684,7 +700,7 @@ static void bh_ffr_prepare_benchmark_rates(void)
       env.FFRRawRate = res->EnvFFRRawRate;
       env.FFRShellRawRate = res->EnvFFRShellRawRate;
       env.FFRShellGeometricRate = res->EnvFFRShellGeometricRate;
-      env.FFREffectiveInfallRate = res->EnvFFREffectiveInfallRate;
+      env.FFRForceRate = res->EnvFFRForceRate;
 
       if(res->EnvGasMass > 0)
         {
@@ -718,16 +734,16 @@ static void bh_ffr_prepare_benchmark_rates(void)
       bh_benchmark_compute_accretion(&env, BHP[b].BHMass, &rate);
 
       double raw_all[BH_BENCHMARK_ACC_COUNT], all_boost_factor, all_am_limiter;
-      double all_effective_support;
+      double all_force_factor;
       bh_benchmark_compute_all_raw_rates(&env, BHP[b].BHMass, raw_all,
                                          &all_boost_factor, &all_am_limiter,
-                                         &all_effective_support);
+                                         &all_force_factor);
 
       printf("BH_BENCHMARK_ALL: ID=%llu task=%d selected=%s target=%s feedback=%d "
              "Mgas=%.17g rho=%.17g cs=%.17g vrel=%.17g Vphi=%.17g nH=%.17g "
              "TNG=%.17g BOOSTED=%.17g AM=%.17g FFR_VOLUME=%.17g FFR_SHELL=%.17g "
-             "FFR_SHELL_GEOM=%.17g FFR_EFFECTIVE=%.17g "
-             "boost=%.17g amlim=%.17g effsupport=%.17g\n",
+             "FFR_SHELL_GEOM=%.17g FFR_FORCE=%.17g "
+             "boost=%.17g amlim=%.17g forcefactor=%.17g\n",
              (unsigned long long)P[p].ID, ThisTask,
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT ? "direct" : "reservoir",
@@ -740,8 +756,8 @@ static void bh_ffr_prepare_benchmark_rates(void)
              raw_all[BH_BENCHMARK_ACC_FFR],
              raw_all[BH_BENCHMARK_ACC_FFR_SHELL],
              env.FFRShellGeometricRate,
-             raw_all[BH_BENCHMARK_ACC_EFFECTIVE_INFLOW_FFR],
-             all_boost_factor, all_am_limiter, all_effective_support);
+             raw_all[BH_BENCHMARK_ACC_FORCE_FFR],
+             all_boost_factor, all_am_limiter, all_force_factor);
       fflush(stdout);
 
       res->ModelRawRate = rate.RawRate;
@@ -758,11 +774,11 @@ static void bh_ffr_prepare_benchmark_rates(void)
           if(rate.RawRate > 0)
             res->LambdaScale = rate.OperationalRate / rate.RawRate;
         }
-      else if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_EFFECTIVE_INFLOW_FFR)
+      else if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_FORCE_FFR)
         {
-          /* The cell-wise effective-infall kernel already contains the full
-           * support factor. LambdaScale therefore only applies the operational
-           * (e.g. Eddington) cap uniformly to that exact raw estimator. */
+          /* The cell-wise force-corrected free-fall kernel already contains
+           * the full local timescale correction. LambdaScale therefore only
+           * applies the operational (e.g. Eddington) cap uniformly. */
           if(rate.RawRate > 0)
             res->LambdaScale = rate.OperationalRate / rate.RawRate;
         }
@@ -777,7 +793,7 @@ static void bh_ffr_prepare_benchmark_rates(void)
 
       printf("BH_BENCHMARK: accretion ID=%llu task=%d model=%s target=%s feedback=%d "
              "Mgas=%.17g rho=%.17g cs=%.17g vrel=%.17g Vphi=%.17g nH=%.17g raw=%.17g edd=%.17g operational=%.17g "
-             "boost=%.17g amlim=%.17g effsupport=%.17g\n",
+             "boost=%.17g amlim=%.17g forcefactor=%.17g\n",
              (unsigned long long)P[p].ID, ThisTask,
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT ? "direct" : "reservoir",
@@ -785,7 +801,7 @@ static void bh_ffr_prepare_benchmark_rates(void)
              env.GasMass, env.Density, env.SoundSpeed, env.RelativeSpeed, env.Vphi,
              env.HydrogenNumberDensity, rate.RawRate, rate.EddingtonRate, rate.OperationalRate,
              rate.BoostFactor, rate.AngularMomentumLimiter,
-             rate.EffectiveSupportMean);
+             rate.ForceTimeFactorMean);
       fflush(stdout);
     }
 }
@@ -1145,14 +1161,15 @@ void bh_ffr_capture_self_test(void)
     terminate("BH_FFR: capture self-test failed central-mass switch scaling lambdaBH=%g lambdaFull=%g",
               lambda_bh_only, lambda_full);
 
-  const double f_cold = bh_benchmark_effective_infall_factor_core(4.0, 0.0, 0.0, 0.0);
-  const double f_trans = bh_benchmark_effective_infall_factor_core(4.0, 1.0, 0.0, 4.0);
-  const double f_in = bh_benchmark_effective_infall_factor_core(4.0, 1.0, -2.0, 4.0);
-  const double f_out = bh_benchmark_effective_infall_factor_core(4.0, 1.0, 2.0, 4.0);
-  if(fabs(f_cold - 1.0) > 2.0e-14 || !(f_trans < f_cold) ||
-     !(f_in > f_trans) || !(f_out < f_trans))
-    terminate("BH_BENCHMARK: effective-infall self-test failed cold=%g trans=%g in=%g out=%g",
-              f_cold, f_trans, f_in, f_out);
+  const double fg = bh_benchmark_force_ffr_factor_core(4.0, 0.0, 0.0, 0.0);
+  const double fpout = bh_benchmark_force_ffr_factor_core(4.0, -1.0, 0.0, 0.0);
+  const double fpin = bh_benchmark_force_ffr_factor_core(4.0, 1.0, 0.0, 0.0);
+  const double frot = bh_benchmark_force_ffr_factor_core(4.0, 0.0, 4.0, 0.0);
+  const double fout = bh_benchmark_force_ffr_factor_core(4.0, 0.0, 0.0, 4.0);
+  if(fabs(fg - 1.0) > 2.0e-14 || !(fpout < fg) || !(fpin > fg) ||
+     frot != 0.0 || fout != 0.0)
+    terminate("BH_BENCHMARK: force-FFR self-test failed fg=%g fpout=%g fpin=%g frot=%g fout=%g",
+              fg, fpout, fpin, frot, fout);
 }
 
 void bh_ffr_capture_resolved_gas(void)

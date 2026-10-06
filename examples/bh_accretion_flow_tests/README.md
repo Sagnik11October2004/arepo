@@ -131,3 +131,48 @@ IC supply (1e-4 Msun/yr) as the primary physical reference. The net resolved
 10--12.5 pc shell flux of each resolution is retained separately as an IC
 discretization diagnostic. After new AREPO diagnostic runs, the script also
 compares logged `FFR_EFFECTIVE` against the independent IC calculation.
+
+
+### Mode 5: force-corrected free-fall shell
+
+Mode 5 remains a shell FFR estimator:
+
+```text
+Mdot_5 = C_shell * sum_i m_i / t_ff,eff,i
+```
+
+with the original central-mass free-fall time `t_ff=sqrt(r^3/(G M_central))`.
+For each shell cell, AREPO's local reconstructed pressure-gradient vector is
+projected along the BH-cell radial direction. The effective timescale is
+
+```text
+t_ff,eff = t_ff * sqrt(a_grav / a_net,in)
+```
+
+when `a_net,in>0`, otherwise that cell contributes zero, with
+
+```text
+a_net,in = G M_central/r^2
+         + (grad P . rhat)/rho
+         - v_perp^2/r
+         - max(v_r,0)^2/r .
+```
+
+This uses no shell-averaged pressure profile and therefore does not assume a
+spherically symmetric gas distribution. Gravity-only gas reduces exactly to
+the previous shell FFR. Inward radial motion is not separately boosted, which
+avoids double-counting the fact that a fast steady inflow already has less mass
+resident in the shell.
+
+Because the pressure gradient exists only after AREPO reconstructs the hydro
+state, old logs cannot validate this mode. Rebuild and force-rerun:
+
+```bash
+./build_flow_tests.sh
+FORCE_RERUN=1 ./run_flow_stage.sh diagnostic
+python3 compare_force_ffr_references.py
+```
+
+The comparison script computes BHL references independently from the asymptotic
+IC state and uses the analytic 1e-4 Msun/yr continuum supply for rotating and
+turbulent ICs.

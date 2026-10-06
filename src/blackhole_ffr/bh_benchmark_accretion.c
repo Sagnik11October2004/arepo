@@ -100,8 +100,8 @@ const char *bh_benchmark_accretion_model_name(int model)
         return "ffr";
       case BH_BENCHMARK_ACC_FFR_SHELL:
         return "ffr-shell";
-      case BH_BENCHMARK_ACC_EFFECTIVE_INFLOW_FFR:
-        return "effective-infall-ffr";
+      case BH_BENCHMARK_ACC_FORCE_FFR:
+        return "force-freefall-ffr";
       default:
         return "unknown";
     }
@@ -134,17 +134,17 @@ double bh_benchmark_eddington_rate_code(double bh_mass)
 void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *env, double bh_mass,
                                         double raw_rates[BH_BENCHMARK_ACC_COUNT],
                                         double *boost_factor, double *am_limiter,
-                                        double *effective_support_mean)
+                                        double *force_time_factor_mean)
 {
   if(env == NULL || raw_rates == NULL || boost_factor == NULL || am_limiter == NULL ||
-     effective_support_mean == NULL)
+     force_time_factor_mean == NULL)
     terminate("BH_BENCHMARK_ALL: null diagnostic input/output");
 
   for(int model = 0; model < BH_BENCHMARK_ACC_COUNT; model++)
     raw_rates[model] = 0.0;
   *boost_factor = 1.0;
   *am_limiter = 1.0;
-  *effective_support_mean = 1.0;
+  *force_time_factor_mean = 1.0;
 
   if(env->GasMass <= 0 || bh_mass <= 0)
     return;
@@ -168,9 +168,9 @@ void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *e
   raw_rates[BH_BENCHMARK_ACC_FFR] = env->FFRRawRate;
   raw_rates[BH_BENCHMARK_ACC_FFR_SHELL] = env->FFRShellRawRate;
 
-  raw_rates[BH_BENCHMARK_ACC_EFFECTIVE_INFLOW_FFR] = env->FFREffectiveInfallRate;
+  raw_rates[BH_BENCHMARK_ACC_FORCE_FFR] = env->FFRForceRate;
   if(env->FFRShellGeometricRate > 0)
-    *effective_support_mean = env->FFREffectiveInfallRate / env->FFRShellGeometricRate;
+    *force_time_factor_mean = env->FFRForceRate / env->FFRShellGeometricRate;
 
   for(int model = 0; model < BH_BENCHMARK_ACC_COUNT; model++)
     if(!isfinite(raw_rates[model]) || raw_rates[model] < 0)
@@ -189,18 +189,18 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
      !isfinite(env->FFRRawRate) || env->FFRRawRate < 0 ||
      !isfinite(env->FFRShellRawRate) || env->FFRShellRawRate < 0 ||
      !isfinite(env->FFRShellGeometricRate) || env->FFRShellGeometricRate < 0 ||
-     !isfinite(env->FFREffectiveInfallRate) || env->FFREffectiveInfallRate < 0)
+     !isfinite(env->FFRForceRate) || env->FFRForceRate < 0)
     terminate("BH_BENCHMARK: invalid common environment Mgas=%g rho=%g cs=%g vrel=%g Vphi=%g nH=%g "
-              "ffr=%g shell=%g shellGeom=%g effective=%g",
+              "ffr=%g shell=%g shellGeom=%g forceFFR=%g",
               env->GasMass, env->Density, env->SoundSpeed, env->RelativeSpeed, env->Vphi,
               env->HydrogenNumberDensity, env->FFRRawRate, env->FFRShellRawRate,
-              env->FFRShellGeometricRate, env->FFREffectiveInfallRate);
+              env->FFRShellGeometricRate, env->FFRForceRate);
 
   memset(out, 0, sizeof(*out));
   out->BoostFactor = 1.0;
   out->AngularMomentumLimiter = 1.0;
-  out->EffectiveSupportMean =
-      env->FFRShellGeometricRate > 0 ? env->FFREffectiveInfallRate / env->FFRShellGeometricRate : 1.0;
+  out->ForceTimeFactorMean =
+      env->FFRShellGeometricRate > 0 ? env->FFRForceRate / env->FFRShellGeometricRate : 1.0;
   out->EddingtonRate = bh_benchmark_eddington_rate_code(bh_mass);
 
   if(env->GasMass <= 0 || bh_mass <= 0)
@@ -236,8 +236,8 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
         out->RawRate = env->FFRShellRawRate;
         break;
 
-      case BH_BENCHMARK_ACC_EFFECTIVE_INFLOW_FFR:
-        out->RawRate = env->FFREffectiveInfallRate;
+      case BH_BENCHMARK_ACC_FORCE_FFR:
+        out->RawRate = env->FFRForceRate;
         break;
 
       default:
