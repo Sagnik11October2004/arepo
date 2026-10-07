@@ -8,8 +8,13 @@ MPIEXEC="${MPIEXEC:-mpirun}"
 
 cd "$HERE"
 
-if [[ ! -s ics.hdf5 ]]; then
-  echo "No ics.hdf5 found; generating z=99 MUSIC IC."
+if [[ -s ics.hdf5 ]]; then
+  if ! python3 verify_ic.py ics.hdf5; then
+    echo "Existing ics.hdf5 does not match the z=49 64^3 scout; regenerating it."
+    ./generate_ics.sh
+  fi
+else
+  echo "No ics.hdf5 found; generating z=49 64^3 MUSIC scout IC."
   ./generate_ics.sh
 fi
 
@@ -57,7 +62,7 @@ else
   if [[ -n "$EXISTING_PRESEED" && "${FORCE_FRESH_PRESEED:-0}" != "1" ]]; then
     echo "ERROR: existing Stage-A snapshot found: $EXISTING_PRESEED" >&2
     echo "Refusing to delete it." >&2
-    echo "Use RESUME_PRESEED=1 to continue, or FORCE_FRESH_PRESEED=1 only if you deliberately want a fresh z=99 run." >&2
+    echo "Use RESUME_PRESEED=1 to continue, or FORCE_FRESH_PRESEED=1 only if you deliberately want a fresh z=49 scout run." >&2
     exit 1
   fi
 
@@ -65,7 +70,7 @@ else
   mkdir -p output_preseed output_seed_window logs ics
 
   echo
-  echo "=== Stage A: common BH-free cosmology, z=99 -> z=22 ==="
+  echo "=== Stage A: quick-scout BH-free cosmology, z=49 -> z=22 ==="
   "$MPIEXEC" -np "$NTASKS" "$ROOT/ArepoRarePeakInitial" param_preseed.txt \
     </dev/null 2>&1 | tee logs/preseed.log
 fi
