@@ -53,7 +53,6 @@ struct bh_ffr_jet_event
   MyFloat AngleDeg;
   int AngleIndex;
   int Underresolved;
-  int UsedHemisphereFallback;
 };
 
 static struct bh_ffr_jet_event *JetEvents;
@@ -68,8 +67,6 @@ typedef struct
   MyDouble Pos[3];
   MyFloat Axis[3];
   MyFloat Radius;
-  MyFloat LiveRadius;
-  MyDouble AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT];
   MyDouble BroadenRadius[BH_FFR_JET_BROADEN_ANGLE_COUNT];
   MyFloat BroadenCosCone[BH_FFR_JET_BROADEN_ANGLE_COUNT];
   MyFloat CosCone;
@@ -86,25 +83,6 @@ static data_in *DataIn, *DataGet;
 
 typedef struct
 {
-  MyDouble EnclosedMass;
-  MyDouble LobeMass[2];
-  MyDouble LobeProjectedMomentum[2];
-  MyDouble LobeTotalMass[2];
-  long long LobeCount[2];
-
-  MyDouble HemiMass[2];
-  MyDouble HemiProjectedMomentum[2];
-  MyDouble HemiTotalMass[2];
-  long long HemiCount[2];
-
-  /* Diagnostics-only adaptive MACER jet-radius survey. */
-  MyDouble AdaptiveLobeMass[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
-  MyDouble AdaptiveLobeTotalMass[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
-  long long AdaptiveLobeCount[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
-  MyDouble AdaptiveHemiMass[2];
-  MyDouble AdaptiveHemiTotalMass[2];
-  long long AdaptiveHemiCount[2];
-
   /* Constant-volume jet broadening statistics. */
   MyDouble BroadenEnclosedMass[BH_FFR_JET_BROADEN_ANGLE_COUNT];
   MyDouble BroadenLobeMass[BH_FFR_JET_BROADEN_ANGLE_COUNT][2];
@@ -120,20 +98,6 @@ typedef struct
 
 static data_out *JetResults;
 static data_out *DataResult, *DataOut;
-
-static double bh_ffr_jet_coordinate_radius(void)
-{
-  const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
-
-  if(!isfinite(a) || !(a > 0) || !isfinite(All.BHFeedbackRadius) || !(All.BHFeedbackRadius > 0))
-    terminate("BH_FFR: invalid jet feedback-radius conversion Rfb=%g a=%g", All.BHFeedbackRadius, a);
-
-  const double r = All.BHFeedbackRadius / a;
-  if(!isfinite(r) || !(r > 0))
-    terminate("BH_FFR: invalid coordinate jet feedback radius=%g", r);
-
-  return r;
-}
 
 static int bh_ffr_jet_decode_hydro_timebin(int bin)
 {
@@ -342,10 +306,7 @@ static void particle2in(data_in *in, int target, int firstnode)
       in->Axis[k] = BHP[b].JetDir[k];
     }
 
-  in->LiveRadius = bh_ffr_jet_coordinate_radius();
-  in->Radius = in->LiveRadius;
-  for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
-    in->AdaptiveRadius[k] = 0.0;
+  in->Radius = 0.0;
   for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
     {
       in->BroadenRadius[q] = 0.0;
@@ -363,9 +324,6 @@ static void particle2in(data_in *in, int target, int firstnode)
       const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
       if(!isfinite(a) || !(a > 0))
         terminate("BH_FFR: invalid scale factor=%g in jet adaptive-radius setup", a);
-
-      for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
-        in->AdaptiveRadius[k] = grid.Radius[k] / a;
 
       const double theta_ref =
           BHFFRJetBroadenAnglesDeg[0] * M_PI / 180.0;
@@ -391,8 +349,7 @@ static void particle2in(data_in *in, int target, int firstnode)
           in->BroadenCosCone[q] = cos(theta);
         }
 
-      if(in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1] > in->Radius)
-        in->Radius = in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1];
+      in->Radius = in->BroadenRadius[0];
     }
   else
     {
@@ -403,7 +360,7 @@ static void particle2in(data_in *in, int target, int firstnode)
     }
 
   in->CosCone = (JetPass == BH_FFR_JET_STATS)
-                    ? cos(All.BHJetConeAngleDeg * M_PI / 180.0)
+                    ? cos(BHFFRJetBroadenAnglesDeg[0] * M_PI / 180.0)
                     : ev->CosCone;
   in->BHID = P[p].ID;
   in->WakeTimeBin =
@@ -429,31 +386,6 @@ static void out2particle(data_out *out, int target, int mode)
     *res = *out;
   else
     {
-      res->EnclosedMass += out->EnclosedMass;
-      for(int l = 0; l < 2; l++)
-        {
-          res->LobeMass[l] += out->LobeMass[l];
-          res->LobeProjectedMomentum[l] += out->LobeProjectedMomentum[l];
-          res->LobeTotalMass[l] += out->LobeTotalMass[l];
-          res->LobeCount[l] += out->LobeCount[l];
-
-          res->HemiMass[l] += out->HemiMass[l];
-          res->HemiProjectedMomentum[l] += out->HemiProjectedMomentum[l];
-          res->HemiTotalMass[l] += out->HemiTotalMass[l];
-          res->HemiCount[l] += out->HemiCount[l];
-
-          res->AdaptiveHemiMass[l] += out->AdaptiveHemiMass[l];
-          res->AdaptiveHemiTotalMass[l] += out->AdaptiveHemiTotalMass[l];
-          res->AdaptiveHemiCount[l] += out->AdaptiveHemiCount[l];
-        }
-      for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
-        for(int l = 0; l < 2; l++)
-          {
-            res->AdaptiveLobeMass[k][l] += out->AdaptiveLobeMass[k][l];
-            res->AdaptiveLobeTotalMass[k][l] += out->AdaptiveLobeTotalMass[k][l];
-            res->AdaptiveLobeCount[k][l] += out->AdaptiveLobeCount[k][l];
-          }
-
       for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
         {
           res->BroadenEnclosedMass[q] += out->BroadenEnclosedMass[q];
@@ -615,46 +547,10 @@ static int bh_ffr_jet_evaluate(int target, int mode, int threadid)
       if(JetPass == BH_FFR_JET_STATS)
         {
           const int active = bh_ffr_jet_gas_is_active(j);
-          int hemi_search = -1;
 
           if(r2 > 0 && r2 <= in->Radius * in->Radius)
             {
-              const double dx = NEAREST_X(P[j].Pos[0] - in->Pos[0]);
-              const double dy = NEAREST_Y(P[j].Pos[1] - in->Pos[1]);
-              const double dz = NEAREST_Z(P[j].Pos[2] - in->Pos[2]);
-              const double dot = dx * in->Axis[0] + dy * in->Axis[1] + dz * in->Axis[2];
-              hemi_search = dot >= 0 ? 0 : 1;
-            }
-
-          if(hemi_search >= 0 &&
-             in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1] > 0)
-            {
-              for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
-                if(r2 <= in->AdaptiveRadius[k] * in->AdaptiveRadius[k] && lobe >= 0)
-                  {
-                    out.AdaptiveLobeTotalMass[k][lobe] += P[j].Mass;
-                    if(active)
-                      {
-                        out.AdaptiveLobeCount[k][lobe]++;
-                        out.AdaptiveLobeMass[k][lobe] += P[j].Mass;
-                      }
-                  }
-
-              const double rmax =
-                  in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1];
-              if(r2 <= rmax * rmax)
-                {
-                  out.AdaptiveHemiTotalMass[hemi_search] += P[j].Mass;
-                  if(active)
-                    {
-                      out.AdaptiveHemiCount[hemi_search]++;
-                      out.AdaptiveHemiMass[hemi_search] += P[j].Mass;
-                    }
-                }
-
-              /* Constant-volume broadening survey.  Geometry is evaluated
-               * independently for each (theta,R(theta)) pair while the live
-               * jet remains untouched. */
+              /* Constant-volume live geometry statistics. */
               const double dx = NEAREST_X(P[j].Pos[0] - in->Pos[0]);
               const double dy = NEAREST_Y(P[j].Pos[1] - in->Pos[1]);
               const double dz = NEAREST_Z(P[j].Pos[2] - in->Pos[2]);
@@ -686,34 +582,6 @@ static int bh_ffr_jet_evaluate(int target, int mode, int threadid)
                           }
                       }
                   }
-            }
-
-          int hemi = -1;
-          if(r2 > 0 && r2 <= in->LiveRadius * in->LiveRadius)
-            {
-              hemi = hemi_search;
-              out.EnclosedMass += P[j].Mass;
-              out.HemiTotalMass[hemi] += P[j].Mass;
-              if(lobe >= 0)
-                out.LobeTotalMass[lobe] += P[j].Mass;
-            }
-
-          if(active && hemi >= 0)
-            {
-              double vdot = 0.0;
-              for(int k = 0; k < 3; k++)
-                vdot += (P[j].Vel[k] / a) * in->Axis[k];
-
-              out.HemiCount[hemi]++;
-              out.HemiMass[hemi] += P[j].Mass;
-              out.HemiProjectedMomentum[hemi] += P[j].Mass * vdot;
-
-              if(lobe >= 0)
-                {
-                  out.LobeCount[lobe]++;
-                  out.LobeMass[lobe] += P[j].Mass;
-                  out.LobeProjectedMomentum[lobe] += P[j].Mass * vdot;
-                }
             }
           continue;
         }
@@ -809,21 +677,6 @@ static double bh_ffr_jet_packet_q(double A, double B, double energy)
   return q;
 }
 
-static int bh_ffr_jet_survey_radius_ok(const data_out *res, int k,
-                                        double *fplus, double *fminus)
-{
-  const double mtot_plus = res->AdaptiveLobeTotalMass[k][0];
-  const double mtot_minus = res->AdaptiveLobeTotalMass[k][1];
-  *fplus = mtot_plus > 0 ? res->AdaptiveLobeMass[k][0] / mtot_plus : 0.0;
-  *fminus = mtot_minus > 0 ? res->AdaptiveLobeMass[k][1] / mtot_minus : 0.0;
-
-  return res->AdaptiveLobeCount[k][0] >= 4 &&
-         res->AdaptiveLobeCount[k][1] >= 4 &&
-         mtot_plus > 0 && mtot_minus > 0 &&
-         *fplus >= All.BHMinActiveTargetMassFrac &&
-         *fminus >= All.BHMinActiveTargetMassFrac;
-}
-
 static int bh_ffr_jet_broaden_angle_ok(const data_out *res, int q,
                                         double *fplus, double *fminus)
 {
@@ -832,8 +685,8 @@ static int bh_ffr_jet_broaden_angle_ok(const data_out *res, int q,
   *fplus = mtot_plus > 0 ? res->BroadenLobeMass[q][0] / mtot_plus : 0.0;
   *fminus = mtot_minus > 0 ? res->BroadenLobeMass[q][1] / mtot_minus : 0.0;
 
-  return res->BroadenLobeCount[q][0] >= 4 &&
-         res->BroadenLobeCount[q][1] >= 4 &&
+  return res->BroadenLobeCount[q][0] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
+         res->BroadenLobeCount[q][1] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
          mtot_plus > 0 && mtot_minus > 0 &&
          *fplus >= All.BHMinActiveTargetMassFrac &&
          *fminus >= All.BHMinActiveTargetMassFrac;
@@ -939,82 +792,6 @@ static void bh_ffr_jet_report_broadening_survey(void)
     }
 }
 
-static void bh_ffr_jet_report_adaptive_radius_survey(void)
-{
-  if(All.BHBenchmarkFeedbackModel != BH_BENCHMARK_FEEDBACK_MACER ||
-     JetConflictRound != 0)
-    return;
-
-  static unsigned long long survey_calls = 0;
-  if((survey_calls++ % 64ULL) != 0ULL)
-    return;
-
-  for(int n = 0; n < JetNTargets; n++)
-    {
-      const int p =
-          bh_ffr_jet_particle_from_target(n, "bh_ffr_jet_report_adaptive_radius_survey");
-      const data_out *res = &JetResults[n];
-
-      struct bh_ffr_discrete_radius_grid grid;
-      bh_ffr_build_resolution_radius_grid(p, &grid);
-      const double eps = bh_ffr_effective_softening_proper(p);
-
-      int selected = -1;
-      double fplus = 0.0, fminus = 0.0;
-      for(int k = 0; k < grid.Count; k++)
-        {
-          double fp = 0.0, fm = 0.0;
-          const int ok = bh_ffr_jet_survey_radius_ok(res, k, &fp, &fm);
-          printf("BH_FFR: adaptive jet radius detail mode=legacy-survey ID=%llu task=%d "
-                 "index=%d R=%g Reps=%g Nplus=%lld Nminus=%lld "
-                 "fplus=%g fminus=%g resolved=%d\n",
-                 (unsigned long long)P[p].ID, ThisTask, k,
-                 (double)grid.Radius[k], (double)(grid.Radius[k] / eps),
-                 res->AdaptiveLobeCount[k][0], res->AdaptiveLobeCount[k][1],
-                 fp, fm, ok);
-          if(selected < 0 && ok)
-            {
-              selected = k;
-              fplus = fp;
-              fminus = fm;
-            }
-        }
-
-      int fallback = 0;
-      int underresolved = 0;
-      if(selected < 0)
-        {
-          const double mtot_plus = res->AdaptiveHemiTotalMass[0];
-          const double mtot_minus = res->AdaptiveHemiTotalMass[1];
-          fplus = mtot_plus > 0 ? res->AdaptiveHemiMass[0] / mtot_plus : 0.0;
-          fminus = mtot_minus > 0 ? res->AdaptiveHemiMass[1] / mtot_minus : 0.0;
-          const int hemi_ok =
-              res->AdaptiveHemiCount[0] >= 4 &&
-              res->AdaptiveHemiCount[1] >= 4 &&
-              mtot_plus > 0 && mtot_minus > 0 &&
-              fplus >= All.BHMinActiveTargetMassFrac &&
-              fminus >= All.BHMinActiveTargetMassFrac;
-          selected = grid.Count - 1;
-          fallback = hemi_ok ? 1 : 0;
-          underresolved = hemi_ok ? 0 : 1;
-        }
-
-      const long long nplus = fallback ? res->AdaptiveHemiCount[0]
-                                       : res->AdaptiveLobeCount[selected][0];
-      const long long nminus = fallback ? res->AdaptiveHemiCount[1]
-                                        : res->AdaptiveLobeCount[selected][1];
-
-      printf("BH_FFR: adaptive jet radius mode=legacy-survey ID=%llu task=%d eps=%g "
-             "Rsearch=%g Rjet=%g index=%d Nplus=%lld Nminus=%lld "
-             "fplus=%g fminus=%g fallback=%d underresolved=%d\n",
-             (unsigned long long)P[p].ID, ThisTask, eps,
-             (double)grid.Radius[grid.Count - 1],
-             (double)grid.Radius[selected], selected, nplus, nminus,
-             fplus, fminus, fallback, underresolved);
-      fflush(stdout);
-    }
-}
-
 static void bh_ffr_jet_prepare_candidates(void)
 {
   for(int n = 0; n < JetNTargets; n++)
@@ -1065,7 +842,6 @@ static void bh_ffr_jet_prepare_candidates(void)
       ev->RadiusProper = radius;
       ev->RadiusCoordinate = radius / a;
       ev->CosCone = cos(theta);
-      ev->UsedHemisphereFallback = 0;
       ev->Underresolved = selected_active < 0 ? 1 : 0;
 
       const double menc = res->BroadenEnclosedMass[selected];
@@ -1230,11 +1006,10 @@ static void bh_ffr_jet_commit_packets(void)
              (unsigned long long)P[p].ID, ThisTask, eerg, ev->Q, ev->LobeCount[0], ev->LobeCount[1],
              fabs(res->KickEnergy - ev->PacketEnergy) / ev->PacketEnergy, pnorm / fmax(fabs(ev->Q), 1.0e-30));
       printf("BH_FFR: jet coupling ID=%llu task=%d angle=%g Rjet=%g "
-             "angleIndex=%d fallback=%d cosCone=%g Nplus=%lld Nminus=%lld\n",
+             "angleIndex=%d cosCone=%g Nplus=%lld Nminus=%lld\n",
              (unsigned long long)P[p].ID, ThisTask,
              (double)ev->AngleDeg, ev->RadiusProper, ev->AngleIndex,
-             ev->UsedHemisphereFallback, (double)ev->CosCone,
-             ev->LobeCount[0], ev->LobeCount[1]);
+             (double)ev->CosCone, ev->LobeCount[0], ev->LobeCount[1]);
       fflush(stdout);
     }
 }
@@ -1314,7 +1089,6 @@ void bh_ffr_inject_jet_feedback(void)
     {
       JetConflictRound = round;
       bh_ffr_jet_comm_pass(BH_FFR_JET_STATS);
-      bh_ffr_jet_report_adaptive_radius_survey();
       bh_ffr_jet_report_broadening_survey();
       bh_ffr_jet_prepare_candidates();
 

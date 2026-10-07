@@ -69,7 +69,6 @@ typedef struct
   MyFloat Axis[3];
   MyFloat BHVel[3];
   MyFloat Radius;
-  MyFloat LiveRadius;
   MyDouble AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT];
   MyFloat CosCone;
   MyIDType BHID;
@@ -87,19 +86,6 @@ static data_in *DataIn, *DataGet;
 
 typedef struct
 {
-  MyDouble EnclosedMass;
-  MyDouble LobeMass[2];
-  MyDouble LobeProjectedMomentum[2];
-  MyDouble LobeThermalMassWeighted[2];
-  MyDouble LobeTotalMass[2];
-  long long LobeCount[2];
-
-  MyDouble HemiMass[2];
-  MyDouble HemiProjectedMomentum[2];
-  MyDouble HemiThermalMassWeighted[2];
-  MyDouble HemiTotalMass[2];
-  long long HemiCount[2];
-
   /* Transient adaptive MACER wind-radius statistics. */
   MyDouble AdaptiveEnclosedMass[BH_FFR_ADAPTIVE_RADIUS_COUNT];
   MyDouble AdaptiveLobeMass[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
@@ -123,18 +109,6 @@ typedef struct
 
 static data_out *FeedbackResults;
 static data_out *DataResult, *DataOut;
-
-static double bh_ffr_feedback_coordinate_radius(void)
-{
-  const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
-  if(!isfinite(a) || !(a > 0) || !isfinite(All.BHFeedbackRadius) || !(All.BHFeedbackRadius > 0))
-    terminate("BH_FFR: invalid feedback-radius conversion Rfb=%g a=%g", All.BHFeedbackRadius, a);
-
-  const double r = All.BHFeedbackRadius / a;
-  if(!isfinite(r) || !(r > 0))
-    terminate("BH_FFR: invalid coordinate feedback radius=%g", r);
-  return r;
-}
 
 static int bh_ffr_feedback_decode_hydro_timebin(int bin)
 {
@@ -182,8 +156,7 @@ static void particle2in(data_in *in, int target, int firstnode)
       in->BHVel[k] = P[p].Vel[k];
     }
 
-  in->LiveRadius = bh_ffr_feedback_coordinate_radius();
-  in->Radius = in->LiveRadius;
+  in->Radius = 0.0;
   for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
     in->AdaptiveRadius[k] = 0.0;
 
@@ -241,21 +214,8 @@ static void out2particle(data_out *out, int target, int mode)
     *res = *out;
   else
     {
-      res->EnclosedMass += out->EnclosedMass;
       for(int l = 0; l < 2; l++)
         {
-          res->LobeMass[l] += out->LobeMass[l];
-          res->LobeProjectedMomentum[l] += out->LobeProjectedMomentum[l];
-          res->LobeThermalMassWeighted[l] += out->LobeThermalMassWeighted[l];
-          res->LobeTotalMass[l] += out->LobeTotalMass[l];
-          res->LobeCount[l] += out->LobeCount[l];
-
-          res->HemiMass[l] += out->HemiMass[l];
-          res->HemiProjectedMomentum[l] += out->HemiProjectedMomentum[l];
-          res->HemiThermalMassWeighted[l] += out->HemiThermalMassWeighted[l];
-          res->HemiTotalMass[l] += out->HemiTotalMass[l];
-          res->HemiCount[l] += out->HemiCount[l];
-
           res->AdaptiveHemiMass[l] += out->AdaptiveHemiMass[l];
           res->AdaptiveHemiProjectedMomentum[l] +=
               out->AdaptiveHemiProjectedMomentum[l];
@@ -494,41 +454,6 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
                 }
             }
 
-          /* Preserve the historical live fixed-radius statistics exactly
-           * apart from harmless MPI/tree summation-order differences. */
-          int hemi = -1;
-          if(r2 > 0 && r2 <= in->LiveRadius * in->LiveRadius)
-            {
-              hemi = hemi_search;
-              out.EnclosedMass += P[j].Mass;
-              out.HemiTotalMass[hemi] += P[j].Mass;
-              if(lobe >= 0)
-                out.LobeTotalMass[lobe] += P[j].Mass;
-            }
-
-          if(active && hemi >= 0)
-            {
-              if(!isfinite(SphP[j].Utherm) || SphP[j].Utherm < 0)
-                terminate("BH_FFR: invalid target internal energy u=%g for gas ID=%llu",
-                          (double)SphP[j].Utherm, (unsigned long long)P[j].ID);
-
-              double vdot = 0.0;
-              for(int k = 0; k < 3; k++)
-                vdot += (P[j].Vel[k] / a) * in->Axis[k];
-
-              out.HemiCount[hemi]++;
-              out.HemiMass[hemi] += P[j].Mass;
-              out.HemiThermalMassWeighted[hemi] += P[j].Mass * SphP[j].Utherm;
-              out.HemiProjectedMomentum[hemi] += P[j].Mass * vdot;
-
-              if(lobe >= 0)
-                {
-                  out.LobeCount[lobe]++;
-                  out.LobeMass[lobe] += P[j].Mass;
-                  out.LobeThermalMassWeighted[lobe] += P[j].Mass * SphP[j].Utherm;
-                  out.LobeProjectedMomentum[lobe] += P[j].Mass * vdot;
-                }
-            }
           continue;
         }
 
@@ -694,8 +619,8 @@ static int bh_ffr_feedback_radius_ok(const data_out *res, int k,
   *fplus = mtot_plus > 0 ? res->AdaptiveLobeMass[k][0] / mtot_plus : 0.0;
   *fminus = mtot_minus > 0 ? res->AdaptiveLobeMass[k][1] / mtot_minus : 0.0;
 
-  return res->AdaptiveLobeCount[k][0] >= 4 &&
-         res->AdaptiveLobeCount[k][1] >= 4 &&
+  return res->AdaptiveLobeCount[k][0] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
+         res->AdaptiveLobeCount[k][1] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
          mtot_plus > 0 && mtot_minus > 0 &&
          *fplus >= All.BHMinActiveTargetMassFrac &&
          *fminus >= All.BHMinActiveTargetMassFrac;
@@ -729,8 +654,8 @@ static int bh_ffr_feedback_select_live_geometry(const data_out *res,
   *fminus = mtot_minus > 0 ? res->AdaptiveHemiMass[1] / mtot_minus : 0.0;
 
   const int hemi_ok =
-      res->AdaptiveHemiCount[0] >= 4 &&
-      res->AdaptiveHemiCount[1] >= 4 &&
+      res->AdaptiveHemiCount[0] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
+      res->AdaptiveHemiCount[1] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
       mtot_plus > 0 && mtot_minus > 0 &&
       *fplus >= All.BHMinActiveTargetMassFrac &&
       *fminus >= All.BHMinActiveTargetMassFrac;
