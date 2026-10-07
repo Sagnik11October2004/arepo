@@ -133,6 +133,12 @@ for name in $BRANCHES; do
   echo " output: $out"
   echo "================================================================"
 
+  if [[ "$RESUME" == "1" && -f "$log" ]]; then
+    run_log_start=$(( $(wc -l < "$log") + 1 ))
+  else
+    run_log_start=1
+  fi
+
   (
     cd "$HERE"
     if [[ "$RESUME" == "1" ]]; then
@@ -144,8 +150,9 @@ for name in $BRANCHES; do
 
   if [[ -f "$out/end" ]]; then
     echo "Branch '$name' reached its configured final time."
-  elif [[ -f "$out/stop" && -d "$out/restartfiles" ]] &&
-       grep -q "All restart files written successfully" "$log"; then
+  elif [[ -d "$out/restartfiles" ]] &&
+       tail -n +"$run_log_start" "$log" | grep -q "stop-file detected. stopping." &&
+       tail -n +"$run_log_start" "$log" | grep -q "All restart files written successfully"; then
     echo "Branch '$name' stopped cleanly with verified native restart files."
   else
     echo "ERROR: branch '$name' exited without an end file or a verified deliberate-stop restart." >&2
