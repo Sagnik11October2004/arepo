@@ -45,7 +45,7 @@ struct bh_ffr_capture_result
   MyDouble EnvFFRShellInwardRateWeighted;
   MyDouble EnvFFRShellOutwardRateWeighted;
 
-  /* Diagnostics-only resolution-relative ConvJ shell survey. */
+  /* Diagnostics-only resolution-relative shell-FFR survey for modes 4/5. */
   long long EnvAdaptiveShellCellCount[BH_FFR_ADAPTIVE_RADIUS_COUNT];
 
   /* Algebraic model result before the conservative cell sink is applied. */
@@ -517,10 +517,10 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
                     out.EnvAdaptiveShellCellCount[k]++;
                 }
 
-              /* Iteration A is diagnostics-only.  The treewalk reaches the
-               * adaptive 10-epsilon search radius, but all historical live
-               * environment quantities remain restricted to the fixed
-               * BHAccretionRadius until the next reviewed iteration. */
+              /* Diagnostics-only survey.  The treewalk reaches the adaptive
+               * 32-epsilon search radius, but all historical live environment
+               * quantities remain restricted to the fixed BHAccretionRadius
+               * until the next reviewed iteration. */
               if(r > bh->AccretionRadius)
                 continue;
             }
@@ -740,7 +740,7 @@ static void bh_ffr_report_adaptive_acc_radius_survey(void)
       const double eps = bh_ffr_effective_softening_proper(p);
       printf("BH_FFR: adaptive accretion radius mode=survey accModel=%s ID=%llu task=%d "
              "eps=%g Rsearch=%g Racc=%g index=%d "
-             "Nshell=[%lld,%lld,%lld,%lld,%lld,%lld] underresolved=%d\n",
+             "Nshell=[%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld] underresolved=%d\n",
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              (unsigned long long)P[p].ID, ThisTask, eps,
              (double)grid.Radius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1],
@@ -751,6 +751,11 @@ static void bh_ffr_report_adaptive_acc_radius_survey(void)
              res->EnvAdaptiveShellCellCount[3],
              res->EnvAdaptiveShellCellCount[4],
              res->EnvAdaptiveShellCellCount[5],
+             res->EnvAdaptiveShellCellCount[6],
+             res->EnvAdaptiveShellCellCount[7],
+             res->EnvAdaptiveShellCellCount[8],
+             res->EnvAdaptiveShellCellCount[9],
+             res->EnvAdaptiveShellCellCount[10],
              underresolved);
       fflush(stdout);
     }

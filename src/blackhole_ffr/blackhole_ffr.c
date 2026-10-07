@@ -38,7 +38,7 @@ static void bh_ffr_deterministic_axis(MyIDType id, MyDouble axis[3])
 }
 
 static const double BHFFRAdaptiveRadiusFactors[BH_FFR_ADAPTIVE_RADIUS_COUNT] =
-    {3.0, 4.0, 5.0, 6.0, 8.0, 10.0};
+    {3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 16.0, 20.0, 24.0, 32.0};
 
 void bh_ffr_build_discrete_radius_grid(double base_radius, const double *factors, int count,
                                        struct bh_ffr_discrete_radius_grid *grid)
@@ -147,10 +147,12 @@ void bh_ffr_adaptive_radius_self_test(void)
 {
   /* Dimensionless regression for the production resolution-relative hierarchy.
    * The minimum candidate is deliberately outside AREPO's spline-softened
-   * force region, whose Newtonian transition is at about 2.8 epsilon:
-   * R/epsilon = {3,4,5,6,8,10}. */
+   * force region, whose Newtonian transition is at about 2.8 epsilon.  The
+   * extended survey resolves the likely 32-cell crossing without immediately
+   * expanding to halo-scale apertures:
+   * R/epsilon = {3,4,5,6,8,10,12,16,20,24,32}. */
   const double expected[BH_FFR_ADAPTIVE_RADIUS_COUNT] =
-      {3.0, 4.0, 5.0, 6.0, 8.0, 10.0};
+      {3.0, 4.0, 5.0, 6.0, 8.0, 10.0, 12.0, 16.0, 20.0, 24.0, 32.0};
   struct bh_ffr_discrete_radius_grid grid;
 
   bh_ffr_build_discrete_radius_grid(1.0, BHFFRAdaptiveRadiusFactors,
@@ -162,17 +164,17 @@ void bh_ffr_adaptive_radius_self_test(void)
                 k, (double)grid.Radius[k], expected[k]);
 
   const long long resolved_counts[BH_FFR_ADAPTIVE_RADIUS_COUNT] =
-      {3, 12, 21, 31, 40, 80};
+      {1, 2, 4, 7, 10, 14, 20, 34, 48, 70, 120};
   int underresolved = -1;
   int k = bh_ffr_select_smallest_resolved_radius(&grid, resolved_counts, 32,
                                                   &underresolved);
-  if(k != 4 || underresolved != 0)
+  if(k != 7 || underresolved != 0)
     terminate("BH_FFR: adaptive-radius resolved-selection self-test failed "
               "k=%d underresolved=%d",
               k, underresolved);
 
   const long long unresolved_counts[BH_FFR_ADAPTIVE_RADIUS_COUNT] =
-      {1, 2, 3, 4, 5, 6};
+      {1, 2, 3, 4, 5, 6, 8, 11, 15, 22, 31};
   k = bh_ffr_select_smallest_resolved_radius(&grid, unresolved_counts, 32,
                                               &underresolved);
   if(k != BH_FFR_ADAPTIVE_RADIUS_COUNT - 1 || underresolved != 1)
