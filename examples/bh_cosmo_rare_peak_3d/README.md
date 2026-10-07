@@ -19,7 +19,7 @@ It is **not** a representative cosmological volume: the box deliberately uses
 - simple primordial AREPO cooling enabled; star formation disabled
 - FoF compiled throughout
 - seed mass: 1e5 Msun
-- eligible host threshold: 1e7 Msun
+- eligible host threshold: 5e6 Msun
 - dedicated compile-time single-seed mode chooses the globally most massive
   eligible FoF halo and prevents later creation of additional BH seeds
 - seed window: 20 < z < 22
@@ -136,7 +136,7 @@ The runner:
 8. writes `ics/common_z20_seeded.hdf5`.
 
 Because capture is disabled through this stage, the common BH must still have
-exactly the seed mass. If no eligible >=1e7 Msun halo appears in the requested
+exactly the seed mass. If no eligible >=5e6 Msun halo appears in the requested
 window, the runner exits rather than silently lowering the host threshold.
 
 ## 4. Accretion modes available after z=20
@@ -184,16 +184,83 @@ MODELS="0 1 2 3 4 5" FEEDBACKS="none tng macer" ZEND=15 NTASKS=8 ./run_branches.
 Outputs are kept separate as
 `outputs/<accretion-model>__<feedback>/`.
 
-## Important mode-5 normalization note
+## Current mode-5 normalization
 
-The current development implementation of mode 5 deliberately uses the
-unit-efficiency geometric shell rate times `FMACH*FJ` so its *shape* can be
-tested cleanly against the idealized flow suite. It does not yet apply the
-production `A_ff=1e-3` normalization used by the original shell FFR.
+Mode 5 is now interpreted as a resolved dynamical suppression of the
+geometric shell free-fall supply,
 
-Therefore mode 5 is wired into the cosmological branch runner, but its final
-`A_ff`/free-fall normalization must be frozen before the mode-5 branch is
-interpreted as a production science result.
+```text
+Mdot_5 = Mdot_shell,geom * f_M * f_j
+f_j = [1 + (r_circ/R_acc)^2]^(-1/2)
+```
+
+with no additional `1e-3` normalization.  Here
+`r_circ/R_acc = j^2/(G M_cen R_acc) = v_phi^2/v_K^2` is also the ratio of
+centrifugal to gravitational acceleration at the aperture.  The adopted
+`f_j` is a smooth closure: it approaches unity for negligible rotation and
+the gravity/centrifugal-force ratio for strong rotational support.  The
+specific quadrature form is a model choice rather than a unique first-principles
+derivation and should be tested against resolved inflow calculations.
+
+If a future residual global efficiency is introduced for mode 5, it should
+represent missing unresolved physics and be restricted to the range 0.1--1;
+it must not reintroduce the retired `1e-3` prefactor.
+
+
+## Native-restart z~10 science suite
+
+The current controlled comparison starts from the untouched native AREPO
+restart written immediately after the first seed event:
+
+- z_seed = 20.8837
+- BH ID = 1000120011
+- M_BH = 1e5 Msun
+- four MPI ranks in the checkpoint
+- no resolved gas capture had occurred before the checkpoint
+
+BH-containing FFR/MACER states must be branched with native
+`RestartFlag=1`; a snapshot restart is not state-safe because the unresolved
+reservoir, feedback buffers, directions, and timestep bookkeeping live in the
+serialized BH state.
+
+The checked-in branch parameter files are under `params_native/`:
+
+- `ffr_shell_A1e2__macer.txt`: shell FFR with A_ff=1e-2, reservoir, MACER.
+- `ffr_shell_A1e1__macer.txt`: shell FFR with A_ff=1e-1, reservoir, MACER.
+- `convj_shell_ffr__macer.txt`: geometric shell x f_M x f_j, no extra
+  suppression, reservoir, MACER.
+- `tng_bondi__tng.txt`: TNG Bondi, direct target, TNG feedback.
+- `ffr_shell_A1e2__none.txt`, `convj_shell_ffr__none.txt`, and
+  `tng_bondi__none.txt`: feedback-free controls.
+
+They share `output_branch_z10.txt` and request `TimeMax=0.09`, which is
+chosen for the native integer timeline and corresponds to an actual endpoint
+near z=10.11 for this checkpoint.  The branch files use the standard AREPO
+`MinSizeTimestep=1e-7`.  No additional BLACKHOLE_FFR minimum-timestep floor
+is added; if the resolved hydro calculation genuinely requires a smaller
+standard AREPO timestep, that should be diagnosed rather than hidden by a
+BH-specific clamp.
+
+The runner is deliberately non-destructive and requires an explicit branch
+selection:
+
+```bash
+chmod +x run_native_restart_suite.sh
+
+BRANCHES="convj_shell_ffr__macer" NTASKS=4 ./run_native_restart_suite.sh
+```
+
+For several branches, list them explicitly:
+
+```bash
+BRANCHES="ffr_shell_A1e2__macer ffr_shell_A1e1__macer convj_shell_ffr__macer tng_bondi__tng" \
+  NTASKS=4 ./run_native_restart_suite.sh
+```
+
+By default it reads the pristine checkpoint from
+`restart_archive/common_seed_spare/restartfiles`, copies it independently
+for each selected branch, and refuses to overwrite an existing output or log.
+The old `run_branches.sh` snapshot workflow is disabled.
 
 ## Scientific interpretation
 
