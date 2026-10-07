@@ -8,6 +8,11 @@
 #include "blackhole_ffr.h"
 #include "../main/proto.h"
 
+#define BH_FFR_JET_BROADEN_ANGLE_COUNT 4
+
+static const double BHFFRJetBroadenAnglesDeg[BH_FFR_JET_BROADEN_ANGLE_COUNT] =
+    {15.0, 30.0, 45.0, 60.0};
+
 /*
  * Iteration 8: persistent jet-axis memory and narrow bipolar jet feedback.
  *
@@ -59,6 +64,8 @@ typedef struct
   MyFloat Radius;
   MyFloat LiveRadius;
   MyDouble AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT];
+  MyDouble BroadenRadius[BH_FFR_JET_BROADEN_ANGLE_COUNT];
+  MyFloat BroadenCosCone[BH_FFR_JET_BROADEN_ANGLE_COUNT];
   MyFloat CosCone;
   MyIDType BHID;
   int Candidate;
@@ -90,6 +97,11 @@ typedef struct
   MyDouble AdaptiveHemiMass[2];
   MyDouble AdaptiveHemiTotalMass[2];
   long long AdaptiveHemiCount[2];
+
+  /* Constant-volume jet broadening survey. */
+  MyDouble BroadenLobeMass[BH_FFR_JET_BROADEN_ANGLE_COUNT][2];
+  MyDouble BroadenLobeTotalMass[BH_FFR_JET_BROADEN_ANGLE_COUNT][2];
+  long long BroadenLobeCount[BH_FFR_JET_BROADEN_ANGLE_COUNT][2];
 
   int Conflict;
 
@@ -325,6 +337,11 @@ static void particle2in(data_in *in, int target, int firstnode)
   in->Radius = in->LiveRadius;
   for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
     in->AdaptiveRadius[k] = 0.0;
+  for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
+    {
+      in->BroadenRadius[q] = 0.0;
+      in->BroadenCosCone[q] = 0.0;
+    }
 
   if(JetPass == BH_FFR_JET_STATS &&
      All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_MACER)
@@ -340,6 +357,30 @@ static void particle2in(data_in *in, int target, int firstnode)
 
       for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
         in->AdaptiveRadius[k] = grid.Radius[k] / a;
+
+      const double theta_ref =
+          BHFFRJetBroadenAnglesDeg[0] * M_PI / 180.0;
+      const double omega_ref = 1.0 - cos(theta_ref);
+      const double rref = grid.Radius[grid.Count - 1];
+
+      for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
+        {
+          const double theta =
+              BHFFRJetBroadenAnglesDeg[q] * M_PI / 180.0;
+          const double omega = 1.0 - cos(theta);
+          if(!isfinite(omega) || !(omega > 0))
+            terminate("BH_FFR: invalid broadened jet solid-angle factor q=%d theta=%g",
+                      q, BHFFRJetBroadenAnglesDeg[q]);
+
+          const double rproper =
+              rref * cbrt(omega_ref / omega);
+          if(!isfinite(rproper) || !(rproper > 0))
+            terminate("BH_FFR: invalid broadened jet radius q=%d R=%g",
+                      q, rproper);
+
+          in->BroadenRadius[q] = rproper / a;
+          in->BroadenCosCone[q] = cos(theta);
+        }
 
       if(in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1] > in->Radius)
         in->Radius = in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1];
@@ -391,6 +432,14 @@ static void out2particle(data_out *out, int target, int mode)
             res->AdaptiveLobeMass[k][l] += out->AdaptiveLobeMass[k][l];
             res->AdaptiveLobeTotalMass[k][l] += out->AdaptiveLobeTotalMass[k][l];
             res->AdaptiveLobeCount[k][l] += out->AdaptiveLobeCount[k][l];
+          }
+
+      for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
+        for(int l = 0; l < 2; l++)
+          {
+            res->BroadenLobeMass[q][l] += out->BroadenLobeMass[q][l];
+            res->BroadenLobeTotalMass[q][l] += out->BroadenLobeTotalMass[q][l];
+            res->BroadenLobeCount[q][l] += out->BroadenLobeCount[q][l];
           }
 
       if(out->Conflict)
@@ -570,6 +619,30 @@ static int bh_ffr_jet_evaluate(int target, int mode, int threadid)
                       out.AdaptiveHemiMass[hemi_search] += P[j].Mass;
                     }
                 }
+
+              /* Constant-volume broadening survey.  Geometry is evaluated
+               * independently for each (theta,R(theta)) pair while the live
+               * jet remains untouched. */
+              const double dx = NEAREST_X(P[j].Pos[0] - in->Pos[0]);
+              const double dy = NEAREST_Y(P[j].Pos[1] - in->Pos[1]);
+              const double dz = NEAREST_Z(P[j].Pos[2] - in->Pos[2]);
+              const double dot =
+                  dx * in->Axis[0] + dy * in->Axis[1] + dz * in->Axis[2];
+              const double cosine = fabs(dot) / sqrt(r2);
+              const int broaden_lobe = dot >= 0 ? 0 : 1;
+
+              for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
+                if(in->BroadenRadius[q] > 0 &&
+                   r2 <= in->BroadenRadius[q] * in->BroadenRadius[q] &&
+                   cosine >= in->BroadenCosCone[q])
+                  {
+                    out.BroadenLobeTotalMass[q][broaden_lobe] += P[j].Mass;
+                    if(active)
+                      {
+                        out.BroadenLobeCount[q][broaden_lobe]++;
+                        out.BroadenLobeMass[q][broaden_lobe] += P[j].Mass;
+                      }
+                  }
             }
 
           int hemi = -1;
@@ -706,6 +779,104 @@ static int bh_ffr_jet_survey_radius_ok(const data_out *res, int k,
          mtot_plus > 0 && mtot_minus > 0 &&
          *fplus >= All.BHMinActiveTargetMassFrac &&
          *fminus >= All.BHMinActiveTargetMassFrac;
+}
+
+static int bh_ffr_jet_broaden_angle_ok(const data_out *res, int q,
+                                        double *fplus, double *fminus)
+{
+  const double mtot_plus = res->BroadenLobeTotalMass[q][0];
+  const double mtot_minus = res->BroadenLobeTotalMass[q][1];
+  *fplus = mtot_plus > 0 ? res->BroadenLobeMass[q][0] / mtot_plus : 0.0;
+  *fminus = mtot_minus > 0 ? res->BroadenLobeMass[q][1] / mtot_minus : 0.0;
+
+  return res->BroadenLobeCount[q][0] >= 4 &&
+         res->BroadenLobeCount[q][1] >= 4 &&
+         mtot_plus > 0 && mtot_minus > 0 &&
+         *fplus >= All.BHMinActiveTargetMassFrac &&
+         *fminus >= All.BHMinActiveTargetMassFrac;
+}
+
+static void bh_ffr_jet_report_broadening_survey(void)
+{
+  if(All.BHBenchmarkFeedbackModel != BH_BENCHMARK_FEEDBACK_MACER ||
+     JetConflictRound != 0)
+    return;
+
+  static unsigned long long survey_calls = 0;
+  if((survey_calls++ % 64ULL) != 0ULL)
+    return;
+
+  for(int n = 0; n < JetNTargets; n++)
+    {
+      const int p =
+          bh_ffr_jet_particle_from_target(
+              n, "bh_ffr_jet_report_broadening_survey");
+      const data_out *res = &JetResults[n];
+
+      struct bh_ffr_discrete_radius_grid grid;
+      bh_ffr_build_resolution_radius_grid(p, &grid);
+      const double eps = bh_ffr_effective_softening_proper(p);
+      const double theta_ref =
+          BHFFRJetBroadenAnglesDeg[0] * M_PI / 180.0;
+      const double omega_ref = 1.0 - cos(theta_ref);
+      const double rref = grid.Radius[grid.Count - 1];
+
+      int selected = -1;
+      double selected_fplus = 0.0, selected_fminus = 0.0;
+
+      for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
+        {
+          const double theta =
+              BHFFRJetBroadenAnglesDeg[q] * M_PI / 180.0;
+          const double rproper =
+              rref * cbrt(omega_ref / (1.0 - cos(theta)));
+
+          double fp = 0.0, fm = 0.0;
+          const int ok =
+              bh_ffr_jet_broaden_angle_ok(res, q, &fp, &fm);
+
+          printf("BH_FFR: jet broadening detail mode=survey ID=%llu task=%d "
+                 "angle=%g R=%g Reps=%g volumeRatio=1 "
+                 "Nplus=%lld Nminus=%lld fplus=%g fminus=%g resolved=%d\n",
+                 (unsigned long long)P[p].ID, ThisTask,
+                 BHFFRJetBroadenAnglesDeg[q], rproper, rproper / eps,
+                 res->BroadenLobeCount[q][0],
+                 res->BroadenLobeCount[q][1],
+                 fp, fm, ok);
+
+          if(selected < 0 && ok)
+            {
+              selected = q;
+              selected_fplus = fp;
+              selected_fminus = fm;
+            }
+        }
+
+      if(selected >= 0)
+        {
+          const double theta =
+              BHFFRJetBroadenAnglesDeg[selected] * M_PI / 180.0;
+          const double rproper =
+              rref * cbrt(omega_ref / (1.0 - cos(theta)));
+          printf("BH_FFR: jet broadening mode=survey ID=%llu task=%d "
+                 "selectedAngle=%g Rjet=%g Reps=%g angleIndex=%d "
+                 "Nplus=%lld Nminus=%lld fplus=%g fminus=%g underresolved=0\n",
+                 (unsigned long long)P[p].ID, ThisTask,
+                 BHFFRJetBroadenAnglesDeg[selected], rproper, rproper / eps,
+                 selected,
+                 res->BroadenLobeCount[selected][0],
+                 res->BroadenLobeCount[selected][1],
+                 selected_fplus, selected_fminus);
+        }
+      else
+        {
+          printf("BH_FFR: jet broadening mode=survey ID=%llu task=%d "
+                 "selectedAngle=none Rjet=0 Reps=0 angleIndex=-1 "
+                 "Nplus=0 Nminus=0 fplus=0 fminus=0 underresolved=1\n",
+                 (unsigned long long)P[p].ID, ThisTask);
+        }
+      fflush(stdout);
+    }
 }
 
 static void bh_ffr_jet_report_adaptive_radius_survey(void)
@@ -986,6 +1157,27 @@ void bh_ffr_jet_self_test(void)
 
   if(fabs(got - energy) > 2.0e-13 * energy)
     terminate("BH_FFR: jet self-test failed packet root got=%g expected=%g", got, energy);
+
+  /* Constant-volume broadening regression:
+   * R^3(1-cos theta) must be invariant across the survey angles. */
+  const double rref = 64.0;
+  const double theta_ref =
+      BHFFRJetBroadenAnglesDeg[0] * M_PI / 180.0;
+  const double vref =
+      rref * rref * rref * (1.0 - cos(theta_ref));
+
+  for(int qidx = 0; qidx < BH_FFR_JET_BROADEN_ANGLE_COUNT; qidx++)
+    {
+      const double theta =
+          BHFFRJetBroadenAnglesDeg[qidx] * M_PI / 180.0;
+      const double r =
+          rref * cbrt((1.0 - cos(theta_ref)) / (1.0 - cos(theta)));
+      const double v = r * r * r * (1.0 - cos(theta));
+      if(!isfinite(r) || !(r > 0) ||
+         fabs(v / vref - 1.0) > 3.0e-13)
+        terminate("BH_FFR: jet broadening self-test failed q=%d theta=%g R=%g V/Vref=%g",
+                  qidx, BHFFRJetBroadenAnglesDeg[qidx], r, v / vref);
+    }
 }
 
 void bh_ffr_inject_jet_feedback(void)
@@ -1016,6 +1208,7 @@ void bh_ffr_inject_jet_feedback(void)
       JetConflictRound = round;
       bh_ffr_jet_comm_pass(BH_FFR_JET_STATS);
       bh_ffr_jet_report_adaptive_radius_survey();
+      bh_ffr_jet_report_broadening_survey();
       bh_ffr_jet_prepare_candidates();
 
       if(bh_ffr_jet_global_candidate_count() <= 0)
