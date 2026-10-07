@@ -437,6 +437,7 @@ static int bh_ffr_jet_evaluate(int target, int mode, int threadid)
 {
   data_in local, *in;
   int numnodes, *firstnode;
+  double xtmp, ytmp, ztmp;
 
   if(mode == MODE_LOCAL_PARTICLES)
     {
