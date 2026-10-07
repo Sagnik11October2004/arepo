@@ -317,10 +317,9 @@ static void particle2in(data_in *in, int target, int firstnode)
       if(!isfinite(a) || !(a > 0))
         terminate("BH_FFR: invalid scale factor=%g in jet adaptive-radius setup", a);
 
-      const double theta_ref =
-          BHFFRJetBroadenAnglesDeg[0] * M_PI / 180.0;
-      const double omega_ref = 1.0 - cos(theta_ref);
       const double rref = grid.Radius[grid.Count - 1];
+      if(!isfinite(rref) || !(rref > 0))
+        terminate("BH_FFR: invalid maximum jet resolution radius=%g", rref);
 
       for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
         {
@@ -331,17 +330,11 @@ static void particle2in(data_in *in, int target, int firstnode)
             terminate("BH_FFR: invalid broadened jet solid-angle factor q=%d theta=%g",
                       q, BHFFRJetBroadenAnglesDeg[q]);
 
-          const double rproper =
-              rref * cbrt(omega_ref / omega);
-          if(!isfinite(rproper) || !(rproper > 0))
-            terminate("BH_FFR: invalid broadened jet radius q=%d R=%g",
-                      q, rproper);
-
-          in->BroadenRadius[q] = rproper / a;
+          in->BroadenRadius[q] = rref / a;
           in->BroadenCosCone[q] = cos(theta);
         }
 
-      in->Radius = in->BroadenRadius[0];
+      in->Radius = rref / a;
     }
   else
     {
@@ -739,18 +732,20 @@ static void bh_ffr_jet_report_broadening_survey(void)
         {
           const double theta =
               BHFFRJetBroadenAnglesDeg[q] * M_PI / 180.0;
-          const double rproper =
-              rref * cbrt(omega_ref / (1.0 - cos(theta)));
+          const double omega = 1.0 - cos(theta);
+          const double rproper = rref;
+          const double volume_ratio = omega / omega_ref;
 
           double fp = 0.0, fm = 0.0;
           const int ok =
               bh_ffr_jet_broaden_angle_ok(res, q, &fp, &fm);
 
           printf("BH_FFR: jet broadening detail mode=live ID=%llu task=%d "
-                 "angle=%g R=%g Reps=%g volumeRatio=1 "
+                 "angle=%g R=%g Reps=%g volumeRatio=%g "
                  "Nplus=%lld Nminus=%lld fplus=%g fminus=%g resolved=%d\n",
                  (unsigned long long)P[p].ID, ThisTask,
                  BHFFRJetBroadenAnglesDeg[q], rproper, rproper / eps,
+                 volume_ratio,
                  res->BroadenLobeCount[q][0],
                  res->BroadenLobeCount[q][1],
                  fp, fm, ok);
@@ -759,10 +754,7 @@ static void bh_ffr_jet_report_broadening_survey(void)
 
       if(selected >= 0)
         {
-          const double theta =
-              BHFFRJetBroadenAnglesDeg[selected] * M_PI / 180.0;
-          const double rproper =
-              rref * cbrt(omega_ref / (1.0 - cos(theta)));
+          const double rproper = rref;
           printf("BH_FFR: jet broadening mode=live ID=%llu task=%d "
                  "selectedAngle=%g Rjet=%g Reps=%g angleIndex=%d "
                  "Nplus=%lld Nminus=%lld fplus=%g fminus=%g underresolved=0\n",
@@ -799,9 +791,6 @@ static void bh_ffr_jet_prepare_candidates(void)
 
       struct bh_ffr_discrete_radius_grid grid;
       bh_ffr_build_resolution_radius_grid(p, &grid);
-      const double theta_ref =
-          BHFFRJetBroadenAnglesDeg[0] * M_PI / 180.0;
-      const double omega_ref = 1.0 - cos(theta_ref);
       const double rref = grid.Radius[grid.Count - 1];
 
       double fplus = 0.0, fminus = 0.0;
@@ -818,8 +807,7 @@ static void bh_ffr_jet_prepare_candidates(void)
 
       const double theta =
           BHFFRJetBroadenAnglesDeg[selected] * M_PI / 180.0;
-      const double radius =
-          rref * cbrt(omega_ref / (1.0 - cos(theta)));
+      const double radius = rref;
 
       if(!isfinite(radius) || !(radius > 0))
         terminate("BH_FFR: invalid selected live jet radius=%g angle=%g",
@@ -1032,25 +1020,28 @@ void bh_ffr_jet_self_test(void)
   if(fabs(got - energy) > 2.0e-13 * energy)
     terminate("BH_FFR: jet self-test failed packet root got=%g expected=%g", got, energy);
 
-  /* Constant-volume broadening regression:
-   * R^3(1-cos theta) must be invariant across the survey angles. */
+  /* Resolution fallback regression: radius stays at the already-expanded
+   * 64-epsilon scale while the bicone broadens.  Coupled volume must therefore
+   * grow monotonically with opening angle rather than remain artificially
+   * constant. */
   const double rref = 64.0;
   const double theta_ref =
       BHFFRJetBroadenAnglesDeg[0] * M_PI / 180.0;
   const double vref =
       rref * rref * rref * (1.0 - cos(theta_ref));
+  double previous_volume = 0.0;
 
   for(int qidx = 0; qidx < BH_FFR_JET_BROADEN_ANGLE_COUNT; qidx++)
     {
       const double theta =
           BHFFRJetBroadenAnglesDeg[qidx] * M_PI / 180.0;
-      const double r =
-          rref * cbrt((1.0 - cos(theta_ref)) / (1.0 - cos(theta)));
-      const double v = r * r * r * (1.0 - cos(theta));
-      if(!isfinite(r) || !(r > 0) ||
-         fabs(v / vref - 1.0) > 3.0e-13)
+      const double v =
+          rref * rref * rref * (1.0 - cos(theta));
+      if(!isfinite(v) || !(v > 0) ||
+         (qidx > 0 && !(v > previous_volume)))
         terminate("BH_FFR: jet broadening self-test failed q=%d theta=%g R=%g V/Vref=%g",
-                  qidx, BHFFRJetBroadenAnglesDeg[qidx], r, v / vref);
+                  qidx, BHFFRJetBroadenAnglesDeg[qidx], rref, v / vref);
+      previous_volume = v;
     }
 }
 
