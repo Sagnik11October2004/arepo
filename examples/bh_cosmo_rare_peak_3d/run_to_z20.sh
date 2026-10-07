@@ -53,6 +53,14 @@ PY
   "$MPIEXEC" -np "$NTASKS" "$ROOT/ArepoRarePeak" param_preseed.txt 2 "$SNAPNUM_DEC" \
     </dev/null 2>&1 | tee logs/preseed_resume.log
 else
+  EXISTING_PRESEED="$(ls output_preseed/snap_*.hdf5 2>/dev/null | sort | tail -n 1 || true)"
+  if [[ -n "$EXISTING_PRESEED" && "${FORCE_FRESH_PRESEED:-0}" != "1" ]]; then
+    echo "ERROR: existing Stage-A snapshot found: $EXISTING_PRESEED" >&2
+    echo "Refusing to delete it." >&2
+    echo "Use RESUME_PRESEED=1 to continue, or FORCE_FRESH_PRESEED=1 only if you deliberately want a fresh z=99 run." >&2
+    exit 1
+  fi
+
   rm -rf output_preseed output_seed_window logs
   mkdir -p output_preseed output_seed_window logs ics
 
