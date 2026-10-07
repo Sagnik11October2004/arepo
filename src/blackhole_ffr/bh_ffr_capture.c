@@ -782,14 +782,14 @@ static void bh_ffr_report_adaptive_acc_radius_survey(void)
       const double racc_pc =
           selected_radius * All.UnitLength_in_cm / PARSEC;
       printf("BH_FFR: adaptive accretion radius mode=survey accModel=%s ID=%llu task=%d "
-             "eps=%g Rsearch=%g Racc=%g RaccPc=%g index=%d "
+             "eps=%g Rsearch=%g Rcap=%g Racc=%g RaccPc=%g index=%d "
              "Nshell=[%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld] "
              "Ncap=%lld underresolved=%d physicalCapApplied=%d\n",
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              (unsigned long long)P[p].ID, ThisTask, eps,
-             (double)dmin(grid.Radius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1],
+             (double)dmax(grid.Radius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1],
                           physical_cap),
-             selected_radius, racc_pc, selected,
+             physical_cap, selected_radius, racc_pc, selected,
              res->EnvAdaptiveShellCellCount[0],
              res->EnvAdaptiveShellCellCount[1],
              res->EnvAdaptiveShellCellCount[2],

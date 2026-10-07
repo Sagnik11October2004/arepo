@@ -236,8 +236,6 @@ void bh_ffr_adaptive_radius_self_test(void)
   /* Physical-cap regression: the first numerically resolved point lies beyond
    * the allowed domain, so the selector must return the exact cap rather than
    * the farther resolved candidate. */
-  const double cap_counts_radius[1] = {0.0};
-  (void)cap_counts_radius; /* keep this block dimensionless and warning-free */
   const long long bounded_counts[BH_FFR_ADAPTIVE_RADIUS_COUNT] =
       {1, 2, 3, 4, 5, 6, 8, 11, 15, 40, 50, 80, 120};
   double selected_radius = -1.0;
