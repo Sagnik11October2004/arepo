@@ -242,6 +242,17 @@ struct bh_ffr_domain_exchange_context
   int NumReceived;
 };
 
+/* Small fixed-capacity container for deterministic discrete adaptive-radius
+ * candidates.  Iteration A only provides validated infrastructure; no live
+ * accretion or feedback path selects from this grid yet.  Radii are proper
+ * code lengths, matching BHAccretionRadius/BHFeedbackRadius semantics. */
+#define BH_FFR_MAX_ADAPTIVE_RADII 8
+struct bh_ffr_discrete_radius_grid
+{
+  int Count;
+  MyDouble Radius[BH_FFR_MAX_ADAPTIVE_RADII];
+};
+
 /*! Restart record for the transient dynamical-friction environment.
  *
  * This remains separate from bh_ffr_particle_data so the DM cache is not
@@ -267,6 +278,13 @@ void bh_ffr_free_state(void);
 void bh_ffr_initialize_particles(void);
 void bh_ffr_rebuild_state_after_particle_changes(void);
 void bh_ffr_validate_state(const char *where);
+
+void bh_ffr_build_discrete_radius_grid(double base_radius, const double *factors, int count,
+                                       struct bh_ffr_discrete_radius_grid *grid);
+int bh_ffr_select_smallest_resolved_radius(const struct bh_ffr_discrete_radius_grid *grid,
+                                           const long long *counts, long long min_count,
+                                           int *underresolved);
+void bh_ffr_adaptive_radius_self_test(void);
 
 void bh_ffr_build_active_list(void);
 void bh_ffr_free_active_list(void);
