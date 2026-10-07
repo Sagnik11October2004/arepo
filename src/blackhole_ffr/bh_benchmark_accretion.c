@@ -208,7 +208,12 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
   out->AngularMomentumFactor = env->AngularMomentumFactor;
   out->EddingtonRate = bh_benchmark_eddington_rate_code(bh_mass);
 
-  if(env->GasMass <= 0 || bh_mass <= 0)
+  if(bh_mass <= 0)
+    return;
+
+  if(env->GasMass <= 0 &&
+     All.BHBenchmarkAccretionModel != BH_BENCHMARK_ACC_FFR_SHELL &&
+     All.BHBenchmarkAccretionModel != BH_BENCHMARK_ACC_CONVJ_SHELL_FFR)
     return;
 
   switch(All.BHBenchmarkAccretionModel)

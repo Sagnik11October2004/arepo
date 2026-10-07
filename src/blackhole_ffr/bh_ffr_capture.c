@@ -19,6 +19,18 @@ enum bh_ffr_capture_pass
   BH_FFR_CAPTURE_PASS_SHARES = 2
 };
 
+struct bh_ffr_shell_stats
+{
+  MyDouble GasMass;
+  MyDouble RawRate;
+  MyDouble GeometricRate;
+  MyDouble SoundRateWeighted;
+  MyDouble VelocityRateWeighted[3];
+  MyDouble AngularMomentumRateWeighted[3];
+  MyDouble InwardRateWeighted;
+  MyDouble OutwardRateWeighted;
+};
+
 struct bh_ffr_capture_result
 {
   MyDouble CapturedMass;
@@ -45,9 +57,17 @@ struct bh_ffr_capture_result
   MyDouble EnvFFRShellInwardRateWeighted;
   MyDouble EnvFFRShellOutwardRateWeighted;
 
-  /* Diagnostics-only resolution-relative shell-FFR survey for modes 4/5. */
+  /* Transient adaptive shell environments for modes 4/5.  They exist only
+   * during one collective capture transaction and never enter restart state. */
   long long EnvAdaptiveShellCellCount[BH_FFR_ADAPTIVE_RADIUS_COUNT];
+  struct bh_ffr_shell_stats EnvAdaptiveShell[BH_FFR_ADAPTIVE_RADIUS_COUNT];
   long long EnvAdaptivePhysicalCapShellCellCount;
+  struct bh_ffr_shell_stats EnvAdaptivePhysicalCapShell;
+
+  MyDouble SelectedAccretionRadiusProper;
+  int SelectedAccretionIndex;
+  int AccretionUnderresolved;
+  int AccretionPhysicalCapApplied;
 
   /* Algebraic model result before the conservative cell sink is applied. */
   MyDouble ModelRawRate;
@@ -135,7 +155,9 @@ typedef struct
   MyDouble EnvFFRShellInwardRateWeighted;
   MyDouble EnvFFRShellOutwardRateWeighted;
   long long EnvAdaptiveShellCellCount[BH_FFR_ADAPTIVE_RADIUS_COUNT];
+  struct bh_ffr_shell_stats EnvAdaptiveShell[BH_FFR_ADAPTIVE_RADIUS_COUNT];
   long long EnvAdaptivePhysicalCapShellCellCount;
+  struct bh_ffr_shell_stats EnvAdaptivePhysicalCapShell;
   int MinHydroTimeBin;
   MyDouble ActiveApertureGasMass;
   int SinkMinHydroTimeBin;
@@ -185,6 +207,61 @@ static int bh_benchmark_capture_window_open(void)
 {
   return All.BHBenchmarkStartTimeMyr <= 0 ||
          bh_benchmark_current_time_myr() >= All.BHBenchmarkStartTimeMyr;
+}
+
+static void bh_ffr_shell_stats_add(struct bh_ffr_shell_stats *dst,
+                                   const struct bh_ffr_shell_stats *src)
+{
+  dst->GasMass += src->GasMass;
+  dst->RawRate += src->RawRate;
+  dst->GeometricRate += src->GeometricRate;
+  dst->SoundRateWeighted += src->SoundRateWeighted;
+  dst->InwardRateWeighted += src->InwardRateWeighted;
+  dst->OutwardRateWeighted += src->OutwardRateWeighted;
+  for(int k = 0; k < 3; k++)
+    {
+      dst->VelocityRateWeighted[k] += src->VelocityRateWeighted[k];
+      dst->AngularMomentumRateWeighted[k] += src->AngularMomentumRateWeighted[k];
+    }
+}
+
+static void bh_ffr_shell_stats_accumulate(struct bh_ffr_shell_stats *dst,
+                                          double mass, double raw_rate,
+                                          double geom_rate, double cs,
+                                          const double dv[3],
+                                          const double ell[3], double vr)
+{
+  if(!(raw_rate > 0) || !(geom_rate > 0))
+    return;
+
+  dst->GasMass += mass;
+  dst->RawRate += raw_rate;
+  dst->GeometricRate += geom_rate;
+  dst->SoundRateWeighted += geom_rate * cs;
+  dst->InwardRateWeighted += geom_rate * dmax(-vr, 0.0);
+  dst->OutwardRateWeighted += geom_rate * dmax(vr, 0.0);
+  for(int k = 0; k < 3; k++)
+    {
+      dst->VelocityRateWeighted[k] += geom_rate * dv[k];
+      dst->AngularMomentumRateWeighted[k] += geom_rate * ell[k];
+    }
+}
+
+static void bh_ffr_use_selected_shell_stats(struct bh_ffr_capture_result *res,
+                                            const struct bh_ffr_shell_stats *src)
+{
+  res->EnvFFRShellGasMass = src->GasMass;
+  res->EnvFFRShellRawRate = src->RawRate;
+  res->EnvFFRShellGeometricRate = src->GeometricRate;
+  res->EnvFFRShellSoundRateWeighted = src->SoundRateWeighted;
+  res->EnvFFRShellInwardRateWeighted = src->InwardRateWeighted;
+  res->EnvFFRShellOutwardRateWeighted = src->OutwardRateWeighted;
+  for(int k = 0; k < 3; k++)
+    {
+      res->EnvFFRShellVelocityRateWeighted[k] = src->VelocityRateWeighted[k];
+      res->EnvFFRShellAngularMomentumRateWeighted[k] =
+          src->AngularMomentumRateWeighted[k];
+    }
 }
 
 static double bh_benchmark_ffr_shell_normalization(void)
@@ -275,6 +352,16 @@ static void particle2in(data_in *in, int target, int firstnode)
         terminate("BH_BENCHMARK: invalid capture target=%d while loading sink coefficients", target);
       in->LambdaScale = CaptureResults[target].LambdaScale;
       in->UniformLambda = CaptureResults[target].UniformLambda;
+
+      if(bh_benchmark_uses_ffr_shell())
+        {
+          const double rsel = CaptureResults[target].SelectedAccretionRadiusProper;
+          if(!isfinite(rsel) || !(rsel > 0))
+            terminate("BH_FFR: invalid selected shell radius=%g for ID=%llu",
+                      rsel, (unsigned long long)P[p].ID);
+          in->AccretionRadius =
+              bh_ffr_proper_radius_to_coordinate_radius(rsel);
+        }
     }
   in->Firstnode = firstnode;
 
@@ -309,9 +396,15 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvFFRShellInwardRateWeighted = out->EnvFFRShellInwardRateWeighted;
           res->EnvFFRShellOutwardRateWeighted = out->EnvFFRShellOutwardRateWeighted;
           for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
-            res->EnvAdaptiveShellCellCount[k] = out->EnvAdaptiveShellCellCount[k];
+            {
+              res->EnvAdaptiveShellCellCount[k] =
+                  out->EnvAdaptiveShellCellCount[k];
+              res->EnvAdaptiveShell[k] = out->EnvAdaptiveShell[k];
+            }
           res->EnvAdaptivePhysicalCapShellCellCount =
               out->EnvAdaptivePhysicalCapShellCellCount;
+          res->EnvAdaptivePhysicalCapShell =
+              out->EnvAdaptivePhysicalCapShell;
           for(int k = 0; k < 3; k++)
             {
               res->EnvVelocityVolumeWeighted[k] = out->EnvVelocityVolumeWeighted[k];
@@ -334,9 +427,16 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvFFRShellInwardRateWeighted += out->EnvFFRShellInwardRateWeighted;
           res->EnvFFRShellOutwardRateWeighted += out->EnvFFRShellOutwardRateWeighted;
           for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
-            res->EnvAdaptiveShellCellCount[k] += out->EnvAdaptiveShellCellCount[k];
+            {
+              res->EnvAdaptiveShellCellCount[k] +=
+                  out->EnvAdaptiveShellCellCount[k];
+              bh_ffr_shell_stats_add(&res->EnvAdaptiveShell[k],
+                                     &out->EnvAdaptiveShell[k]);
+            }
           res->EnvAdaptivePhysicalCapShellCellCount +=
               out->EnvAdaptivePhysicalCapShellCellCount;
+          bh_ffr_shell_stats_add(&res->EnvAdaptivePhysicalCapShell,
+                                 &out->EnvAdaptivePhysicalCapShell);
           for(int k = 0; k < 3; k++)
             {
               res->EnvVelocityVolumeWeighted[k] += out->EnvVelocityVolumeWeighted[k];
@@ -433,7 +533,7 @@ static double bh_ffr_capture_lambda_core(const data_in *bh, double coordinate_di
   const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
   double d = coordinate_distance * a;
 
-  const double d_floor = 1.0e-12 * All.BHAccretionRadius;
+  const double d_floor = 1.0e-12 * bh->AccretionRadius * a;
   if(d < d_floor)
     d = d_floor;
 
@@ -510,11 +610,7 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
   double search_radius = bh->AccretionRadius;
   if(CapturePass == BH_FFR_CAPTURE_PASS_ENVIRONMENT &&
      bh_benchmark_uses_ffr_shell())
-    {
-      search_radius =
-          dmax(search_radius, bh->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1]);
-      search_radius = dmax(search_radius, bh->AdaptivePhysicalCapRadius);
-    }
+    search_radius = dmax(search_radius, bh->AdaptivePhysicalCapRadius);
 
   const int nfound =
       ngb_treefind_variable_threads(bh->Pos, search_radius, target, mode, threadid, numnodes, firstnode);
@@ -536,47 +632,19 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
 
       if(CapturePass == BH_FFR_CAPTURE_PASS_ENVIRONMENT)
         {
-          if(bh_benchmark_uses_ffr_shell())
-            {
-              for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
-                {
-                  const double rout = bh->AdaptiveRadius[k];
-                  const double rin = BenchmarkFFRShellInnerFraction * rout;
-                  if(r > rin && r < rout)
-                    out.EnvAdaptiveShellCellCount[k]++;
-                }
-
-              if(bh->AdaptivePhysicalCapRadius > 0)
-                {
-                  const double rout = bh->AdaptivePhysicalCapRadius;
-                  const double rin = BenchmarkFFRShellInnerFraction * rout;
-                  if(r > rin && r < rout)
-                    out.EnvAdaptivePhysicalCapShellCellCount++;
-                }
-
-              /* Diagnostics-only survey.  The treewalk gathers the epsilon
-               * hierarchy plus the exact 100 pc physical-cap shell, while all
-               * historical live environment quantities remain restricted to
-               * the fixed BHAccretionRadius until the next reviewed iteration. */
-              if(r > bh->AccretionRadius)
-                continue;
-            }
-
           if(!(SphP[j].Volume > 0) || !isfinite(SphP[j].Volume))
-            terminate("BH_BENCHMARK: invalid gas volume=%g for ID=%llu", (double)SphP[j].Volume,
-                      (unsigned long long)P[j].ID);
+            terminate("BH_BENCHMARK: invalid gas volume=%g for ID=%llu",
+                      (double)SphP[j].Volume, (unsigned long long)P[j].ID);
 
           const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
           const double cs = get_sound_speed(j);
           if(!isfinite(cs) || cs < 0)
-            terminate("BH_BENCHMARK: invalid sound speed=%g for gas ID=%llu", cs, (unsigned long long)P[j].ID);
+            terminate("BH_BENCHMARK: invalid sound speed=%g for gas ID=%llu",
+                      cs, (unsigned long long)P[j].ID);
 
-          out.EnvGasMass += P[j].Mass;
-          out.EnvVolume += SphP[j].Volume;
-          out.EnvSoundVolumeWeighted += SphP[j].Volume * cs;
-
-          /* AREPO's NEAREST_[XYZ] periodic-wrapping macros use these
-           * scratch variables internally, so they must exist in scope. */
+          /* Geometry and kinematics are evaluated for the whole bounded search
+           * region so every candidate shell is built from exactly the gas that
+           * would set its live supply rate. */
           double xtmp, ytmp, ztmp;
           double dr[3] = {NEAREST_X(P[j].Pos[0] - bh->Pos[0]) * a,
                           NEAREST_Y(P[j].Pos[1] - bh->Pos[1]) * a,
@@ -586,26 +654,80 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
             {
               const double vphys = P[j].Vel[k] / a;
               const double bhvphys = bh->Vel[k] / a;
-              out.EnvVelocityVolumeWeighted[k] += SphP[j].Volume * vphys;
               dv[k] = vphys - bhvphys;
             }
 
           const double ell[3] = {dr[1] * dv[2] - dr[2] * dv[1],
                                  dr[2] * dv[0] - dr[0] * dv[2],
                                  dr[0] * dv[1] - dr[1] * dv[0]};
-          for(int k = 0; k < 3; k++)
-            out.EnvAngularMomentum[k] += P[j].Mass * ell[k];
 
-          /* The benchmark raw rate is an instantaneous estimator and
-           * should be defined even at the initial synchronization point, where
-           * no elapsed transaction exists yet.  Keep CaptureEnabled gating for
-           * the actual sink passes, but remove it from this diagnostic-only
-           * environment estimate so FFR is comparable to the Bondi-family
-           * raw rates at identical states. */
           data_in rate_bh = *bh;
           rate_bh.CaptureEnabled = 1;
           const double lambda_ffr =
-              bh_ffr_capture_lambda_core(&rate_bh, r, All.BHFreeFallA, All.BHFreeFallAlpha);
+              bh_ffr_capture_lambda_core(&rate_bh, r, All.BHFreeFallA,
+                                         All.BHFreeFallAlpha);
+          const double lambda_geom =
+              bh_ffr_capture_lambda_core(&rate_bh, r, 1.0,
+                                         All.BHFreeFallAlpha);
+          const double shell_norm = bh_benchmark_ffr_shell_normalization();
+          const double raw_cell = P[j].Mass * lambda_ffr * shell_norm;
+          const double geom_cell = P[j].Mass * lambda_geom * shell_norm;
+
+          const double rproper = r * a;
+          if(!(rproper > 0) || !isfinite(rproper))
+            terminate("BH_BENCHMARK: invalid proper shell radius=%g", rproper);
+          double rdotv = 0.0;
+          for(int k = 0; k < 3; k++)
+            rdotv += dr[k] * dv[k];
+          const double vr = rdotv / rproper;
+
+          if(bh_benchmark_uses_ffr_shell())
+            {
+              for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
+                {
+                  const double rout = bh->AdaptiveRadius[k];
+                  if(!(rout > 0) || rout > bh->AdaptivePhysicalCapRadius)
+                    continue;
+                  const double rin = BenchmarkFFRShellInnerFraction * rout;
+                  if(r > rin && r < rout)
+                    {
+                      out.EnvAdaptiveShellCellCount[k]++;
+                      bh_ffr_shell_stats_accumulate(
+                          &out.EnvAdaptiveShell[k], P[j].Mass, raw_cell,
+                          geom_cell, cs, dv, ell, vr);
+                    }
+                }
+
+              if(bh->AdaptivePhysicalCapRadius > 0)
+                {
+                  const double rout = bh->AdaptivePhysicalCapRadius;
+                  const double rin = BenchmarkFFRShellInnerFraction * rout;
+                  if(r > rin && r < rout)
+                    {
+                      out.EnvAdaptivePhysicalCapShellCellCount++;
+                      bh_ffr_shell_stats_accumulate(
+                          &out.EnvAdaptivePhysicalCapShell, P[j].Mass,
+                          raw_cell, geom_cell, cs, dv, ell, vr);
+                    }
+                }
+
+              /* The common Bondi/volume diagnostics remain tied to the
+               * historical fixed aperture.  Only modes 4/5 consume the
+               * selected adaptive shell below. */
+              if(r > bh->AccretionRadius)
+                continue;
+            }
+
+          out.EnvGasMass += P[j].Mass;
+          out.EnvVolume += SphP[j].Volume;
+          out.EnvSoundVolumeWeighted += SphP[j].Volume * cs;
+          for(int k = 0; k < 3; k++)
+            {
+              const double vphys = P[j].Vel[k] / a;
+              out.EnvVelocityVolumeWeighted[k] += SphP[j].Volume * vphys;
+              out.EnvAngularMomentum[k] += P[j].Mass * ell[k];
+            }
+
           if(lambda_ffr > 0)
             {
               out.EnvFFRRawRate += P[j].Mass * lambda_ffr;
@@ -615,36 +737,19 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
               if(r >= shell_inner_radius)
                 {
                   out.EnvFFRShellGasMass += P[j].Mass;
-                  out.EnvFFRShellRawRate +=
-                      P[j].Mass * lambda_ffr * bh_benchmark_ffr_shell_normalization();
-
-                  const double lambda_geom =
-                      bh_ffr_capture_lambda_core(&rate_bh, r, 1.0, All.BHFreeFallAlpha);
-                  const double shell_geom =
-                      P[j].Mass * lambda_geom * bh_benchmark_ffr_shell_normalization();
-                  out.EnvFFRShellGeometricRate += shell_geom;
-
-                  const double rproper = r * a;
-                  if(!(rproper > 0) || !isfinite(rproper))
-                    terminate("BH_BENCHMARK: invalid proper shell radius=%g", rproper);
-
-                  double rdotv = 0.0;
-                  for(int k = 0; k < 3; k++)
-                    rdotv += dr[k] * dv[k];
-                  const double vr = rdotv / rproper;
-
-                  /* Use each cell's contribution to the unit-efficiency shell
-                   * FFR itself as the environmental weight.  This keeps all
-                   * corrections tied to exactly the gas that sets the shell
-                   * supply rather than to an unrelated mass/volume average. */
-                  const double w = shell_geom;
-                  out.EnvFFRShellSoundRateWeighted += w * cs;
-                  out.EnvFFRShellInwardRateWeighted += w * dmax(-vr, 0.0);
-                  out.EnvFFRShellOutwardRateWeighted += w * dmax(vr, 0.0);
+                  out.EnvFFRShellRawRate += raw_cell;
+                  out.EnvFFRShellGeometricRate += geom_cell;
+                  out.EnvFFRShellSoundRateWeighted += geom_cell * cs;
+                  out.EnvFFRShellInwardRateWeighted +=
+                      geom_cell * dmax(-vr, 0.0);
+                  out.EnvFFRShellOutwardRateWeighted +=
+                      geom_cell * dmax(vr, 0.0);
                   for(int k = 0; k < 3; k++)
                     {
-                      out.EnvFFRShellVelocityRateWeighted[k] += w * dv[k];
-                      out.EnvFFRShellAngularMomentumRateWeighted[k] += w * ell[k];
+                      out.EnvFFRShellVelocityRateWeighted[k] +=
+                          geom_cell * dv[k];
+                      out.EnvFFRShellAngularMomentumRateWeighted[k] +=
+                          geom_cell * ell[k];
                     }
                 }
             }
@@ -748,6 +853,43 @@ static double bh_ffr_active_gas_timestep_code_time(int j)
   return bh_ffr_integer_interval_to_physical_code_time(All.Ti_Current - ti_step, All.Ti_Current);
 }
 
+static void bh_ffr_select_live_adaptive_acc_radius(void)
+{
+  if(!bh_benchmark_uses_ffr_shell())
+    return;
+
+  for(int n = 0; n < CaptureNTargets; n++)
+    {
+      const int p =
+          bh_ffr_capture_particle_from_target(
+              n, "bh_ffr_select_live_adaptive_acc_radius");
+      struct bh_ffr_capture_result *res = &CaptureResults[n];
+
+      struct bh_ffr_discrete_radius_grid grid;
+      bh_ffr_build_resolution_radius_grid(p, &grid);
+      const double physical_cap = bh_benchmark_ffr_accretion_max_proper();
+
+      double selected_radius = physical_cap;
+      int underresolved = 0;
+      int physical_cap_applied = 0;
+      const int selected =
+          bh_ffr_select_smallest_resolved_radius_bounded(
+              &grid, res->EnvAdaptiveShellCellCount, 32, physical_cap,
+              &selected_radius, &underresolved, &physical_cap_applied);
+
+      res->SelectedAccretionRadiusProper = selected_radius;
+      res->SelectedAccretionIndex = selected;
+      res->AccretionUnderresolved = underresolved;
+      res->AccretionPhysicalCapApplied = physical_cap_applied;
+
+      if(selected >= 0)
+        bh_ffr_use_selected_shell_stats(res, &res->EnvAdaptiveShell[selected]);
+      else
+        bh_ffr_use_selected_shell_stats(
+            res, &res->EnvAdaptivePhysicalCapShell);
+    }
+}
+
 static void bh_ffr_report_adaptive_acc_radius_survey(void)
 {
   if(!bh_benchmark_uses_ffr_shell())
@@ -770,26 +912,21 @@ static void bh_ffr_report_adaptive_acc_radius_survey(void)
       bh_ffr_build_resolution_radius_grid(p, &grid);
 
       const double physical_cap = bh_benchmark_ffr_accretion_max_proper();
-      double selected_radius = physical_cap;
-      int underresolved = 0;
-      int physical_cap_applied = 0;
-      const int selected =
-          bh_ffr_select_smallest_resolved_radius_bounded(
-              &grid, res->EnvAdaptiveShellCellCount, 32, physical_cap,
-              &selected_radius, &underresolved, &physical_cap_applied);
+      const double selected_radius = res->SelectedAccretionRadiusProper;
+      const int underresolved = res->AccretionUnderresolved;
+      const int physical_cap_applied = res->AccretionPhysicalCapApplied;
+      const int selected = res->SelectedAccretionIndex;
 
       const double eps = bh_ffr_effective_softening_proper(p);
       const double racc_pc =
           selected_radius * All.UnitLength_in_cm / PARSEC;
-      printf("BH_FFR: adaptive accretion radius mode=survey accModel=%s ID=%llu task=%d "
+      printf("BH_FFR: adaptive accretion radius mode=live accModel=%s ID=%llu task=%d "
              "eps=%g Rsearch=%g Rcap=%g Racc=%g RaccPc=%g index=%d "
              "Nshell=[%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld] "
              "Ncap=%lld underresolved=%d physicalCapApplied=%d\n",
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              (unsigned long long)P[p].ID, ThisTask, eps,
-             (double)dmax(grid.Radius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1],
-                          physical_cap),
-             physical_cap, selected_radius, racc_pc, selected,
+             physical_cap, physical_cap, selected_radius, racc_pc, selected,
              res->EnvAdaptiveShellCellCount[0],
              res->EnvAdaptiveShellCellCount[1],
              res->EnvAdaptiveShellCellCount[2],
@@ -896,10 +1033,14 @@ static void bh_ffr_prepare_benchmark_rates(void)
           const double mcen = bh_ffr_central_mass_code(p);
           double chi_j = 0.0;
           double rcirc = 0.0;
-          if(mcen > 0 && All.BHAccretionRadius > 0)
+          const double shell_radius =
+              bh_benchmark_uses_ffr_shell()
+                  ? res->SelectedAccretionRadiusProper
+                  : All.BHAccretionRadius;
+          if(mcen > 0 && shell_radius > 0)
             {
               rcirc = jsh * jsh / (All.G * mcen);
-              chi_j = rcirc / All.BHAccretionRadius;
+              chi_j = rcirc / shell_radius;
             }
 
           const double fj = 1.0 / sqrt(1.0 + chi_j * chi_j);
@@ -1418,6 +1559,7 @@ void bh_ffr_capture_resolved_gas(void)
       generic_set_MaxNexport();
       generic_comm_pattern(CaptureNTargets, kernel_local, kernel_imported);
 
+      bh_ffr_select_live_adaptive_acc_radius();
       bh_ffr_report_adaptive_acc_radius_survey();
       bh_ffr_prepare_benchmark_rates();
 
