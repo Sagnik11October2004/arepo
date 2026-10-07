@@ -1082,6 +1082,31 @@ void bh_ffr_inject_wind_feedback(void)
   if(any_global_fire > 0)
     update_primitive_variables();
 
+  /* End-of-transaction drainage diagnostic.  A residual ratio >= 1 means
+   * at least one threshold quantum remains buffered after all allowed packet
+   * rounds.  capHit identifies whether BHMaxPacketsPerStep, rather than target
+   * geometry or insufficient buffer energy, stopped further drainage. */
+  for(int n = 0; n < FeedbackNTargets; n++)
+    {
+      const int p =
+          bh_ffr_feedback_particle_from_target(
+              n, "bh_ffr_inject_wind_feedback/drain");
+      const int b = P[p].BHDataIndex;
+      const double eth = BHP[b].WindThresholdEnergy;
+      const double ratio =
+          eth > 0 ? BHP[b].WindEnergyBuffer / eth : 0.0;
+      const int backlog = eth > 0 && BHP[b].WindEnergyBuffer >= eth;
+      const int cap_hit =
+          FeedbackPacketCount[n] >= All.BHMaxPacketsPerStep;
+
+      printf("BH_FFR: wind drain ID=%llu task=%d packets=%d maxPackets=%d "
+             "buffer=%g Eth=%g backlogRatio=%g backlog=%d capHit=%d\n",
+             (unsigned long long)P[p].ID, ThisTask,
+             FeedbackPacketCount[n], All.BHMaxPacketsPerStep,
+             BHP[b].WindEnergyBuffer, eth, ratio, backlog, cap_hit);
+      fflush(stdout);
+    }
+
   bh_ffr_validate_state("post-wind-feedback");
 
   myfree(FeedbackWinnerID);

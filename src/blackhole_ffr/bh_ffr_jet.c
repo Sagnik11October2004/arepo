@@ -1318,6 +1318,28 @@ void bh_ffr_inject_jet_feedback(void)
   if(any_global_fire > 0)
     update_primitive_variables();
 
+  /* Mirror the wind drainage diagnostic for the jet reservoir. */
+  for(int n = 0; n < JetNTargets; n++)
+    {
+      const int p =
+          bh_ffr_jet_particle_from_target(
+              n, "bh_ffr_inject_jet_feedback/drain");
+      const int b = P[p].BHDataIndex;
+      const double eth = BHP[b].JetThresholdEnergy;
+      const double ratio =
+          eth > 0 ? BHP[b].JetEnergyBuffer / eth : 0.0;
+      const int backlog = eth > 0 && BHP[b].JetEnergyBuffer >= eth;
+      const int cap_hit =
+          JetPacketCount[n] >= All.BHMaxPacketsPerStep;
+
+      printf("BH_FFR: jet drain ID=%llu task=%d packets=%d maxPackets=%d "
+             "buffer=%g Eth=%g backlogRatio=%g backlog=%d capHit=%d\n",
+             (unsigned long long)P[p].ID, ThisTask,
+             JetPacketCount[n], All.BHMaxPacketsPerStep,
+             BHP[b].JetEnergyBuffer, eth, ratio, backlog, cap_hit);
+      fflush(stdout);
+    }
+
   bh_ffr_validate_state("post-jet-feedback");
 
   myfree(JetWinnerID);
