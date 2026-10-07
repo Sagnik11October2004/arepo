@@ -805,7 +805,8 @@ static void bh_ffr_jet_prepare_candidates(void)
                   (unsigned long long)P[p].ID);
 
       const double base_threshold = 0.5 * res->EnclosedMass * vbind2;
-      BHP[b].WindThresholdEnergy = All.BHWindBurstFactor * base_threshold;
+      /* Keep wind/jet threshold ownership independent.  The live adaptive
+       * wind pass computes WindThresholdEnergy from its own selected radius. */
       BHP[b].JetThresholdEnergy = All.BHJetBurstFactor * base_threshold;
 
       if(JetPacketCount[n] >= All.BHMaxPacketsPerStep)
