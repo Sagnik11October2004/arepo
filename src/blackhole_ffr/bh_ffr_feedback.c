@@ -47,6 +47,8 @@ struct bh_ffr_feedback_event
   MyDouble EnergyBefore;
   MyDouble MassBefore;
   MyDouble MomentumBefore;
+  MyFloat CosCone;
+  int UsedHemisphereFallback;
 };
 
 static struct bh_ffr_feedback_event *FeedbackEvents;
@@ -81,7 +83,14 @@ typedef struct
   MyDouble LobeMass[2];
   MyDouble LobeProjectedMomentum[2];
   MyDouble LobeThermalMassWeighted[2];
+  MyDouble LobeTotalMass[2];
   long long LobeCount[2];
+
+  MyDouble HemiMass[2];
+  MyDouble HemiProjectedMomentum[2];
+  MyDouble HemiThermalMassWeighted[2];
+  MyDouble HemiTotalMass[2];
+  long long HemiCount[2];
   int Conflict;
 
   MyDouble ReturnedMass;
@@ -151,7 +160,7 @@ static void particle2in(data_in *in, int target, int firstnode)
     }
 
   in->Radius = bh_ffr_feedback_coordinate_radius();
-  in->CosCone = cos(All.BHWindConeAngleDeg * M_PI / 180.0);
+  in->CosCone = ev->CosCone;
   in->BHID = P[p].ID;
   in->Candidate = ev->Candidate;
   in->Fire = ev->Fire;
@@ -181,7 +190,14 @@ static void out2particle(data_out *out, int target, int mode)
           res->LobeMass[l] += out->LobeMass[l];
           res->LobeProjectedMomentum[l] += out->LobeProjectedMomentum[l];
           res->LobeThermalMassWeighted[l] += out->LobeThermalMassWeighted[l];
+          res->LobeTotalMass[l] += out->LobeTotalMass[l];
           res->LobeCount[l] += out->LobeCount[l];
+
+          res->HemiMass[l] += out->HemiMass[l];
+          res->HemiProjectedMomentum[l] += out->HemiProjectedMomentum[l];
+          res->HemiThermalMassWeighted[l] += out->HemiThermalMassWeighted[l];
+          res->HemiTotalMass[l] += out->HemiTotalMass[l];
+          res->HemiCount[l] += out->HemiCount[l];
         }
       if(out->Conflict)
         res->Conflict = 1;
@@ -325,23 +341,44 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
 
       if(FeedbackPass == BH_FFR_FEEDBACK_STATS)
         {
-          if(r2 <= in->Radius * in->Radius)
-            out.EnclosedMass += P[j].Mass;
+          int hemi = -1;
+          if(r2 > 0 && r2 <= in->Radius * in->Radius)
+            {
+              const double dx = NEAREST_X(P[j].Pos[0] - in->Pos[0]);
+              const double dy = NEAREST_Y(P[j].Pos[1] - in->Pos[1]);
+              const double dz = NEAREST_Z(P[j].Pos[2] - in->Pos[2]);
+              const double dot = dx * in->Axis[0] + dy * in->Axis[1] + dz * in->Axis[2];
+              hemi = dot >= 0 ? 0 : 1;
+              out.EnclosedMass += P[j].Mass;
+              out.HemiTotalMass[hemi] += P[j].Mass;
+              if(lobe >= 0)
+                out.LobeTotalMass[lobe] += P[j].Mass;
+            }
 
-          if(lobe < 0 || !bh_ffr_feedback_gas_is_active(j))
-            continue;
+          const int active = bh_ffr_feedback_gas_is_active(j);
+          if(active && hemi >= 0)
+            {
+              if(!isfinite(SphP[j].Utherm) || SphP[j].Utherm < 0)
+                terminate("BH_FFR: invalid target internal energy u=%g for gas ID=%llu",
+                          (double)SphP[j].Utherm, (unsigned long long)P[j].ID);
 
-          out.LobeCount[lobe]++;
-          out.LobeMass[lobe] += P[j].Mass;
-          if(!isfinite(SphP[j].Utherm) || SphP[j].Utherm < 0)
-            terminate("BH_FFR: invalid target internal energy u=%g for gas ID=%llu",
-                      (double)SphP[j].Utherm, (unsigned long long)P[j].ID);
-          out.LobeThermalMassWeighted[lobe] += P[j].Mass * SphP[j].Utherm;
+              double vdot = 0.0;
+              for(int k = 0; k < 3; k++)
+                vdot += (P[j].Vel[k] / a) * in->Axis[k];
 
-          double vdot = 0.0;
-          for(int k = 0; k < 3; k++)
-            vdot += (P[j].Vel[k] / a) * in->Axis[k];
-          out.LobeProjectedMomentum[lobe] += P[j].Mass * vdot;
+              out.HemiCount[hemi]++;
+              out.HemiMass[hemi] += P[j].Mass;
+              out.HemiThermalMassWeighted[hemi] += P[j].Mass * SphP[j].Utherm;
+              out.HemiProjectedMomentum[hemi] += P[j].Mass * vdot;
+
+              if(lobe >= 0)
+                {
+                  out.LobeCount[lobe]++;
+                  out.LobeMass[lobe] += P[j].Mass;
+                  out.LobeThermalMassWeighted[lobe] += P[j].Mass * SphP[j].Utherm;
+                  out.LobeProjectedMomentum[lobe] += P[j].Mass * vdot;
+                }
+            }
           continue;
         }
 
@@ -540,15 +577,29 @@ static void bh_ffr_feedback_prepare_candidates(void)
       if(!(eth > 0) || !(BHP[b].WindEnergyBuffer >= eth))
         continue;
 
-      if(res->LobeCount[0] < All.BHMinTargetsPerLobe || res->LobeCount[1] < All.BHMinTargetsPerLobe)
+      const double cone_active_mass = res->LobeMass[0] + res->LobeMass[1];
+      const double cone_total_mass = res->LobeTotalMass[0] + res->LobeTotalMass[1];
+      const int cone_ok =
+          res->LobeCount[0] >= All.BHMinTargetsPerLobe &&
+          res->LobeCount[1] >= All.BHMinTargetsPerLobe &&
+          res->LobeMass[0] > 0 && res->LobeMass[1] > 0 &&
+          cone_total_mass > 0 &&
+          cone_active_mass >= All.BHMinActiveTargetMassFrac * cone_total_mass;
+
+      const double hemi_active_mass = res->HemiMass[0] + res->HemiMass[1];
+      const double hemi_total_mass = res->HemiTotalMass[0] + res->HemiTotalMass[1];
+      const int hemi_ok =
+          res->HemiCount[0] >= All.BHMinTargetsPerLobe &&
+          res->HemiCount[1] >= All.BHMinTargetsPerLobe &&
+          res->HemiMass[0] > 0 && res->HemiMass[1] > 0 &&
+          hemi_total_mass > 0 &&
+          hemi_active_mass >= All.BHMinActiveTargetMassFrac * hemi_total_mass;
+
+      if(!cone_ok && !hemi_ok)
         continue;
 
-      const double active_target_mass = res->LobeMass[0] + res->LobeMass[1];
-      if(active_target_mass < All.BHMinActiveTargetMassFrac * res->EnclosedMass)
-        continue;
-
-      if(!(res->LobeMass[0] > 0) || !(res->LobeMass[1] > 0))
-        continue;
+      ev->UsedHemisphereFallback = cone_ok ? 0 : 1;
+      ev->CosCone = cone_ok ? cos(All.BHWindConeAngleDeg * M_PI / 180.0) : 0.0;
 
       ev->EnergyBefore = BHP[b].WindEnergyBuffer;
       ev->MassBefore = BHP[b].WindMassBuffer;
@@ -567,13 +618,13 @@ static void bh_ffr_feedback_prepare_candidates(void)
       const double frac = ev->PacketEnergy / ev->EnergyBefore;
       ev->PacketMass = ev->MassBefore * frac;
       ev->PacketMomentum = ev->MomentumBefore * frac;
-      ev->LobeMass[0] = res->LobeMass[0];
-      ev->LobeMass[1] = res->LobeMass[1];
-      ev->LobeCount[0] = res->LobeCount[0];
-      ev->LobeCount[1] = res->LobeCount[1];
       for(int l = 0; l < 2; l++)
         {
-          ev->LobeUtherm[l] = res->LobeThermalMassWeighted[l] / res->LobeMass[l];
+          ev->LobeMass[l] = ev->UsedHemisphereFallback ? res->HemiMass[l] : res->LobeMass[l];
+          ev->LobeCount[l] = ev->UsedHemisphereFallback ? res->HemiCount[l] : res->LobeCount[l];
+          const double thermal_mass =
+              ev->UsedHemisphereFallback ? res->HemiThermalMassWeighted[l] : res->LobeThermalMassWeighted[l];
+          ev->LobeUtherm[l] = thermal_mass / ev->LobeMass[l];
           if(!isfinite(ev->LobeUtherm[l]) || ev->LobeUtherm[l] < 0)
             terminate("BH_FFR: invalid lobe internal energy=%g for ID=%llu lobe=%d",
                       ev->LobeUtherm[l], (unsigned long long)P[p].ID, l);
@@ -593,8 +644,12 @@ static void bh_ffr_feedback_prepare_candidates(void)
       for(int k = 0; k < 3; k++)
         vbh_axis += (P[p].Vel[k] / a) * BHP[b].DiscDir[k];
 
-      const double vplus = (res->LobeProjectedMomentum[0] + half * vbh_axis) / mplus;
-      const double vminus = (res->LobeProjectedMomentum[1] + half * vbh_axis) / mminus;
+      const double pplus =
+          ev->UsedHemisphereFallback ? res->HemiProjectedMomentum[0] : res->LobeProjectedMomentum[0];
+      const double pminus =
+          ev->UsedHemisphereFallback ? res->HemiProjectedMomentum[1] : res->LobeProjectedMomentum[1];
+      const double vplus = (pplus + half * vbh_axis) / mplus;
+      const double vminus = (pminus + half * vbh_axis) / mminus;
       const double A = vplus - vminus;
       const double B = 1.0 / mplus + 1.0 / mminus;
 
