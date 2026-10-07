@@ -247,7 +247,7 @@ struct bh_ffr_domain_exchange_context
  * accretion or feedback path selects from this grid yet.  Radii are proper
  * code lengths, matching BHAccretionRadius/BHFeedbackRadius semantics. */
 #define BH_FFR_MAX_ADAPTIVE_RADII 16
-#define BH_FFR_ADAPTIVE_RADIUS_COUNT 11
+#define BH_FFR_ADAPTIVE_RADIUS_COUNT 13
 struct bh_ffr_discrete_radius_grid
 {
   int Count;

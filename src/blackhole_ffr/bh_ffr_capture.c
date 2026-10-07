@@ -518,7 +518,7 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
                 }
 
               /* Diagnostics-only survey.  The treewalk reaches the adaptive
-               * 32-epsilon search radius, but all historical live environment
+               * 64-epsilon search radius, but all historical live environment
                * quantities remain restricted to the fixed BHAccretionRadius
                * until the next reviewed iteration. */
               if(r > bh->AccretionRadius)
@@ -740,7 +740,7 @@ static void bh_ffr_report_adaptive_acc_radius_survey(void)
       const double eps = bh_ffr_effective_softening_proper(p);
       printf("BH_FFR: adaptive accretion radius mode=survey accModel=%s ID=%llu task=%d "
              "eps=%g Rsearch=%g Racc=%g index=%d "
-             "Nshell=[%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld] underresolved=%d\n",
+             "Nshell=[%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld] underresolved=%d\n",
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              (unsigned long long)P[p].ID, ThisTask, eps,
              (double)grid.Radius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1],
@@ -756,6 +756,8 @@ static void bh_ffr_report_adaptive_acc_radius_survey(void)
              res->EnvAdaptiveShellCellCount[8],
              res->EnvAdaptiveShellCellCount[9],
              res->EnvAdaptiveShellCellCount[10],
+             res->EnvAdaptiveShellCellCount[11],
+             res->EnvAdaptiveShellCellCount[12],
              underresolved);
       fflush(stdout);
     }
