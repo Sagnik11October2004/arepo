@@ -620,7 +620,11 @@ static void bh_ffr_jet_prepare_candidates(void)
         continue;
 
       ev->EnergyBefore = BHP[b].JetEnergyBuffer;
-      ev->PacketEnergy = eth;
+
+      /* As for the wind channel, the binding threshold gates release but is
+       * not a fixed packet quantum.  When a valid bipolar hydro target is
+       * available, inject the complete accumulated jet-energy reservoir. */
+      ev->PacketEnergy = ev->EnergyBefore;
       ev->LobeMass[0] = res->LobeMass[0];
       ev->LobeMass[1] = res->LobeMass[1];
       ev->LobeCount[0] = res->LobeCount[0];
