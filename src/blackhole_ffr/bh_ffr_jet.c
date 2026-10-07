@@ -46,7 +46,12 @@ struct bh_ffr_jet_event
   MyDouble LobeMass[2];
   long long LobeCount[2];
   MyDouble EnergyBefore;
+  MyDouble RadiusProper;
+  MyFloat RadiusCoordinate;
   MyFloat CosCone;
+  MyFloat AngleDeg;
+  int AngleIndex;
+  int Underresolved;
   int UsedHemisphereFallback;
 };
 
@@ -98,8 +103,10 @@ typedef struct
   MyDouble AdaptiveHemiTotalMass[2];
   long long AdaptiveHemiCount[2];
 
-  /* Constant-volume jet broadening survey. */
+  /* Constant-volume jet broadening statistics. */
+  MyDouble BroadenEnclosedMass[BH_FFR_JET_BROADEN_ANGLE_COUNT];
   MyDouble BroadenLobeMass[BH_FFR_JET_BROADEN_ANGLE_COUNT][2];
+  MyDouble BroadenLobeProjectedMomentum[BH_FFR_JET_BROADEN_ANGLE_COUNT][2];
   MyDouble BroadenLobeTotalMass[BH_FFR_JET_BROADEN_ANGLE_COUNT][2];
   long long BroadenLobeCount[BH_FFR_JET_BROADEN_ANGLE_COUNT][2];
 
@@ -385,6 +392,13 @@ static void particle2in(data_in *in, int target, int firstnode)
       if(in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1] > in->Radius)
         in->Radius = in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1];
     }
+  else
+    {
+      if(!isfinite(ev->RadiusCoordinate) || !(ev->RadiusCoordinate > 0))
+        terminate("BH_FFR: invalid selected jet coordinate radius=%g for ID=%llu",
+                  (double)ev->RadiusCoordinate, (unsigned long long)P[p].ID);
+      in->Radius = ev->RadiusCoordinate;
+    }
 
   in->CosCone = (JetPass == BH_FFR_JET_STATS)
                     ? cos(All.BHJetConeAngleDeg * M_PI / 180.0)
@@ -435,12 +449,17 @@ static void out2particle(data_out *out, int target, int mode)
           }
 
       for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
-        for(int l = 0; l < 2; l++)
-          {
-            res->BroadenLobeMass[q][l] += out->BroadenLobeMass[q][l];
-            res->BroadenLobeTotalMass[q][l] += out->BroadenLobeTotalMass[q][l];
-            res->BroadenLobeCount[q][l] += out->BroadenLobeCount[q][l];
-          }
+        {
+          res->BroadenEnclosedMass[q] += out->BroadenEnclosedMass[q];
+          for(int l = 0; l < 2; l++)
+            {
+              res->BroadenLobeMass[q][l] += out->BroadenLobeMass[q][l];
+              res->BroadenLobeProjectedMomentum[q][l] +=
+                  out->BroadenLobeProjectedMomentum[q][l];
+              res->BroadenLobeTotalMass[q][l] += out->BroadenLobeTotalMass[q][l];
+              res->BroadenLobeCount[q][l] += out->BroadenLobeCount[q][l];
+            }
+        }
 
       if(out->Conflict)
         res->Conflict = 1;
@@ -631,16 +650,27 @@ static int bh_ffr_jet_evaluate(int target, int mode, int threadid)
               const double cosine = fabs(dot) / sqrt(r2);
               const int broaden_lobe = dot >= 0 ? 0 : 1;
 
+              double broaden_vdot = 0.0;
+              if(active)
+                for(int k = 0; k < 3; k++)
+                  broaden_vdot += (P[j].Vel[k] / a) * in->Axis[k];
+
               for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
                 if(in->BroadenRadius[q] > 0 &&
-                   r2 <= in->BroadenRadius[q] * in->BroadenRadius[q] &&
-                   cosine >= in->BroadenCosCone[q])
+                   r2 <= in->BroadenRadius[q] * in->BroadenRadius[q])
                   {
-                    out.BroadenLobeTotalMass[q][broaden_lobe] += P[j].Mass;
-                    if(active)
+                    out.BroadenEnclosedMass[q] += P[j].Mass;
+
+                    if(cosine >= in->BroadenCosCone[q])
                       {
-                        out.BroadenLobeCount[q][broaden_lobe]++;
-                        out.BroadenLobeMass[q][broaden_lobe] += P[j].Mass;
+                        out.BroadenLobeTotalMass[q][broaden_lobe] += P[j].Mass;
+                        if(active)
+                          {
+                            out.BroadenLobeCount[q][broaden_lobe]++;
+                            out.BroadenLobeMass[q][broaden_lobe] += P[j].Mass;
+                            out.BroadenLobeProjectedMomentum[q][broaden_lobe] +=
+                                P[j].Mass * broaden_vdot;
+                          }
                       }
                   }
             }
@@ -796,6 +826,27 @@ static int bh_ffr_jet_broaden_angle_ok(const data_out *res, int q,
          *fminus >= All.BHMinActiveTargetMassFrac;
 }
 
+static int bh_ffr_jet_select_live_broadening(const data_out *res,
+                                              double *fplus,
+                                              double *fminus)
+{
+  *fplus = 0.0;
+  *fminus = 0.0;
+
+  for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
+    {
+      double fp = 0.0, fm = 0.0;
+      if(bh_ffr_jet_broaden_angle_ok(res, q, &fp, &fm))
+        {
+          *fplus = fp;
+          *fminus = fm;
+          return q;
+        }
+    }
+
+  return -1;
+}
+
 static void bh_ffr_jet_report_broadening_survey(void)
 {
   if(All.BHBenchmarkFeedbackModel != BH_BENCHMARK_FEEDBACK_MACER ||
@@ -821,8 +872,10 @@ static void bh_ffr_jet_report_broadening_survey(void)
       const double omega_ref = 1.0 - cos(theta_ref);
       const double rref = grid.Radius[grid.Count - 1];
 
-      int selected = -1;
       double selected_fplus = 0.0, selected_fminus = 0.0;
+      const int selected =
+          bh_ffr_jet_select_live_broadening(
+              res, &selected_fplus, &selected_fminus);
 
       for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
         {
@@ -844,12 +897,6 @@ static void bh_ffr_jet_report_broadening_survey(void)
                  res->BroadenLobeCount[q][1],
                  fp, fm, ok);
 
-          if(selected < 0 && ok)
-            {
-              selected = q;
-              selected_fplus = fp;
-              selected_fminus = fm;
-            }
         }
 
       if(selected >= 0)
@@ -858,7 +905,7 @@ static void bh_ffr_jet_report_broadening_survey(void)
               BHFFRJetBroadenAnglesDeg[selected] * M_PI / 180.0;
           const double rproper =
               rref * cbrt(omega_ref / (1.0 - cos(theta)));
-          printf("BH_FFR: jet broadening mode=survey ID=%llu task=%d "
+          printf("BH_FFR: jet broadening mode=live ID=%llu task=%d "
                  "selectedAngle=%g Rjet=%g Reps=%g angleIndex=%d "
                  "Nplus=%lld Nminus=%lld fplus=%g fminus=%g underresolved=0\n",
                  (unsigned long long)P[p].ID, ThisTask,
@@ -870,7 +917,7 @@ static void bh_ffr_jet_report_broadening_survey(void)
         }
       else
         {
-          printf("BH_FFR: jet broadening mode=survey ID=%llu task=%d "
+          printf("BH_FFR: jet broadening mode=live ID=%llu task=%d "
                  "selectedAngle=none Rjet=0 Reps=0 angleIndex=-1 "
                  "Nplus=0 Nminus=0 fplus=0 fminus=0 underresolved=1\n",
                  (unsigned long long)P[p].ID, ThisTask);
@@ -962,23 +1009,88 @@ static void bh_ffr_jet_prepare_candidates(void)
       struct bh_ffr_jet_event *ev = &JetEvents[n];
       memset(ev, 0, sizeof(*ev));
 
-      const int p = bh_ffr_jet_particle_from_target(n, "bh_ffr_jet_prepare_candidates");
+      const int p =
+          bh_ffr_jet_particle_from_target(
+              n, "bh_ffr_jet_prepare_candidates");
       const int b = P[p].BHDataIndex;
       const data_out *res = &JetResults[n];
 
+      struct bh_ffr_discrete_radius_grid grid;
+      bh_ffr_build_resolution_radius_grid(p, &grid);
+      const double theta_ref =
+          BHFFRJetBroadenAnglesDeg[0] * M_PI / 180.0;
+      const double omega_ref = 1.0 - cos(theta_ref);
+      const double rref = grid.Radius[grid.Count - 1];
+
+      double fplus = 0.0, fminus = 0.0;
+      const int selected =
+          bh_ffr_jet_select_live_broadening(res, &fplus, &fminus);
+
+      if(selected < 0)
+        {
+          ev->Underresolved = 1;
+          BHP[b].JetThresholdEnergy = 0.0;
+
+          if(JetConflictRound == 0)
+            {
+              printf("BH_FFR: jet live geometry ID=%llu task=%d "
+                     "selectedAngle=none underresolved=1 bufferRetained=1\n",
+                     (unsigned long long)P[p].ID, ThisTask);
+              fflush(stdout);
+            }
+          continue;
+        }
+
+      const double theta =
+          BHFFRJetBroadenAnglesDeg[selected] * M_PI / 180.0;
+      const double radius =
+          rref * cbrt(omega_ref / (1.0 - cos(theta)));
+
+      if(!isfinite(radius) || !(radius > 0))
+        terminate("BH_FFR: invalid selected live jet radius=%g angle=%g",
+                  radius, BHFFRJetBroadenAnglesDeg[selected]);
+
+      const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+      if(!isfinite(a) || !(a > 0))
+        terminate("BH_FFR: invalid scale factor=%g in live jet setup", a);
+
+      ev->AngleIndex = selected;
+      ev->AngleDeg = BHFFRJetBroadenAnglesDeg[selected];
+      ev->RadiusProper = radius;
+      ev->RadiusCoordinate = radius / a;
+      ev->CosCone = cos(theta);
+      ev->UsedHemisphereFallback = 0;
+      ev->Underresolved = 0;
+
+      const double menc = res->BroadenEnclosedMass[selected];
       const double sigma2 = BHP[b].SigmaDM * BHP[b].SigmaDM;
       double vbind2 = sigma2;
       if(All.BHUseCentralBindingTerm)
-        vbind2 += 2.0 * All.G * bh_ffr_central_mass_code(p) / All.BHFeedbackRadius;
+        vbind2 +=
+            2.0 * All.G * bh_ffr_central_mass_code(p) / radius;
 
-      if(!isfinite(vbind2) || vbind2 < 0 || !isfinite(res->EnclosedMass) || res->EnclosedMass < 0)
-        terminate("BH_FFR: invalid jet threshold environment Menc=%g vbind2=%g for ID=%llu", res->EnclosedMass, vbind2,
-                  (unsigned long long)P[p].ID);
+      if(!isfinite(vbind2) || vbind2 < 0 ||
+         !isfinite(menc) || menc < 0)
+        terminate("BH_FFR: invalid live jet threshold environment "
+                  "Menc=%g R=%g vbind2=%g for ID=%llu",
+                  menc, radius, vbind2, (unsigned long long)P[p].ID);
 
-      const double base_threshold = 0.5 * res->EnclosedMass * vbind2;
-      /* Keep wind/jet threshold ownership independent.  The live adaptive
-       * wind pass computes WindThresholdEnergy from its own selected radius. */
-      BHP[b].JetThresholdEnergy = All.BHJetBurstFactor * base_threshold;
+      const double base_threshold = 0.5 * menc * vbind2;
+      BHP[b].JetThresholdEnergy =
+          All.BHJetBurstFactor * base_threshold;
+
+      if(JetConflictRound == 0 && BHP[b].SigmaDM > 0)
+        {
+          printf("BH_FFR: binding threshold jet ID=%llu task=%d "
+                 "angle=%g Rjet=%g angleIndex=%d Menc=%g sigmaDM=%g "
+                 "vbind2=%g central=%d EthJet=%g\n",
+                 (unsigned long long)P[p].ID, ThisTask,
+                 ev->AngleDeg, ev->RadiusProper, ev->AngleIndex,
+                 menc, BHP[b].SigmaDM, vbind2,
+                 All.BHUseCentralBindingTerm,
+                 BHP[b].JetThresholdEnergy);
+          fflush(stdout);
+        }
 
       if(JetPacketCount[n] >= All.BHMaxPacketsPerStep)
         continue;
@@ -987,55 +1099,31 @@ static void bh_ffr_jet_prepare_candidates(void)
       if(!(eth > 0) || !(BHP[b].JetEnergyBuffer >= eth))
         continue;
 
-      const double cone_active_mass = res->LobeMass[0] + res->LobeMass[1];
-      const double cone_total_mass = res->LobeTotalMass[0] + res->LobeTotalMass[1];
-      const int cone_ok =
-          res->LobeCount[0] >= All.BHMinTargetsPerLobe &&
-          res->LobeCount[1] >= All.BHMinTargetsPerLobe &&
-          res->LobeMass[0] > 0 && res->LobeMass[1] > 0 &&
-          cone_total_mass > 0 &&
-          cone_active_mass >= All.BHMinActiveTargetMassFrac * cone_total_mass;
-
-      const double hemi_active_mass = res->HemiMass[0] + res->HemiMass[1];
-      const double hemi_total_mass = res->HemiTotalMass[0] + res->HemiTotalMass[1];
-      const int hemi_ok =
-          res->HemiCount[0] >= All.BHMinTargetsPerLobe &&
-          res->HemiCount[1] >= All.BHMinTargetsPerLobe &&
-          res->HemiMass[0] > 0 && res->HemiMass[1] > 0 &&
-          hemi_total_mass > 0 &&
-          hemi_active_mass >= All.BHMinActiveTargetMassFrac * hemi_total_mass;
-
-      if(!cone_ok && !hemi_ok)
-        continue;
-
-      ev->UsedHemisphereFallback = cone_ok ? 0 : 1;
-      ev->CosCone = cone_ok ? cos(All.BHJetConeAngleDeg * M_PI / 180.0) : 0.0;
-
       ev->EnergyBefore = BHP[b].JetEnergyBuffer;
-
-      /* Release one binding-threshold quantum per packet.  Excess jet
-       * energy remains buffered for later rounds/steps; this controls burst
-       * strength without reintroducing feedback-driven BH subcycling. */
       ev->PacketEnergy = eth;
+
       for(int l = 0; l < 2; l++)
         {
-          ev->LobeMass[l] = ev->UsedHemisphereFallback ? res->HemiMass[l] : res->LobeMass[l];
-          ev->LobeCount[l] = ev->UsedHemisphereFallback ? res->HemiCount[l] : res->LobeCount[l];
+          ev->LobeMass[l] = res->BroadenLobeMass[selected][l];
+          ev->LobeCount[l] = res->BroadenLobeCount[selected][l];
         }
 
       const double pplus =
-          ev->UsedHemisphereFallback ? res->HemiProjectedMomentum[0] : res->LobeProjectedMomentum[0];
+          res->BroadenLobeProjectedMomentum[selected][0];
       const double pminus =
-          ev->UsedHemisphereFallback ? res->HemiProjectedMomentum[1] : res->LobeProjectedMomentum[1];
+          res->BroadenLobeProjectedMomentum[selected][1];
+
       if(!isfinite(ev->LobeMass[0]) || !isfinite(ev->LobeMass[1]) ||
          !(ev->LobeMass[0] > 0) || !(ev->LobeMass[1] > 0))
-        terminate("BH_FFR: invalid selected jet lobe masses ID=%llu fallback=%d Mplus=%g Mminus=%g",
-                  (unsigned long long)P[p].ID, ev->UsedHemisphereFallback,
+        terminate("BH_FFR: invalid selected live jet lobe masses ID=%llu "
+                  "angle=%g Mplus=%g Mminus=%g",
+                  (unsigned long long)P[p].ID, ev->AngleDeg,
                   (double)ev->LobeMass[0], (double)ev->LobeMass[1]);
 
       const double A =
           pplus / ev->LobeMass[0] - pminus / ev->LobeMass[1];
-      const double B = 1.0 / ev->LobeMass[0] + 1.0 / ev->LobeMass[1];
+      const double B =
+          1.0 / ev->LobeMass[0] + 1.0 / ev->LobeMass[1];
 
       ev->Q = bh_ffr_jet_packet_q(A, B, ev->PacketEnergy);
       ev->Candidate = 1;
@@ -1125,9 +1213,12 @@ static void bh_ffr_jet_commit_packets(void)
       printf("BH_FFR: jet packet fired ID=%llu task=%d E=%g erg q=%g Nplus=%lld Nminus=%lld dErel=%g pbal=%g\n",
              (unsigned long long)P[p].ID, ThisTask, eerg, ev->Q, ev->LobeCount[0], ev->LobeCount[1],
              fabs(res->KickEnergy - ev->PacketEnergy) / ev->PacketEnergy, pnorm / fmax(fabs(ev->Q), 1.0e-30));
-      printf("BH_FFR: jet coupling ID=%llu task=%d fallback=%d cosCone=%g Nplus=%lld Nminus=%lld\n",
-             (unsigned long long)P[p].ID, ThisTask, ev->UsedHemisphereFallback,
-             (double)ev->CosCone, ev->LobeCount[0], ev->LobeCount[1]);
+      printf("BH_FFR: jet coupling ID=%llu task=%d angle=%g Rjet=%g "
+             "angleIndex=%d fallback=%d cosCone=%g Nplus=%lld Nminus=%lld\n",
+             (unsigned long long)P[p].ID, ThisTask,
+             (double)ev->AngleDeg, ev->RadiusProper, ev->AngleIndex,
+             ev->UsedHemisphereFallback, (double)ev->CosCone,
+             ev->LobeCount[0], ev->LobeCount[1]);
       fflush(stdout);
     }
 }
