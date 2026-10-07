@@ -23,7 +23,7 @@ ResubmitCommand                         none
 MaxMemSize                              1500
 
 TimeBegin                               0.043478260869565216
-TimeMax                                 0.09
+TimeMax                                 0.09090909090909091
 
 ComovingIntegrationOn                   1
 PeriodicBoundariesOn                    1

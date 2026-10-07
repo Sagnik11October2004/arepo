@@ -243,9 +243,8 @@ struct bh_ffr_domain_exchange_context
 };
 
 /* Small fixed-capacity container for deterministic discrete adaptive-radius
- * candidates.  Iteration A only provides validated infrastructure; no live
- * accretion or feedback path selects from this grid yet.  Radii are proper
- * code lengths, matching BHAccretionRadius/BHFeedbackRadius semantics. */
+ * candidates used by live shell accretion and MACER feedback. Radii are
+ * proper code lengths. */
 #define BH_FFR_MAX_ADAPTIVE_RADII 16
 #define BH_FFR_ADAPTIVE_RADIUS_COUNT 13
 
