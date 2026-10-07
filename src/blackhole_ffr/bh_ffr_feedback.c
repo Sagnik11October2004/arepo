@@ -64,6 +64,8 @@ typedef struct
   MyFloat Axis[3];
   MyFloat BHVel[3];
   MyFloat Radius;
+  MyFloat LiveRadius;
+  MyDouble AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT];
   MyFloat CosCone;
   MyIDType BHID;
   int Candidate;
@@ -91,6 +93,15 @@ typedef struct
   MyDouble HemiThermalMassWeighted[2];
   MyDouble HemiTotalMass[2];
   long long HemiCount[2];
+
+  /* Diagnostics-only adaptive MACER wind-radius survey. */
+  MyDouble AdaptiveLobeMass[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
+  MyDouble AdaptiveLobeTotalMass[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
+  long long AdaptiveLobeCount[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
+  MyDouble AdaptiveHemiMass[2];
+  MyDouble AdaptiveHemiTotalMass[2];
+  long long AdaptiveHemiCount[2];
+
   int Conflict;
 
   MyDouble ReturnedMass;
@@ -159,7 +170,30 @@ static void particle2in(data_in *in, int target, int firstnode)
       in->BHVel[k] = P[p].Vel[k];
     }
 
-  in->Radius = bh_ffr_feedback_coordinate_radius();
+  in->LiveRadius = bh_ffr_feedback_coordinate_radius();
+  in->Radius = in->LiveRadius;
+  for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
+    in->AdaptiveRadius[k] = 0.0;
+
+  if(FeedbackPass == BH_FFR_FEEDBACK_STATS &&
+     All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_MACER)
+    {
+      struct bh_ffr_discrete_radius_grid grid;
+      bh_ffr_build_resolution_radius_grid(p, &grid);
+      if(grid.Count != BH_FFR_ADAPTIVE_RADIUS_COUNT)
+        terminate("BH_FFR: unexpected wind adaptive-radius count=%d", grid.Count);
+
+      const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+      if(!isfinite(a) || !(a > 0))
+        terminate("BH_FFR: invalid scale factor=%g in wind adaptive-radius setup", a);
+
+      for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
+        in->AdaptiveRadius[k] = grid.Radius[k] / a;
+
+      if(in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1] > in->Radius)
+        in->Radius = in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1];
+    }
+
   in->CosCone = (FeedbackPass == BH_FFR_FEEDBACK_STATS)
                     ? cos(All.BHWindConeAngleDeg * M_PI / 180.0)
                     : ev->CosCone;
@@ -200,7 +234,18 @@ static void out2particle(data_out *out, int target, int mode)
           res->HemiThermalMassWeighted[l] += out->HemiThermalMassWeighted[l];
           res->HemiTotalMass[l] += out->HemiTotalMass[l];
           res->HemiCount[l] += out->HemiCount[l];
+
+          res->AdaptiveHemiMass[l] += out->AdaptiveHemiMass[l];
+          res->AdaptiveHemiTotalMass[l] += out->AdaptiveHemiTotalMass[l];
+          res->AdaptiveHemiCount[l] += out->AdaptiveHemiCount[l];
         }
+      for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
+        for(int l = 0; l < 2; l++)
+          {
+            res->AdaptiveLobeMass[k][l] += out->AdaptiveLobeMass[k][l];
+            res->AdaptiveLobeTotalMass[k][l] += out->AdaptiveLobeTotalMass[k][l];
+            res->AdaptiveLobeCount[k][l] += out->AdaptiveLobeCount[k][l];
+          }
       if(out->Conflict)
         res->Conflict = 1;
 
@@ -344,21 +389,59 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
 
       if(FeedbackPass == BH_FFR_FEEDBACK_STATS)
         {
-          int hemi = -1;
+          const int active = bh_ffr_feedback_gas_is_active(j);
+          int hemi_search = -1;
+
           if(r2 > 0 && r2 <= in->Radius * in->Radius)
             {
               const double dx = NEAREST_X(P[j].Pos[0] - in->Pos[0]);
               const double dy = NEAREST_Y(P[j].Pos[1] - in->Pos[1]);
               const double dz = NEAREST_Z(P[j].Pos[2] - in->Pos[2]);
               const double dot = dx * in->Axis[0] + dy * in->Axis[1] + dz * in->Axis[2];
-              hemi = dot >= 0 ? 0 : 1;
+              hemi_search = dot >= 0 ? 0 : 1;
+            }
+
+          /* Survey nominal cones at increasing radii.  Only after every cone
+           * fails do we inspect a hemisphere fallback at the 64-epsilon cap. */
+          if(hemi_search >= 0 &&
+             in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1] > 0)
+            {
+              for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
+                if(r2 <= in->AdaptiveRadius[k] * in->AdaptiveRadius[k] && lobe >= 0)
+                  {
+                    out.AdaptiveLobeTotalMass[k][lobe] += P[j].Mass;
+                    if(active)
+                      {
+                        out.AdaptiveLobeCount[k][lobe]++;
+                        out.AdaptiveLobeMass[k][lobe] += P[j].Mass;
+                      }
+                  }
+
+              const double rmax =
+                  in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1];
+              if(r2 <= rmax * rmax)
+                {
+                  out.AdaptiveHemiTotalMass[hemi_search] += P[j].Mass;
+                  if(active)
+                    {
+                      out.AdaptiveHemiCount[hemi_search]++;
+                      out.AdaptiveHemiMass[hemi_search] += P[j].Mass;
+                    }
+                }
+            }
+
+          /* Preserve the historical live fixed-radius statistics exactly
+           * apart from harmless MPI/tree summation-order differences. */
+          int hemi = -1;
+          if(r2 > 0 && r2 <= in->LiveRadius * in->LiveRadius)
+            {
+              hemi = hemi_search;
               out.EnclosedMass += P[j].Mass;
               out.HemiTotalMass[hemi] += P[j].Mass;
               if(lobe >= 0)
                 out.LobeTotalMass[lobe] += P[j].Mass;
             }
 
-          const int active = bh_ffr_feedback_gas_is_active(j);
           if(active && hemi >= 0)
             {
               if(!isfinite(SphP[j].Utherm) || SphP[j].Utherm < 0)
@@ -537,6 +620,97 @@ void bh_ffr_feedback_self_test(void)
 
   if(!isfinite(u_after) || fabs(u_after - u_return) > 2.0e-13 * fmax(fabs(u_return), 1.0))
     terminate("BH_FFR: feedback self-test failed wind thermal return got=%g expected=%g", u_after, u_return);
+}
+
+static int bh_ffr_feedback_survey_radius_ok(const data_out *res, int k,
+                                             double *fplus, double *fminus)
+{
+  const double mtot_plus = res->AdaptiveLobeTotalMass[k][0];
+  const double mtot_minus = res->AdaptiveLobeTotalMass[k][1];
+  *fplus = mtot_plus > 0 ? res->AdaptiveLobeMass[k][0] / mtot_plus : 0.0;
+  *fminus = mtot_minus > 0 ? res->AdaptiveLobeMass[k][1] / mtot_minus : 0.0;
+
+  return res->AdaptiveLobeCount[k][0] >= 4 &&
+         res->AdaptiveLobeCount[k][1] >= 4 &&
+         mtot_plus > 0 && mtot_minus > 0 &&
+         *fplus >= All.BHMinActiveTargetMassFrac &&
+         *fminus >= All.BHMinActiveTargetMassFrac;
+}
+
+static void bh_ffr_feedback_report_adaptive_radius_survey(void)
+{
+  if(All.BHBenchmarkFeedbackModel != BH_BENCHMARK_FEEDBACK_MACER ||
+     FeedbackConflictRound != 0)
+    return;
+
+  static unsigned long long survey_calls = 0;
+  if((survey_calls++ % 64ULL) != 0ULL)
+    return;
+
+  for(int n = 0; n < FeedbackNTargets; n++)
+    {
+      const int p =
+          bh_ffr_feedback_particle_from_target(n, "bh_ffr_feedback_report_adaptive_radius_survey");
+      const data_out *res = &FeedbackResults[n];
+
+      struct bh_ffr_discrete_radius_grid grid;
+      bh_ffr_build_resolution_radius_grid(p, &grid);
+      const double eps = bh_ffr_effective_softening_proper(p);
+
+      int selected = -1;
+      double fplus = 0.0, fminus = 0.0;
+      for(int k = 0; k < grid.Count; k++)
+        {
+          double fp = 0.0, fm = 0.0;
+          const int ok = bh_ffr_feedback_survey_radius_ok(res, k, &fp, &fm);
+          printf("BH_FFR: adaptive wind radius detail mode=survey ID=%llu task=%d "
+                 "index=%d R=%g Reps=%g Nplus=%lld Nminus=%lld "
+                 "fplus=%g fminus=%g resolved=%d\n",
+                 (unsigned long long)P[p].ID, ThisTask, k,
+                 (double)grid.Radius[k], (double)(grid.Radius[k] / eps),
+                 res->AdaptiveLobeCount[k][0], res->AdaptiveLobeCount[k][1],
+                 fp, fm, ok);
+          if(selected < 0 && ok)
+            {
+              selected = k;
+              fplus = fp;
+              fminus = fm;
+            }
+        }
+
+      int fallback = 0;
+      int underresolved = 0;
+      if(selected < 0)
+        {
+          const double mtot_plus = res->AdaptiveHemiTotalMass[0];
+          const double mtot_minus = res->AdaptiveHemiTotalMass[1];
+          fplus = mtot_plus > 0 ? res->AdaptiveHemiMass[0] / mtot_plus : 0.0;
+          fminus = mtot_minus > 0 ? res->AdaptiveHemiMass[1] / mtot_minus : 0.0;
+          const int hemi_ok =
+              res->AdaptiveHemiCount[0] >= 4 &&
+              res->AdaptiveHemiCount[1] >= 4 &&
+              mtot_plus > 0 && mtot_minus > 0 &&
+              fplus >= All.BHMinActiveTargetMassFrac &&
+              fminus >= All.BHMinActiveTargetMassFrac;
+          selected = grid.Count - 1;
+          fallback = hemi_ok ? 1 : 0;
+          underresolved = hemi_ok ? 0 : 1;
+        }
+
+      const long long nplus = fallback ? res->AdaptiveHemiCount[0]
+                                       : res->AdaptiveLobeCount[selected][0];
+      const long long nminus = fallback ? res->AdaptiveHemiCount[1]
+                                        : res->AdaptiveLobeCount[selected][1];
+
+      printf("BH_FFR: adaptive wind radius mode=survey ID=%llu task=%d eps=%g "
+             "Rsearch=%g Rwind=%g index=%d Nplus=%lld Nminus=%lld "
+             "fplus=%g fminus=%g fallback=%d underresolved=%d\n",
+             (unsigned long long)P[p].ID, ThisTask, eps,
+             (double)grid.Radius[grid.Count - 1],
+             (double)grid.Radius[selected], selected, nplus, nminus,
+             fplus, fminus, fallback, underresolved);
+      fflush(stdout);
+    }
 }
 
 static void bh_ffr_feedback_prepare_candidates(void)
@@ -796,6 +970,7 @@ void bh_ffr_inject_wind_feedback(void)
     {
       FeedbackConflictRound = round;
       bh_ffr_feedback_comm_pass(BH_FFR_FEEDBACK_STATS);
+      bh_ffr_feedback_report_adaptive_radius_survey();
       bh_ffr_feedback_prepare_candidates();
 
       if(bh_ffr_feedback_global_candidate_count() <= 0)
