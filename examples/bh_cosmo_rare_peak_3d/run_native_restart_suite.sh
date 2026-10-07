@@ -7,6 +7,7 @@ ROOT="$(cd "$HERE/../.." && pwd)"
 EXEC="${EXEC:-$ROOT/ArepoRarePeak}"
 MPIEXEC="${MPIEXEC:-mpirun}"
 NTASKS="${NTASKS:-4}"
+MIN_FREE_GIB="${MIN_FREE_GIB:-20}"
 COMMON_RESTART_DIR="${COMMON_RESTART_DIR:-$HERE/restart_archive/common_seed_spare/restartfiles}"
 PARAM_DIR="$HERE/params_native"
 LOG_DIR="$HERE/logs"
@@ -28,6 +29,91 @@ fi
 if [[ ! -d "$COMMON_RESTART_DIR" ]]; then
   echo "Missing common native restart directory: $COMMON_RESTART_DIR" >&2
   echo "Expected the untouched post-seed z=20.8837 restart checkpoint." >&2
+  exit 1
+fi
+
+restart_tasks="$(find "$COMMON_RESTART_DIR" -maxdepth 1 -type f -name 'restart.[0-9]*' -printf '%f\n' | grep -E '^restart\.[0-9]+
+if [[ -z "$BRANCHES" ]]; then
+  echo "No branches selected. Set BRANCHES explicitly; nothing was run."
+  echo
+  echo "Available branches:"
+  available_branches | sed 's/^/  /'
+  echo
+  echo 'Example:'
+  echo '  BRANCHES="convj_shell_ffr__macer" NTASKS=4 ./run_native_restart_suite.sh'
+  exit 0
+fi
+
+mkdir -p "$LOG_DIR"
+
+for name in $BRANCHES; do
+  param="$PARAM_DIR/$name.txt"
+  if [[ ! -s "$param" ]]; then
+    echo "Unknown branch '$name'. Available:" >&2
+    available_branches | sed 's/^/  /' >&2
+    exit 1
+  fi
+
+  out_rel="$(awk '$1=="OutputDir" {print $2; exit}' "$param")"
+  if [[ -z "$out_rel" ]]; then
+    echo "No OutputDir in $param" >&2
+    exit 1
+  fi
+  if [[ "$out_rel" == ./* ]]; then
+    out="$HERE/${out_rel#./}"
+  else
+    out="$out_rel"
+  fi
+
+  log="$LOG_DIR/$name.log"
+
+  # Science branches must always begin from a pristine copy of the common
+  # post-seed native restart. Never delete or overwrite an existing result.
+  if [[ -e "$out/restartfiles" || -e "$out/end" || -s "$log" ]]; then
+    echo "Refusing to overwrite existing branch state for '$name'." >&2
+    echo "  output: $out" >&2
+    echo "  log:    $log" >&2
+    echo "Choose a new branch/output name or archive the existing result manually." >&2
+    exit 1
+  fi
+
+  mkdir -p "$out"
+  cp -a --reflink=auto "$COMMON_RESTART_DIR" "$out/restartfiles"
+
+  echo
+  echo "================================================================"
+  echo " native-restart branch: $name"
+  echo " checkpoint: z=20.8837, BH ID=1000120011, M_BH=1e5 Msun"
+  echo " MPI ranks: $NTASKS  (must match the native checkpoint decomposition)"
+  echo " output: $out"
+  echo "================================================================"
+
+  (
+    cd "$HERE"
+    "$MPIEXEC" -np "$NTASKS" "$EXEC" "$param" 1 </dev/null 2>&1 | tee "$log"
+  )
+
+  if [[ ! -f "$out/end" ]]; then
+    echo "ERROR: branch '$name' did not finish cleanly." >&2
+    exit 1
+  fi
+done
+ | wc -l)"
+if [[ "$restart_tasks" -lt 1 ]]; then
+  echo "No native restart.N files found in $COMMON_RESTART_DIR" >&2
+  exit 1
+fi
+if [[ "$NTASKS" -ne "$restart_tasks" ]]; then
+  echo "Native restart rank mismatch: checkpoint has $restart_tasks rank-local files, NTASKS=$NTASKS." >&2
+  echo "AREPO native RestartFlag=1 requires the same MPI rank count as the writer." >&2
+  exit 1
+fi
+
+avail_kib="$(df -Pk "$HERE" | awk 'NR==2 {print $4}')"
+min_kib=$((MIN_FREE_GIB * 1024 * 1024))
+if [[ "$avail_kib" -lt "$min_kib" ]]; then
+  echo "Insufficient free space for a science branch: need >=${MIN_FREE_GIB} GiB free." >&2
+  df -h "$HERE" >&2
   exit 1
 fi
 
