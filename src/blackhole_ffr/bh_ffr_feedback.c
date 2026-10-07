@@ -554,9 +554,17 @@ static void bh_ffr_feedback_prepare_candidates(void)
       ev->MassBefore = BHP[b].WindMassBuffer;
       ev->MomentumBefore = BHP[b].WindMomentumBuffer;
       ev->ThresholdEnergy = eth;
-      ev->PacketEnergy = eth;
 
-      const double frac = eth / ev->EnergyBefore;
+      /* The binding-energy threshold is a release trigger, not an energy
+       * quantum that must be subcycled one packet at a time.  Once enough
+       * hydro-active target mass exists, release the complete accumulated
+       * wind reservoir in one conservative bipolar event.  This mirrors the
+       * buffered-event semantics used by the TNG comparison backend and
+       * prevents unresolved feedback energy from forcing BH-only timesteps
+       * while the receiving gas is inactive. */
+      ev->PacketEnergy = ev->EnergyBefore;
+
+      const double frac = ev->PacketEnergy / ev->EnergyBefore;
       ev->PacketMass = ev->MassBefore * frac;
       ev->PacketMomentum = ev->MomentumBefore * frac;
       ev->LobeMass[0] = res->LobeMass[0];
