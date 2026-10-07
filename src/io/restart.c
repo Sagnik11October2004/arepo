@@ -297,6 +297,11 @@ void reread_params_after_loading_restart(void)
     warn("BHBenchmarkEddingtonFactor modified from %g to %g while restarting at Time=%g",
          All.BHBenchmarkEddingtonFactor, all.BHBenchmarkEddingtonFactor, All.Time);
   All.BHBenchmarkEddingtonFactor = all.BHBenchmarkEddingtonFactor;
+
+  if(ThisTask == 0 && All.BHMinTargetsPerLobe != all.BHMinTargetsPerLobe)
+    warn("BHMinTargetsPerLobe modified from %d to %d while restarting at Time=%g",
+         All.BHMinTargetsPerLobe, all.BHMinTargetsPerLobe, All.Time);
+  All.BHMinTargetsPerLobe = all.BHMinTargetsPerLobe;
 #endif
 
   if(ThisTask == 0 && All.OutputListLength != all.OutputListLength)
