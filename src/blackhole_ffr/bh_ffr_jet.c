@@ -311,7 +311,9 @@ static void particle2in(data_in *in, int target, int firstnode)
     }
 
   in->Radius = bh_ffr_jet_coordinate_radius();
-  in->CosCone = ev->CosCone;
+  in->CosCone = (JetPass == BH_FFR_JET_STATS)
+                    ? cos(All.BHJetConeAngleDeg * M_PI / 180.0)
+                    : ev->CosCone;
   in->BHID = P[p].ID;
   in->Candidate = ev->Candidate;
   in->Fire = ev->Fire;
@@ -773,6 +775,9 @@ static void bh_ffr_jet_commit_packets(void)
       printf("BH_FFR: jet packet fired ID=%llu task=%d E=%g erg q=%g Nplus=%lld Nminus=%lld dErel=%g pbal=%g\n",
              (unsigned long long)P[p].ID, ThisTask, eerg, ev->Q, ev->LobeCount[0], ev->LobeCount[1],
              fabs(res->KickEnergy - ev->PacketEnergy) / ev->PacketEnergy, pnorm / fmax(fabs(ev->Q), 1.0e-30));
+      printf("BH_FFR: jet coupling ID=%llu task=%d fallback=%d cosCone=%g Nplus=%lld Nminus=%lld\n",
+             (unsigned long long)P[p].ID, ThisTask, ev->UsedHemisphereFallback,
+             (double)ev->CosCone, ev->LobeCount[0], ev->LobeCount[1]);
       fflush(stdout);
     }
 }
