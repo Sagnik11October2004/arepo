@@ -457,10 +457,6 @@ void read_parameter_file(char *fname)
       addr[nt] = &All.BHWindConeAngleDeg;
       id[nt++] = REAL;
 
-      strcpy(tag[nt], "BHJetConeAngleDeg");
-      addr[nt] = &All.BHJetConeAngleDeg;
-      id[nt++] = REAL;
-
       strcpy(tag[nt], "BHMinCoherence");
       addr[nt] = &All.BHMinCoherence;
       id[nt++] = REAL;
@@ -469,17 +465,9 @@ void read_parameter_file(char *fname)
       addr[nt] = &All.BHJetDirectionTimeFactor;
       id[nt++] = REAL;
 
-      strcpy(tag[nt], "BHMinTargetsPerLobe");
-      addr[nt] = &All.BHMinTargetsPerLobe;
-      id[nt++] = INT;
-
       strcpy(tag[nt], "BHMinActiveTargetMassFrac");
       addr[nt] = &All.BHMinActiveTargetMassFrac;
       id[nt++] = REAL;
-
-      strcpy(tag[nt], "BHMaxPacketsPerStep");
-      addr[nt] = &All.BHMaxPacketsPerStep;
-      id[nt++] = INT;
 
       strcpy(tag[nt], "BHDMNeighbours");
       addr[nt] = &All.BHDMNeighbours;
@@ -947,7 +935,7 @@ void check_parameters()
      !isfinite(All.BHDiskTimeExponent) || !isfinite(All.BHRHotMaxInRs) ||
      !isfinite(All.BHRadiativeEfficiency) ||
      !isfinite(All.BHWindBurstFactor) || !isfinite(All.BHJetBurstFactor) ||
-     !isfinite(All.BHWindConeAngleDeg) || !isfinite(All.BHJetConeAngleDeg) ||
+     !isfinite(All.BHWindConeAngleDeg) ||
      !isfinite(All.BHMinCoherence) || !isfinite(All.BHJetDirectionTimeFactor) ||
      !isfinite(All.BHMinActiveTargetMassFrac) || !isfinite(All.BHInternalTimestepFactor) ||
      !isfinite(All.BHBenchmarkBoostAlpha) || !isfinite(All.BHBenchmarkBoostDensityThreshold) ||
@@ -989,20 +977,17 @@ void check_parameters()
     mpi_terminate("BH wind/jet burst factors must be non-negative (zero disables the channel).\n");
   if(All.BHUseCentralBindingTerm != 0 && All.BHUseCentralBindingTerm != 1)
     mpi_terminate("BHUseCentralBindingTerm must be 0 or 1.\n");
-  if(All.BHWindConeAngleDeg <= 0 || All.BHWindConeAngleDeg > 90 || All.BHJetConeAngleDeg <= 0 ||
-     All.BHJetConeAngleDeg > 90)
-    mpi_terminate("BH wind/jet cone half-angles must lie in (0,90] degrees.\n");
+  if(All.BHWindConeAngleDeg <= 0 || All.BHWindConeAngleDeg > 90)
+    mpi_terminate("BH wind cone half-angle must lie in (0,90] degrees.\n");
   if(All.BHMinCoherence < 0 || All.BHMinCoherence > 1)
     mpi_terminate("BHMinCoherence must lie in [0,1].\n");
   if(All.BHJetDirectionTimeFactor <= 0)
     mpi_terminate("BHJetDirectionTimeFactor must be positive.\n");
-  if(All.BHMinTargetsPerLobe < 1)
-    mpi_terminate("BHMinTargetsPerLobe must be at least one.\n");
   if(All.BHMinActiveTargetMassFrac < 0 || All.BHMinActiveTargetMassFrac > 1)
     mpi_terminate("BHMinActiveTargetMassFrac must lie in [0,1].\n");
-  if(All.BHMaxPacketsPerStep < 1 || All.BHDMNeighbours < 2 ||
+  if(All.BHDMNeighbours < 2 ||
      All.BHDMNeighbours > BH_FFR_DM_MAX_NEIGHBOURS || All.BHInternalTimestepFactor <= 0)
-    mpi_terminate("BLACKHOLE_FFR requires BHMaxPacketsPerStep>=1, 2<=BHDMNeighbours<=%d, and positive "
+    mpi_terminate("BLACKHOLE_FFR requires 2<=BHDMNeighbours<=%d and positive "
                   "BHInternalTimestepFactor.\n",
                   BH_FFR_DM_MAX_NEIGHBOURS);
   if(All.BHBenchmarkAccretionModel < 0 || All.BHBenchmarkAccretionModel >= BH_BENCHMARK_ACC_COUNT)

@@ -570,15 +570,6 @@ void bh_ffr_step(void)
         {
           const double bh_mass_before_inner = BHP[b].BHMass;
 
-          /* Diagnostics-only source accounting for MACER feedback.  Capture
-           * the buffers and thresholds before the inner-flow transaction so
-           * the newly generated mechanical energy is measured exactly, before
-           * any wind/jet packet can drain it later in this BH step. */
-          const double wind_buffer_before = BHP[b].WindEnergyBuffer;
-          const double jet_buffer_before = BHP[b].JetEnergyBuffer;
-          const double wind_threshold_before = BHP[b].WindThresholdEnergy;
-          const double jet_threshold_before = BHP[b].JetThresholdEnergy;
-
           /* Preserve the validated FFR-MACER orbital and reservoir transaction
            * exactly for every reservoir-backed benchmark. */
           bh_ffr_apply_cached_dynamical_friction(p, dt_code);
@@ -588,74 +579,6 @@ void bh_ffr_step(void)
                                               BHP[b].ReservoirMass);
 
           bh_ffr_update_reservoir_state(p, dt_myr, dt_code, disk_time_myr);
-
-          if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_MACER)
-            {
-              const double dEwind =
-                  BHP[b].WindEnergyBuffer - wind_buffer_before;
-              const double dEjet =
-                  BHP[b].JetEnergyBuffer - jet_buffer_before;
-
-              if(!isfinite(dEwind) || dEwind < 0 ||
-                 !isfinite(dEjet) || dEjet < 0)
-                terminate("BH_FFR: invalid newly generated feedback energy "
-                          "dEwind=%g dEjet=%g for ID=%llu",
-                          dEwind, dEjet, (unsigned long long)P[p].ID);
-
-              const double wind_quanta =
-                  wind_threshold_before > 0
-                      ? dEwind / wind_threshold_before
-                      : 0.0;
-              const double jet_quanta =
-                  jet_threshold_before > 0
-                      ? dEjet / jet_threshold_before
-                      : 0.0;
-
-              const double wind_tth_myr =
-                  wind_threshold_before > 0 && BHP[b].WindPower > 0
-                      ? bh_ffr_code_time_to_myr(
-                            wind_threshold_before / BHP[b].WindPower)
-                      : INFINITY;
-              const double jet_tth_myr =
-                  jet_threshold_before > 0 && BHP[b].JetPower > 0
-                      ? bh_ffr_code_time_to_myr(
-                            jet_threshold_before / BHP[b].JetPower)
-                      : INFINITY;
-
-              const double wind_dt_over_tth =
-                  isfinite(wind_tth_myr) && wind_tth_myr > 0
-                      ? dt_myr / wind_tth_myr
-                      : 0.0;
-              const double jet_dt_over_tth =
-                  isfinite(jet_tth_myr) && jet_tth_myr > 0
-                      ? dt_myr / jet_tth_myr
-                      : 0.0;
-
-              printf("BH_FFR: feedback source ID=%llu task=%d "
-                     "dtCode=%.17g dtMyr=%g "
-                     "Pwind=%g Pjet=%g "
-                     "dEwind=%g dEjet=%g "
-                     "EthWindPrev=%g EthJetPrev=%g "
-                     "newWindQuanta=%g newJetQuanta=%g "
-                     "tthWindMyr=%g tthJetMyr=%g "
-                     "dtOverTthWind=%g dtOverTthJet=%g "
-                     "targetQuanta=%g safetyMax=%d "
-                     "windBufferBefore=%g windBufferAfter=%g "
-                     "jetBufferBefore=%g jetBufferAfter=%g\n",
-                     (unsigned long long)P[p].ID, ThisTask,
-                     dt_code, dt_myr,
-                     BHP[b].WindPower, BHP[b].JetPower,
-                     dEwind, dEjet,
-                     wind_threshold_before, jet_threshold_before,
-                     wind_quanta, jet_quanta,
-                     wind_tth_myr, jet_tth_myr,
-                     wind_dt_over_tth, jet_dt_over_tth,
-                     BH_FFR_FEEDBACK_TARGET_QUANTA_PER_STEP,
-                     BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS,
-                     wind_buffer_before, BHP[b].WindEnergyBuffer,
-                     jet_buffer_before, BHP[b].JetEnergyBuffer);
-              fflush(stdout);
-            }
 
           const double bh_growth = BHP[b].BHMass - bh_mass_before_inner;
           if(!isfinite(bh_growth) ||

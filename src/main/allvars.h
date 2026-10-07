@@ -916,12 +916,9 @@ extern struct global_data_all_processes
   double BHJetBurstFactor;
   int BHUseCentralBindingTerm;
   double BHWindConeAngleDeg;
-  double BHJetConeAngleDeg;
   double BHMinCoherence;
   double BHJetDirectionTimeFactor;
-  int BHMinTargetsPerLobe;
   double BHMinActiveTargetMassFrac;
-  int BHMaxPacketsPerStep;
   int BHDMNeighbours;
   double BHInternalTimestepFactor;
 
