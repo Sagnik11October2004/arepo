@@ -90,7 +90,7 @@ BHAccretionRadius                       0.05
 BHFeedbackRadius                        0.10
 
 % Single-most-massive eligible halo is enforced by the dedicated Config flag.
-BHSeedHaloMassMsun                      1.0e7
+BHSeedHaloMassMsun                      5.0e6
 BHSeedMassMsun                          1.0e5
 BHSeedMinRedshift                       20.0
 BHSeedMaxDonorFraction                  0.5
