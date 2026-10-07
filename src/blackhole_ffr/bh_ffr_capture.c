@@ -45,6 +45,11 @@ struct bh_ffr_capture_result
   MyDouble EnvFFRShellInwardRateWeighted;
   MyDouble EnvFFRShellOutwardRateWeighted;
 
+  /* Diagnostics-only multi-radius ConvJ shell survey.  These are transient:
+   * they are neither persisted in BHP nor used by the live sink yet. */
+  MyDouble EnvAdaptiveShellGasMass[BH_FFR_MAX_ADAPTIVE_RADII];
+  long long EnvAdaptiveShellCellCount[BH_FFR_MAX_ADAPTIVE_RADII];
+
   /* Algebraic model result before the conservative cell sink is applied. */
   MyDouble ModelRawRate;
   MyDouble ModelOperationalRate;
@@ -74,6 +79,15 @@ static int CaptureSelfTestDone;
  * from a broad 0.5--0.9 plateau; sqrt(2) is the analytic free-fall
  * normalization used only by this controlled benchmark model. */
 static const double BenchmarkFFRShellInnerFraction = 0.6;
+
+/* Iteration A2: diagnostics-only discrete ConvJ shell survey.  These factors
+ * are deliberately source-local until the measured scout statistics justify
+ * promoting them to runtime controls.  The live accretion aperture remains
+ * All.BHAccretionRadius in this iteration. */
+#define BH_FFR_ACC_RADIUS_SURVEY_LEVELS 4
+static const double BenchmarkAdaptiveAccRadiusFactors[BH_FFR_ACC_RADIUS_SURVEY_LEVELS] =
+    {1.0, 1.4142135623730951, 2.0, 2.8284271247461903};
+static const long long BenchmarkAdaptiveAccSurveyMinCells = 32;
 
 typedef struct
 {
@@ -113,6 +127,8 @@ typedef struct
   MyDouble EnvFFRShellAngularMomentumRateWeighted[3];
   MyDouble EnvFFRShellInwardRateWeighted;
   MyDouble EnvFFRShellOutwardRateWeighted;
+  MyDouble EnvAdaptiveShellGasMass[BH_FFR_MAX_ADAPTIVE_RADII];
+  long long EnvAdaptiveShellCellCount[BH_FFR_MAX_ADAPTIVE_RADII];
   int MinHydroTimeBin;
   MyDouble ActiveApertureGasMass;
   int SinkMinHydroTimeBin;
@@ -262,6 +278,11 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvFFRShellSoundRateWeighted = out->EnvFFRShellSoundRateWeighted;
           res->EnvFFRShellInwardRateWeighted = out->EnvFFRShellInwardRateWeighted;
           res->EnvFFRShellOutwardRateWeighted = out->EnvFFRShellOutwardRateWeighted;
+          for(int k = 0; k < BH_FFR_MAX_ADAPTIVE_RADII; k++)
+            {
+              res->EnvAdaptiveShellGasMass[k] = out->EnvAdaptiveShellGasMass[k];
+              res->EnvAdaptiveShellCellCount[k] = out->EnvAdaptiveShellCellCount[k];
+            }
           for(int k = 0; k < 3; k++)
             {
               res->EnvVelocityVolumeWeighted[k] = out->EnvVelocityVolumeWeighted[k];
@@ -283,6 +304,11 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvFFRShellSoundRateWeighted += out->EnvFFRShellSoundRateWeighted;
           res->EnvFFRShellInwardRateWeighted += out->EnvFFRShellInwardRateWeighted;
           res->EnvFFRShellOutwardRateWeighted += out->EnvFFRShellOutwardRateWeighted;
+          for(int k = 0; k < BH_FFR_MAX_ADAPTIVE_RADII; k++)
+            {
+              res->EnvAdaptiveShellGasMass[k] += out->EnvAdaptiveShellGasMass[k];
+              res->EnvAdaptiveShellCellCount[k] += out->EnvAdaptiveShellCellCount[k];
+            }
           for(int k = 0; k < 3; k++)
             {
               res->EnvVelocityVolumeWeighted[k] += out->EnvVelocityVolumeWeighted[k];
@@ -453,8 +479,13 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
   out.SinkMinHydroTimeBin = TIMEBINS;
   out.SinkMaxHydroTimeBin = -1;
 
+  double search_radius = bh->AccretionRadius;
+  if(CapturePass == BH_FFR_CAPTURE_PASS_ENVIRONMENT &&
+     All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_CONVJ_SHELL_FFR)
+    search_radius *= BenchmarkAdaptiveAccRadiusFactors[BH_FFR_ACC_RADIUS_SURVEY_LEVELS - 1];
+
   const int nfound =
-      ngb_treefind_variable_threads(bh->Pos, bh->AccretionRadius, target, mode, threadid, numnodes, firstnode);
+      ngb_treefind_variable_threads(bh->Pos, search_radius, target, mode, threadid, numnodes, firstnode);
 
   if(nfound < 0)
     terminate("BH_FFR: neighbour search failed during capture pass %d", CapturePass);
@@ -473,6 +504,27 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
 
       if(CapturePass == BH_FFR_CAPTURE_PASS_ENVIRONMENT)
         {
+          if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_CONVJ_SHELL_FFR)
+            {
+              for(int k = 0; k < BH_FFR_ACC_RADIUS_SURVEY_LEVELS; k++)
+                {
+                  const double rout =
+                      bh->AccretionRadius * BenchmarkAdaptiveAccRadiusFactors[k];
+                  const double rin = BenchmarkFFRShellInnerFraction * rout;
+                  if(r >= rin && r <= rout)
+                    {
+                      out.EnvAdaptiveShellCellCount[k]++;
+                      out.EnvAdaptiveShellGasMass[k] += P[j].Mass;
+                    }
+                }
+
+              /* The enlarged tree search above is diagnostic only.  Preserve
+               * every live fixed-aperture quantity exactly at the historical
+               * BHAccretionRadius until Iteration B explicitly switches it. */
+              if(r > bh->AccretionRadius)
+                continue;
+            }
+
           if(!(SphP[j].Volume > 0) || !isfinite(SphP[j].Volume))
             terminate("BH_BENCHMARK: invalid gas volume=%g for ID=%llu", (double)SphP[j].Volume,
                       (unsigned long long)P[j].ID);
@@ -657,6 +709,54 @@ static double bh_ffr_active_gas_timestep_code_time(int j)
     return 0.0;
 
   return bh_ffr_integer_interval_to_physical_code_time(All.Ti_Current - ti_step, All.Ti_Current);
+}
+
+static void bh_ffr_report_adaptive_acc_survey(void)
+{
+  if(All.BHBenchmarkAccretionModel != BH_BENCHMARK_ACC_CONVJ_SHELL_FFR)
+    return;
+
+  /* Keep diagnostics useful without recreating the multi-GB benchmark logs.
+   * This counter is diagnostic-only and deliberately not restart state. */
+  static unsigned long long survey_calls = 0;
+  const int print_now = ((survey_calls++ % 64ULL) == 0ULL);
+  if(!print_now)
+    return;
+
+  struct bh_ffr_discrete_radius_grid grid;
+  bh_ffr_build_discrete_radius_grid(All.BHAccretionRadius,
+                                    BenchmarkAdaptiveAccRadiusFactors,
+                                    BH_FFR_ACC_RADIUS_SURVEY_LEVELS, &grid);
+
+  for(int n = 0; n < CaptureNTargets; n++)
+    {
+      const int p =
+          bh_ffr_capture_particle_from_target(n, "bh_ffr_report_adaptive_acc_survey");
+      const struct bh_ffr_capture_result *res = &CaptureResults[n];
+
+      int underresolved = 0;
+      const int selected =
+          bh_ffr_select_smallest_resolved_radius(
+              &grid, res->EnvAdaptiveShellCellCount,
+              BenchmarkAdaptiveAccSurveyMinCells, &underresolved);
+
+      printf("BH_FFR: adaptive accretion survey ID=%llu task=%d fixedR=%g "
+             "previewR=%g previewIndex=%d previewMin=%lld underresolved=%d "
+             "Nshell=[%lld,%lld,%lld,%lld] "
+             "Mshell=[%g,%g,%g,%g]\n",
+             (unsigned long long)P[p].ID, ThisTask, All.BHAccretionRadius,
+             (double)grid.Radius[selected], selected,
+             BenchmarkAdaptiveAccSurveyMinCells, underresolved,
+             res->EnvAdaptiveShellCellCount[0],
+             res->EnvAdaptiveShellCellCount[1],
+             res->EnvAdaptiveShellCellCount[2],
+             res->EnvAdaptiveShellCellCount[3],
+             (double)res->EnvAdaptiveShellGasMass[0],
+             (double)res->EnvAdaptiveShellGasMass[1],
+             (double)res->EnvAdaptiveShellGasMass[2],
+             (double)res->EnvAdaptiveShellGasMass[3]);
+      fflush(stdout);
+    }
 }
 
 static void bh_ffr_prepare_benchmark_rates(void)
@@ -1268,6 +1368,7 @@ void bh_ffr_capture_resolved_gas(void)
       generic_set_MaxNexport();
       generic_comm_pattern(CaptureNTargets, kernel_local, kernel_imported);
 
+      bh_ffr_report_adaptive_acc_survey();
       bh_ffr_prepare_benchmark_rates();
 
       CapturePass = BH_FFR_CAPTURE_PASS_LAMBDA;
