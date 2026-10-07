@@ -298,11 +298,6 @@ void reread_params_after_loading_restart(void)
          All.BHBenchmarkEddingtonFactor, all.BHBenchmarkEddingtonFactor, All.Time);
   All.BHBenchmarkEddingtonFactor = all.BHBenchmarkEddingtonFactor;
 
-  if(ThisTask == 0 && All.BHMinTargetsPerLobe != all.BHMinTargetsPerLobe)
-    warn("BHMinTargetsPerLobe modified from %d to %d while restarting at Time=%g",
-         All.BHMinTargetsPerLobe, all.BHMinTargetsPerLobe, All.Time);
-  All.BHMinTargetsPerLobe = all.BHMinTargetsPerLobe;
-
   if(ThisTask == 0 && All.BHWindBurstFactor != all.BHWindBurstFactor)
     warn("BHWindBurstFactor modified from %g to %g while restarting at Time=%g",
          All.BHWindBurstFactor, all.BHWindBurstFactor, All.Time);
