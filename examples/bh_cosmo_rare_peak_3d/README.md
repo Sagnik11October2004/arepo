@@ -4,18 +4,18 @@ This example builds a controlled cosmological rare-peak experiment for comparing
 black-hole accretion and feedback prescriptions on the same forming halo.
 
 It is **not** a representative cosmological volume: the box deliberately uses
-`sigma_8=2` to produce an early massive halo in a small volume.
+`sigma_8=1.2` to modestly enhance early structure in a small volume.
 
 ## Design
 
 - box: 0.5 cMpc/h
 - cosmology: Omega_m=0.31, Omega_b=0.048, Omega_Lambda=0.69, h=0.68, n_s=0.96
-- deliberately boosted amplitude: sigma8=2
-- MUSIC start: z=99, 2LPT
-- parent unigrid: 128^3 DM particles
-- AREPO startup split: 128^3 gas + 128^3 Type-1 DM
-- expected gas mass: about 1.17e3 Msun
-- expected DM mass: about 6.37e3 Msun
+- moderately boosted amplitude: sigma8=1.2
+- MUSIC start: z=49, 2LPT
+- quick-scout parent unigrid: 64^3 DM particles
+- AREPO startup split: 64^3 gas + 64^3 Type-1 DM
+- expected gas mass: about 9.34e3 Msun
+- expected DM mass: about 5.10e4 Msun
 - simple primordial AREPO cooling enabled; star formation disabled
 - FoF compiled throughout
 - seed mass: 1e5 Msun
@@ -40,7 +40,7 @@ the default one-sided production seeding behaviour are unchanged.
 
 The run is still split into two stages for reproducibility:
 
-1. z=99 -> z=22, which must remain BH-free because the strict upper edge is not
+1. z=49 -> z=22, which must remain BH-free because the strict upper edge is not
    yet crossed.
 2. z=22 -> z=20, where the single-most-massive eligible FoF halo may be seeded.
 
@@ -49,10 +49,10 @@ the executable that omits `GENERATE_GAS_IN_ICS`.
 
 ## Files
 
-- `music.conf` -- z=99 MUSIC2 IC configuration.
+- `music.conf` -- z=49, 64^3 MUSIC2 scout IC configuration.
 - `Config_initial.sh` -- initial DM-only MUSIC input; includes gas generation.
 - `Config_evolved.sh` -- already-split gas+DM cosmology and science branches.
-- `param_preseed.txt` -- z=99 -> z=22, no seeding.
+- `param_preseed.txt` -- z=49 -> z=22, no seeding.
 - `param_seed_window.txt` -- z=22 -> z=20, one seed, no capture/feedback.
 - `run_to_z20.sh` -- complete common-state runner.
 - `prepare_branch_params.py` -- writes all accretion/feedback branch parameters.
@@ -79,8 +79,10 @@ For another MUSIC executable:
 MUSIC_BIN=/absolute/path/to/MUSIC ./generate_ics.sh
 ```
 
-`verify_ic.py` checks z=99, the 128^3 parent count, and that the expected
-post-split gas mass is below 1e4 Msun.
+`verify_ic.py` checks z=49, the 64^3 parent count, and that the expected
+post-split gas mass is below 1e4 Msun. `generate_ics.sh` and `run_to_z20.sh`
+also print the actual free space on the filesystem and refuse to proceed below
+5 GiB by default (`MIN_FREE_GIB` can override the guard).
 
 ## 2. Build
 
@@ -99,7 +101,7 @@ Both configurations include `INPUT_IN_DOUBLEPRECISION`,
 ## 3. Evolve to the common z=20 seeded state
 
 ```bash
-NTASKS=8 ./run_to_z20.sh
+NTASKS=4 ./run_to_z20.sh
 ```
 
 If Stage A has already produced one or more `output_preseed/snap_*.hdf5`
@@ -107,7 +109,7 @@ snapshots, it can be resumed from the latest existing snapshot after rebuilding
 the evolved executable:
 
 ```bash
-RESUME_PRESEED=1 NTASKS=8 ./run_to_z20.sh
+RESUME_PRESEED=1 NTASKS=4 ./run_to_z20.sh
 ```
 
 The resume path validates that the selected checkpoint is BH-free, uses AREPO
@@ -118,13 +120,12 @@ The resume path validates that the selected checkpoint is BH-free, uses AREPO
 The rare-peak executables also enable `HIERARCHICAL_GRAVITY` and `ALLOW_DIRECT_SUMMATION` (`DIRECT_SUMMATION_THRESHOLD=500`). This matters once only a few particles occupy the shortest time bins: the non-hierarchical gravity path otherwise rebuilds a full multi-million-particle tree at every tiny synchronization step. `CELL_CENTER_GRAVITY` follows the public AREPO cosmological example. These are gravity-integration/performance choices; they do not change the BH accretion prescription.
 
 The checked-in rare-peak parameter files use `MaxMemSize=1500` MB per MPI
-rank.  This is intentionally a per-rank cap: for example, 16 ranks advertise
-at most 24 GB to AREPO's startup memory guard, leaving headroom on a 32 GB
-workstation.  Do not interpret `MaxMemSize` as a node-wide total.
+rank.  This is intentionally a per-rank cap: for example, 4 ranks advertise
+at most 6 GB to AREPO's startup memory guard, appropriate for the 64^3 scout.  Do not interpret `MaxMemSize` as a node-wide total.
 
 The runner:
 
-1. evolves z=99 -> z=22 with no BH;
+1. evolves z=49 -> z=22 with no BH;
 2. verifies the last stage-A snapshot is BH-free and at z=22;
 3. copies that state to `ics/z22_preseed.hdf5`;
 4. evolves z=22 -> z=20 with FoF seeding active;
