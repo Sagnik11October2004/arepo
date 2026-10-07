@@ -8,10 +8,10 @@
 #include "blackhole_ffr.h"
 #include "../main/proto.h"
 
-#define BH_FFR_JET_BROADEN_ANGLE_COUNT 4
+#define BH_FFR_JET_RECEIVER_RADIUS_COUNT 3
 
-static const double BHFFRJetBroadenAnglesDeg[BH_FFR_JET_BROADEN_ANGLE_COUNT] =
-    {15.0, 30.0, 45.0, 60.0};
+static const double BHFFRJetReceiverRadiusFactors[BH_FFR_JET_RECEIVER_RADIUS_COUNT] =
+    {64.0, 96.0, 128.0};
 
 /*
  * Iteration 8: persistent jet-axis memory and narrow bipolar jet feedback.
@@ -22,11 +22,14 @@ static const double BHFFRJetBroadenAnglesDeg[BH_FFR_JET_BROADEN_ANGLE_COUNT] =
  * below BHMinCoherence, JetDir is frozen.
  *
  * Jet feedback uses the same burst-threshold philosophy as the validated wind
- * channel, but carries no independent rest-mass sink or mass return. Active
- * gas cells in the two narrow JetDir cones receive separately normalized,
- * mass-weighted bipolar impulses. The impulse amplitude is solved from the
- * exact kinetic-energy quadratic in physical peculiar velocity, giving zero
- * net kick momentum and the requested packet energy to MPI roundoff.
+ * channel, but carries no independent rest-mass sink or mass return. Receiver
+ * gas is selected from two hemispheres around JetDir inside the smallest
+ * resolved neighbourhood (64, 96, then 128 epsilon); the kick itself remains
+ * exactly along +/-JetDir. This avoids requiring the mesh to resolve a narrow
+ * geometric cone while preserving a directional bipolar jet. The impulse
+ * amplitude is solved from the exact kinetic-energy quadratic in physical
+ * peculiar velocity, giving zero net kick momentum and the requested packet
+ * energy to MPI roundoff.
  */
 
 enum bh_ffr_jet_pass
@@ -67,8 +70,7 @@ typedef struct
   MyDouble Pos[3];
   MyFloat Axis[3];
   MyFloat Radius;
-  MyDouble BroadenRadius[BH_FFR_JET_BROADEN_ANGLE_COUNT];
-  MyFloat BroadenCosCone[BH_FFR_JET_BROADEN_ANGLE_COUNT];
+  MyDouble ReceiverRadius[BH_FFR_JET_RECEIVER_RADIUS_COUNT];
   MyFloat CosCone;
   MyIDType BHID;
   int Candidate;
@@ -83,12 +85,12 @@ static data_in *DataIn, *DataGet;
 
 typedef struct
 {
-  /* Constant-volume jet broadening statistics. */
-  MyDouble BroadenEnclosedMass[BH_FFR_JET_BROADEN_ANGLE_COUNT];
-  MyDouble BroadenLobeMass[BH_FFR_JET_BROADEN_ANGLE_COUNT][2];
-  MyDouble BroadenLobeProjectedMomentum[BH_FFR_JET_BROADEN_ANGLE_COUNT][2];
-  MyDouble BroadenLobeTotalMass[BH_FFR_JET_BROADEN_ANGLE_COUNT][2];
-  long long BroadenLobeCount[BH_FFR_JET_BROADEN_ANGLE_COUNT][2];
+  /* Hemispheric receiver statistics at 64, 96, and 128 epsilon. */
+  MyDouble ReceiverEnclosedMass[BH_FFR_JET_RECEIVER_RADIUS_COUNT];
+  MyDouble ReceiverLobeMass[BH_FFR_JET_RECEIVER_RADIUS_COUNT][2];
+  MyDouble ReceiverLobeProjectedMomentum[BH_FFR_JET_RECEIVER_RADIUS_COUNT][2];
+  MyDouble ReceiverLobeTotalMass[BH_FFR_JET_RECEIVER_RADIUS_COUNT][2];
+  long long ReceiverLobeCount[BH_FFR_JET_RECEIVER_RADIUS_COUNT][2];
 
   int Conflict;
 
@@ -299,42 +301,26 @@ static void particle2in(data_in *in, int target, int firstnode)
     }
 
   in->Radius = 0.0;
-  for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
-    {
-      in->BroadenRadius[q] = 0.0;
-      in->BroadenCosCone[q] = 0.0;
-    }
+  for(int q = 0; q < BH_FFR_JET_RECEIVER_RADIUS_COUNT; q++)
+    in->ReceiverRadius[q] = 0.0;
 
   if(JetPass == BH_FFR_JET_STATS &&
      All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_MACER)
     {
       struct bh_ffr_discrete_radius_grid grid;
-      bh_ffr_build_resolution_radius_grid(p, &grid);
-      if(grid.Count != BH_FFR_ADAPTIVE_RADIUS_COUNT)
-        terminate("BH_FFR: unexpected jet adaptive-radius count=%d", grid.Count);
+      bh_ffr_build_discrete_radius_grid(
+          bh_ffr_effective_softening_proper(p),
+          BHFFRJetReceiverRadiusFactors,
+          BH_FFR_JET_RECEIVER_RADIUS_COUNT, &grid);
 
       const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
       if(!isfinite(a) || !(a > 0))
-        terminate("BH_FFR: invalid scale factor=%g in jet adaptive-radius setup", a);
+        terminate("BH_FFR: invalid scale factor=%g in jet receiver-radius setup", a);
 
-      const double rref = grid.Radius[grid.Count - 1];
-      if(!isfinite(rref) || !(rref > 0))
-        terminate("BH_FFR: invalid maximum jet resolution radius=%g", rref);
+      for(int q = 0; q < grid.Count; q++)
+        in->ReceiverRadius[q] = grid.Radius[q] / a;
 
-      for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
-        {
-          const double theta =
-              BHFFRJetBroadenAnglesDeg[q] * M_PI / 180.0;
-          const double omega = 1.0 - cos(theta);
-          if(!isfinite(omega) || !(omega > 0))
-            terminate("BH_FFR: invalid broadened jet solid-angle factor q=%d theta=%g",
-                      q, BHFFRJetBroadenAnglesDeg[q]);
-
-          in->BroadenRadius[q] = rref / a;
-          in->BroadenCosCone[q] = cos(theta);
-        }
-
-      in->Radius = rref / a;
+      in->Radius = in->ReceiverRadius[grid.Count - 1];
     }
   else
     {
@@ -344,9 +330,7 @@ static void particle2in(data_in *in, int target, int firstnode)
       in->Radius = ev->RadiusCoordinate;
     }
 
-  in->CosCone = (JetPass == BH_FFR_JET_STATS)
-                    ? cos(BHFFRJetBroadenAnglesDeg[0] * M_PI / 180.0)
-                    : ev->CosCone;
+  in->CosCone = 0.0;
   in->BHID = P[p].ID;
   in->WakeTimeBin =
       JetPass == BH_FFR_JET_WAKE
@@ -371,16 +355,16 @@ static void out2particle(data_out *out, int target, int mode)
     *res = *out;
   else
     {
-      for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
+      for(int q = 0; q < BH_FFR_JET_RECEIVER_RADIUS_COUNT; q++)
         {
-          res->BroadenEnclosedMass[q] += out->BroadenEnclosedMass[q];
+          res->ReceiverEnclosedMass[q] += out->ReceiverEnclosedMass[q];
           for(int l = 0; l < 2; l++)
             {
-              res->BroadenLobeMass[q][l] += out->BroadenLobeMass[q][l];
-              res->BroadenLobeProjectedMomentum[q][l] +=
-                  out->BroadenLobeProjectedMomentum[q][l];
-              res->BroadenLobeTotalMass[q][l] += out->BroadenLobeTotalMass[q][l];
-              res->BroadenLobeCount[q][l] += out->BroadenLobeCount[q][l];
+              res->ReceiverLobeMass[q][l] += out->ReceiverLobeMass[q][l];
+              res->ReceiverLobeProjectedMomentum[q][l] +=
+                  out->ReceiverLobeProjectedMomentum[q][l];
+              res->ReceiverLobeTotalMass[q][l] += out->ReceiverLobeTotalMass[q][l];
+              res->ReceiverLobeCount[q][l] += out->ReceiverLobeCount[q][l];
             }
         }
 
@@ -461,11 +445,9 @@ static int bh_ffr_jet_selected_lobe(const data_in *in, int j, double *r2_out)
     return -1;
 
   const double dot = dx * in->Axis[0] + dy * in->Axis[1] + dz * in->Axis[2];
-  const double cosine = fabs(dot) / sqrt(r2);
 
-  if(cosine < in->CosCone)
-    return -1;
-
+  /* Receiver positions define only the two hemispheres. The directional jet
+   * is represented by the momentum kick along +/-JetDir. */
   return dot >= 0 ? 0 : 1;
 }
 
@@ -535,36 +517,30 @@ static int bh_ffr_jet_evaluate(int target, int mode, int threadid)
 
           if(r2 > 0 && r2 <= in->Radius * in->Radius)
             {
-              /* Constant-volume live geometry statistics. */
               const double dx = NEAREST_X(P[j].Pos[0] - in->Pos[0]);
               const double dy = NEAREST_Y(P[j].Pos[1] - in->Pos[1]);
               const double dz = NEAREST_Z(P[j].Pos[2] - in->Pos[2]);
               const double dot =
                   dx * in->Axis[0] + dy * in->Axis[1] + dz * in->Axis[2];
-              const double cosine = fabs(dot) / sqrt(r2);
-              const int broaden_lobe = dot >= 0 ? 0 : 1;
+              const int receiver_lobe = dot >= 0 ? 0 : 1;
 
-              double broaden_vdot = 0.0;
+              double receiver_vdot = 0.0;
               if(active)
                 for(int k = 0; k < 3; k++)
-                  broaden_vdot += (P[j].Vel[k] / a) * in->Axis[k];
+                  receiver_vdot += (P[j].Vel[k] / a) * in->Axis[k];
 
-              for(int q = 0; q < BH_FFR_JET_BROADEN_ANGLE_COUNT; q++)
-                if(in->BroadenRadius[q] > 0 &&
-                   r2 <= in->BroadenRadius[q] * in->BroadenRadius[q])
+              for(int q = 0; q < BH_FFR_JET_RECEIVER_RADIUS_COUNT; q++)
+                if(in->ReceiverRadius[q] > 0 &&
+                   r2 <= in->ReceiverRadius[q] * in->ReceiverRadius[q])
                   {
-                    out.BroadenEnclosedMass[q] += P[j].Mass;
-
-                    if(cosine >= in->BroadenCosCone[q])
+                    out.ReceiverEnclosedMass[q] += P[j].Mass;
+                    out.ReceiverLobeTotalMass[q][receiver_lobe] += P[j].Mass;
+                    if(active)
                       {
-                        out.BroadenLobeTotalMass[q][broaden_lobe] += P[j].Mass;
-                        if(active)
-                          {
-                            out.BroadenLobeCount[q][broaden_lobe]++;
-                            out.BroadenLobeMass[q][broaden_lobe] += P[j].Mass;
-                            out.BroadenLobeProjectedMomentum[q][broaden_lobe] +=
-                                P[j].Mass * broaden_vdot;
-                          }
+                        out.ReceiverLobeCount[q][receiver_lobe]++;
+                        out.ReceiverLobeMass[q][receiver_lobe] += P[j].Mass;
+                        out.ReceiverLobeProjectedMomentum[q][receiver_lobe] +=
+                            P[j].Mass * receiver_vdot;
                       }
                   }
             }
