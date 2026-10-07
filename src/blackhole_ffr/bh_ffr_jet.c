@@ -684,9 +684,15 @@ static void bh_ffr_jet_prepare_candidates(void)
           ev->UsedHemisphereFallback ? res->HemiProjectedMomentum[0] : res->LobeProjectedMomentum[0];
       const double pminus =
           ev->UsedHemisphereFallback ? res->HemiProjectedMomentum[1] : res->LobeProjectedMomentum[1];
+      if(!isfinite(ev->LobeMass[0]) || !isfinite(ev->LobeMass[1]) ||
+         !(ev->LobeMass[0] > 0) || !(ev->LobeMass[1] > 0))
+        terminate("BH_FFR: invalid selected jet lobe masses ID=%llu fallback=%d Mplus=%g Mminus=%g",
+                  (unsigned long long)P[p].ID, ev->UsedHemisphereFallback,
+                  (double)ev->LobeMass[0], (double)ev->LobeMass[1]);
+
       const double A =
           pplus / ev->LobeMass[0] - pminus / ev->LobeMass[1];
-      const double B = 1.0 / res->LobeMass[0] + 1.0 / res->LobeMass[1];
+      const double B = 1.0 / ev->LobeMass[0] + 1.0 / ev->LobeMass[1];
 
       ev->Q = bh_ffr_jet_packet_q(A, B, ev->PacketEnergy);
       ev->Candidate = 1;
