@@ -1100,9 +1100,8 @@ void bh_ffr_inject_wind_feedback(void)
     }
 
   /* End-of-transaction drainage diagnostic.  A residual ratio >= 1 means
-   * at least one threshold quantum remains buffered after all allowed packet
-   * rounds.  capHit identifies whether BHMaxPacketsPerStep, rather than target
-   * geometry or insufficient buffer energy, stopped further drainage. */
+   * at least one threshold quantum remains buffered. capHit now refers only
+   * to the emergency safety guard, never to the old four-packet policy. */
   for(int n = 0; n < FeedbackNTargets; n++)
     {
       const int p =

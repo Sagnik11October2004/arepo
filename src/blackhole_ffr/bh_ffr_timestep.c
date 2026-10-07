@@ -639,7 +639,7 @@ void bh_ffr_step(void)
                      "newWindQuanta=%g newJetQuanta=%g "
                      "tthWindMyr=%g tthJetMyr=%g "
                      "dtOverTthWind=%g dtOverTthJet=%g "
-                     "maxPackets=%d "
+                     "targetQuanta=%g safetyMax=%d "
                      "windBufferBefore=%g windBufferAfter=%g "
                      "jetBufferBefore=%g jetBufferAfter=%g\n",
                      (unsigned long long)P[p].ID, ThisTask,
@@ -650,7 +650,8 @@ void bh_ffr_step(void)
                      wind_quanta, jet_quanta,
                      wind_tth_myr, jet_tth_myr,
                      wind_dt_over_tth, jet_dt_over_tth,
-                     All.BHMaxPacketsPerStep,
+                     BH_FFR_FEEDBACK_TARGET_QUANTA_PER_STEP,
+                     BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS,
                      wind_buffer_before, BHP[b].WindEnergyBuffer,
                      jet_buffer_before, BHP[b].JetEnergyBuffer);
               fflush(stdout);
