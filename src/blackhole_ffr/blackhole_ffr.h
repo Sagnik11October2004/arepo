@@ -287,6 +287,10 @@ void bh_ffr_build_resolution_radius_grid(int p, struct bh_ffr_discrete_radius_gr
 int bh_ffr_select_smallest_resolved_radius(const struct bh_ffr_discrete_radius_grid *grid,
                                            const long long *counts, long long min_count,
                                            int *underresolved);
+int bh_ffr_select_smallest_resolved_radius_bounded(
+    const struct bh_ffr_discrete_radius_grid *grid, const long long *counts,
+    long long min_count, double max_radius, double *selected_radius,
+    int *underresolved, int *physical_cap_applied);
 void bh_ffr_adaptive_radius_self_test(void);
 
 void bh_ffr_build_active_list(void);

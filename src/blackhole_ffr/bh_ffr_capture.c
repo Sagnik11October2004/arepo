@@ -47,6 +47,7 @@ struct bh_ffr_capture_result
 
   /* Diagnostics-only resolution-relative shell-FFR survey for modes 4/5. */
   long long EnvAdaptiveShellCellCount[BH_FFR_ADAPTIVE_RADIUS_COUNT];
+  long long EnvAdaptivePhysicalCapShellCellCount;
 
   /* Algebraic model result before the conservative cell sink is applied. */
   MyDouble ModelRawRate;
@@ -77,6 +78,21 @@ static int CaptureSelfTestDone;
  * from a broad 0.5--0.9 plateau; sqrt(2) is the analytic free-fall
  * normalization used only by this controlled benchmark model. */
 static const double BenchmarkFFRShellInnerFraction = 0.6;
+static const double BenchmarkFFRAccretionMaxPc = 100.0;
+
+static double bh_benchmark_ffr_accretion_max_proper(void)
+{
+  if(!isfinite(All.UnitLength_in_cm) || !(All.UnitLength_in_cm > 0))
+    terminate("BH_FFR: invalid UnitLength_in_cm=%g for accretion physical cap",
+              All.UnitLength_in_cm);
+
+  const double rmax =
+      BenchmarkFFRAccretionMaxPc * PARSEC / All.UnitLength_in_cm;
+  if(!isfinite(rmax) || !(rmax > 0))
+    terminate("BH_FFR: invalid %g pc accretion physical cap in code units: %g",
+              BenchmarkFFRAccretionMaxPc, rmax);
+  return rmax;
+}
 
 typedef struct
 {
@@ -84,6 +100,7 @@ typedef struct
   MyFloat Vel[3];
   MyFloat AccretionRadius;
   MyDouble AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT];
+  MyDouble AdaptivePhysicalCapRadius;
   MyDouble CentralMass;
   MyDouble SchwarzschildRadius;
   MyDouble LambdaScale;
@@ -118,6 +135,7 @@ typedef struct
   MyDouble EnvFFRShellInwardRateWeighted;
   MyDouble EnvFFRShellOutwardRateWeighted;
   long long EnvAdaptiveShellCellCount[BH_FFR_ADAPTIVE_RADIUS_COUNT];
+  long long EnvAdaptivePhysicalCapShellCellCount;
   int MinHydroTimeBin;
   MyDouble ActiveApertureGasMass;
   int SinkMinHydroTimeBin;
@@ -219,6 +237,7 @@ static void particle2in(data_in *in, int target, int firstnode)
 
   for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
     in->AdaptiveRadius[k] = 0.0;
+  in->AdaptivePhysicalCapRadius = 0.0;
 
   /* Only the shell-based accretion estimators (mode 4 shell FFR and mode 5
    * ConvJ shell FFR) use this shell-resolution hierarchy.  Modes 0--2 retain
@@ -233,6 +252,9 @@ static void particle2in(data_in *in, int target, int firstnode)
       for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
         in->AdaptiveRadius[k] =
             bh_ffr_proper_radius_to_coordinate_radius(adaptive_grid.Radius[k]);
+      in->AdaptivePhysicalCapRadius =
+          bh_ffr_proper_radius_to_coordinate_radius(
+              bh_benchmark_ffr_accretion_max_proper());
     }
 
   /* Expose the PDF source-fidelity M_cen=M_BH comparison while keeping
@@ -288,6 +310,8 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvFFRShellOutwardRateWeighted = out->EnvFFRShellOutwardRateWeighted;
           for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
             res->EnvAdaptiveShellCellCount[k] = out->EnvAdaptiveShellCellCount[k];
+          res->EnvAdaptivePhysicalCapShellCellCount =
+              out->EnvAdaptivePhysicalCapShellCellCount;
           for(int k = 0; k < 3; k++)
             {
               res->EnvVelocityVolumeWeighted[k] = out->EnvVelocityVolumeWeighted[k];
@@ -311,6 +335,8 @@ static void out2particle(data_out *out, int target, int mode)
           res->EnvFFRShellOutwardRateWeighted += out->EnvFFRShellOutwardRateWeighted;
           for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
             res->EnvAdaptiveShellCellCount[k] += out->EnvAdaptiveShellCellCount[k];
+          res->EnvAdaptivePhysicalCapShellCellCount +=
+              out->EnvAdaptivePhysicalCapShellCellCount;
           for(int k = 0; k < 3; k++)
             {
               res->EnvVelocityVolumeWeighted[k] += out->EnvVelocityVolumeWeighted[k];
@@ -484,8 +510,11 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
   double search_radius = bh->AccretionRadius;
   if(CapturePass == BH_FFR_CAPTURE_PASS_ENVIRONMENT &&
      bh_benchmark_uses_ffr_shell())
-    search_radius =
-        dmax(search_radius, bh->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1]);
+    {
+      search_radius =
+          dmax(search_radius, bh->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1]);
+      search_radius = dmax(search_radius, bh->AdaptivePhysicalCapRadius);
+    }
 
   const int nfound =
       ngb_treefind_variable_threads(bh->Pos, search_radius, target, mode, threadid, numnodes, firstnode);
@@ -517,10 +546,18 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
                     out.EnvAdaptiveShellCellCount[k]++;
                 }
 
-              /* Diagnostics-only survey.  The treewalk reaches the adaptive
-               * 64-epsilon search radius, but all historical live environment
-               * quantities remain restricted to the fixed BHAccretionRadius
-               * until the next reviewed iteration. */
+              if(bh->AdaptivePhysicalCapRadius > 0)
+                {
+                  const double rout = bh->AdaptivePhysicalCapRadius;
+                  const double rin = BenchmarkFFRShellInnerFraction * rout;
+                  if(r > rin && r < rout)
+                    out.EnvAdaptivePhysicalCapShellCellCount++;
+                }
+
+              /* Diagnostics-only survey.  The treewalk gathers the epsilon
+               * hierarchy plus the exact 100 pc physical-cap shell, while all
+               * historical live environment quantities remain restricted to
+               * the fixed BHAccretionRadius until the next reviewed iteration. */
               if(r > bh->AccretionRadius)
                 continue;
             }
@@ -732,19 +769,27 @@ static void bh_ffr_report_adaptive_acc_radius_survey(void)
       struct bh_ffr_discrete_radius_grid grid;
       bh_ffr_build_resolution_radius_grid(p, &grid);
 
+      const double physical_cap = bh_benchmark_ffr_accretion_max_proper();
+      double selected_radius = physical_cap;
       int underresolved = 0;
+      int physical_cap_applied = 0;
       const int selected =
-          bh_ffr_select_smallest_resolved_radius(
-              &grid, res->EnvAdaptiveShellCellCount, 32, &underresolved);
+          bh_ffr_select_smallest_resolved_radius_bounded(
+              &grid, res->EnvAdaptiveShellCellCount, 32, physical_cap,
+              &selected_radius, &underresolved, &physical_cap_applied);
 
       const double eps = bh_ffr_effective_softening_proper(p);
+      const double racc_pc =
+          selected_radius * All.UnitLength_in_cm / PARSEC;
       printf("BH_FFR: adaptive accretion radius mode=survey accModel=%s ID=%llu task=%d "
-             "eps=%g Rsearch=%g Racc=%g index=%d "
-             "Nshell=[%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld] underresolved=%d\n",
+             "eps=%g Rsearch=%g Racc=%g RaccPc=%g index=%d "
+             "Nshell=[%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld,%lld] "
+             "Ncap=%lld underresolved=%d physicalCapApplied=%d\n",
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              (unsigned long long)P[p].ID, ThisTask, eps,
-             (double)grid.Radius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1],
-             (double)grid.Radius[selected], selected,
+             (double)dmin(grid.Radius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1],
+                          physical_cap),
+             selected_radius, racc_pc, selected,
              res->EnvAdaptiveShellCellCount[0],
              res->EnvAdaptiveShellCellCount[1],
              res->EnvAdaptiveShellCellCount[2],
@@ -758,7 +803,8 @@ static void bh_ffr_report_adaptive_acc_radius_survey(void)
              res->EnvAdaptiveShellCellCount[10],
              res->EnvAdaptiveShellCellCount[11],
              res->EnvAdaptiveShellCellCount[12],
-             underresolved);
+             res->EnvAdaptivePhysicalCapShellCellCount,
+             underresolved, physical_cap_applied);
       fflush(stdout);
     }
 }

@@ -143,6 +143,57 @@ int bh_ffr_select_smallest_resolved_radius(const struct bh_ffr_discrete_radius_g
   return grid->Count - 1;
 }
 
+int bh_ffr_select_smallest_resolved_radius_bounded(
+    const struct bh_ffr_discrete_radius_grid *grid, const long long *counts,
+    long long min_count, double max_radius, double *selected_radius,
+    int *underresolved, int *physical_cap_applied)
+{
+  if(grid == NULL || counts == NULL || selected_radius == NULL)
+    terminate("BH_FFR: null bounded-radius selection input");
+  if(grid->Count < 1 || grid->Count > BH_FFR_MAX_ADAPTIVE_RADII)
+    terminate("BH_FFR: invalid bounded-radius grid count=%d", grid->Count);
+  if(min_count < 1)
+    terminate("BH_FFR: invalid bounded-radius minimum count=%lld", min_count);
+  if(!isfinite(max_radius) || !(max_radius > 0))
+    terminate("BH_FFR: invalid bounded-radius physical cap=%g", max_radius);
+
+  for(int k = 0; k < grid->Count; k++)
+    {
+      if(!isfinite(grid->Radius[k]) || !(grid->Radius[k] > 0) ||
+         (k > 0 && !(grid->Radius[k] > grid->Radius[k - 1])))
+        terminate("BH_FFR: invalid bounded-radius grid at k=%d R=%g", k,
+                  (double)grid->Radius[k]);
+      if(counts[k] < 0)
+        terminate("BH_FFR: negative bounded-radius count[%d]=%lld", k, counts[k]);
+
+      /* The physical ceiling is authoritative: candidates above it are never
+       * eligible, even if they would satisfy the numerical resolution test. */
+      if(grid->Radius[k] > max_radius)
+        break;
+
+      if(counts[k] >= min_count)
+        {
+          *selected_radius = grid->Radius[k];
+          if(underresolved != NULL)
+            *underresolved = 0;
+          if(physical_cap_applied != NULL)
+            *physical_cap_applied = 0;
+          return k;
+        }
+    }
+
+  /* No numerically resolved candidate exists inside the physical domain.
+   * Use the exact physical ceiling rather than expanding to a more distant
+   * epsilon-scaled shell.  The caller may still evaluate non-zero accretion
+   * from this capped shell, but must expose that it is under-resolved. */
+  *selected_radius = max_radius;
+  if(underresolved != NULL)
+    *underresolved = 1;
+  if(physical_cap_applied != NULL)
+    *physical_cap_applied = 1;
+  return -1;
+}
+
 void bh_ffr_adaptive_radius_self_test(void)
 {
   /* Dimensionless regression for the production resolution-relative hierarchy.
@@ -181,6 +232,34 @@ void bh_ffr_adaptive_radius_self_test(void)
     terminate("BH_FFR: adaptive-radius fallback-selection self-test failed "
               "k=%d underresolved=%d",
               k, underresolved);
+
+  /* Physical-cap regression: the first numerically resolved point lies beyond
+   * the allowed domain, so the selector must return the exact cap rather than
+   * the farther resolved candidate. */
+  const double cap_counts_radius[1] = {0.0};
+  (void)cap_counts_radius; /* keep this block dimensionless and warning-free */
+  const long long bounded_counts[BH_FFR_ADAPTIVE_RADIUS_COUNT] =
+      {1, 2, 3, 4, 5, 6, 8, 11, 15, 40, 50, 80, 120};
+  double selected_radius = -1.0;
+  int cap_applied = -1;
+  k = bh_ffr_select_smallest_resolved_radius_bounded(
+      &grid, bounded_counts, 32, 20.0, &selected_radius, &underresolved,
+      &cap_applied);
+  if(k != -1 || underresolved != 1 || cap_applied != 1 ||
+     fabs(selected_radius - 20.0) > 2.0e-14)
+    terminate("BH_FFR: bounded adaptive-radius cap self-test failed "
+              "k=%d R=%g underresolved=%d cap=%d",
+              k, selected_radius, underresolved, cap_applied);
+
+  /* A resolved candidate below the cap must still win normally. */
+  k = bh_ffr_select_smallest_resolved_radius_bounded(
+      &grid, resolved_counts, 32, 24.0, &selected_radius, &underresolved,
+      &cap_applied);
+  if(k != 7 || underresolved != 0 || cap_applied != 0 ||
+     fabs(selected_radius - 16.0) > 2.0e-14)
+    terminate("BH_FFR: bounded adaptive-radius resolved self-test failed "
+              "k=%d R=%g underresolved=%d cap=%d",
+              k, selected_radius, underresolved, cap_applied);
 }
 
 
