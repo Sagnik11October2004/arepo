@@ -37,6 +37,105 @@ static void bh_ffr_deterministic_axis(MyIDType id, MyDouble axis[3])
   axis[2] = z;
 }
 
+void bh_ffr_build_discrete_radius_grid(double base_radius, const double *factors, int count,
+                                       struct bh_ffr_discrete_radius_grid *grid)
+{
+  if(grid == NULL || factors == NULL)
+    terminate("BH_FFR: null discrete-radius grid input");
+  if(!isfinite(base_radius) || !(base_radius > 0))
+    terminate("BH_FFR: invalid discrete-radius base=%g", base_radius);
+  if(count < 1 || count > BH_FFR_MAX_ADAPTIVE_RADII)
+    terminate("BH_FFR: discrete-radius count=%d outside [1,%d]", count,
+              BH_FFR_MAX_ADAPTIVE_RADII);
+
+  memset(grid, 0, sizeof(*grid));
+  grid->Count = count;
+
+  for(int k = 0; k < count; k++)
+    {
+      if(!isfinite(factors[k]) || !(factors[k] > 0))
+        terminate("BH_FFR: invalid discrete-radius factor[%d]=%g", k, factors[k]);
+      if(k > 0 && !(factors[k] > factors[k - 1]))
+        terminate("BH_FFR: discrete-radius factors must be strictly increasing: "
+                  "factor[%d]=%g factor[%d]=%g",
+                  k - 1, factors[k - 1], k, factors[k]);
+
+      const double radius = base_radius * factors[k];
+      if(!isfinite(radius) || !(radius > 0))
+        terminate("BH_FFR: invalid discrete radius[%d]=%g from base=%g factor=%g",
+                  k, radius, base_radius, factors[k]);
+      if(k > 0 && !(radius > grid->Radius[k - 1]))
+        terminate("BH_FFR: discrete radii are not strictly increasing at k=%d", k);
+
+      grid->Radius[k] = radius;
+    }
+}
+
+int bh_ffr_select_smallest_resolved_radius(const struct bh_ffr_discrete_radius_grid *grid,
+                                           const long long *counts, long long min_count,
+                                           int *underresolved)
+{
+  if(grid == NULL || counts == NULL)
+    terminate("BH_FFR: null discrete-radius selection input");
+  if(grid->Count < 1 || grid->Count > BH_FFR_MAX_ADAPTIVE_RADII)
+    terminate("BH_FFR: invalid discrete-radius grid count=%d", grid->Count);
+  if(min_count < 1)
+    terminate("BH_FFR: invalid discrete-radius minimum count=%lld", min_count);
+
+  for(int k = 0; k < grid->Count; k++)
+    {
+      if(!isfinite(grid->Radius[k]) || !(grid->Radius[k] > 0) ||
+         (k > 0 && !(grid->Radius[k] > grid->Radius[k - 1])))
+        terminate("BH_FFR: invalid discrete-radius grid at k=%d R=%g", k,
+                  (double)grid->Radius[k]);
+      if(counts[k] < 0)
+        terminate("BH_FFR: negative discrete-radius count[%d]=%lld", k, counts[k]);
+
+      if(counts[k] >= min_count)
+        {
+          if(underresolved != NULL)
+            *underresolved = 0;
+          return k;
+        }
+    }
+
+  if(underresolved != NULL)
+    *underresolved = 1;
+  return grid->Count - 1;
+}
+
+void bh_ffr_adaptive_radius_self_test(void)
+{
+  const double factors[5] = {1.0, 1.5, 2.0, 2.5, 3.0};
+  const double expected[5] = {0.05, 0.075, 0.10, 0.125, 0.15};
+  struct bh_ffr_discrete_radius_grid grid;
+
+  bh_ffr_build_discrete_radius_grid(0.05, factors, 5, &grid);
+  for(int k = 0; k < grid.Count; k++)
+    if(fabs(grid.Radius[k] - expected[k]) >
+       2.0e-14 * fmax(fabs(expected[k]), 1.0))
+      terminate("BH_FFR: adaptive-radius grid self-test failed k=%d got=%g expected=%g",
+                k, (double)grid.Radius[k], expected[k]);
+
+  const long long resolved_counts[5] = {3, 12, 31, 40, 80};
+  int underresolved = -1;
+  int k = bh_ffr_select_smallest_resolved_radius(&grid, resolved_counts, 32,
+                                                  &underresolved);
+  if(k != 3 || underresolved != 0)
+    terminate("BH_FFR: adaptive-radius resolved-selection self-test failed "
+              "k=%d underresolved=%d",
+              k, underresolved);
+
+  const long long unresolved_counts[5] = {1, 2, 3, 4, 5};
+  k = bh_ffr_select_smallest_resolved_radius(&grid, unresolved_counts, 32,
+                                              &underresolved);
+  if(k != 4 || underresolved != 1)
+    terminate("BH_FFR: adaptive-radius fallback-selection self-test failed "
+              "k=%d underresolved=%d",
+              k, underresolved);
+}
+
+
 double bh_ffr_central_mass_code(int p)
 {
   if(p < 0 || p >= NumPart || P[p].Type != BH_FFR_PARTICLE_TYPE)
