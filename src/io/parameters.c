@@ -981,8 +981,12 @@ void check_parameters()
     mpi_terminate("BHRHotMaxInRs must exceed 3 so the truncated-flow interval is non-empty.\n");
   if(All.BHRadiativeEfficiency <= 0 || All.BHRadiativeEfficiency >= 1)
     mpi_terminate("BHRadiativeEfficiency must lie in (0,1).\n");
-  if(All.BHWindBurstFactor <= 0 || All.BHJetBurstFactor <= 0)
-    mpi_terminate("BH wind/jet burst factors must be positive.\n");
+  /* A zero burst factor disables that mechanical feedback channel.  This is
+   * useful for controlled wind-only / jet-only diagnostics; negative values
+   * remain invalid.  Positive factors retain their usual interpretation as
+   * minimum binding-energy release triggers. */
+  if(All.BHWindBurstFactor < 0 || All.BHJetBurstFactor < 0)
+    mpi_terminate("BH wind/jet burst factors must be non-negative (zero disables the channel).\n");
   if(All.BHUseCentralBindingTerm != 0 && All.BHUseCentralBindingTerm != 1)
     mpi_terminate("BHUseCentralBindingTerm must be 0 or 1.\n");
   if(All.BHWindConeAngleDeg <= 0 || All.BHWindConeAngleDeg > 90 || All.BHJetConeAngleDeg <= 0 ||
