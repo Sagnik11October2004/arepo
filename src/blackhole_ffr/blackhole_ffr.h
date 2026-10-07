@@ -248,6 +248,9 @@ struct bh_ffr_domain_exchange_context
  * code lengths, matching BHAccretionRadius/BHFeedbackRadius semantics. */
 #define BH_FFR_MAX_ADAPTIVE_RADII 16
 #define BH_FFR_ADAPTIVE_RADIUS_COUNT 13
+
+#define BH_FFR_FEEDBACK_TARGET_QUANTA_PER_STEP 4.0
+#define BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS 4096
 struct bh_ffr_discrete_radius_grid
 {
   int Count;
@@ -297,6 +300,11 @@ void bh_ffr_build_active_list(void);
 void bh_ffr_free_active_list(void);
 
 void bh_ffr_step(void);
+int bh_ffr_feedback_wind_target_hydro_timebin(int p);
+int bh_ffr_feedback_jet_target_hydro_timebin(int p);
+void bh_ffr_feedback_wakeup_begin(void);
+void bh_ffr_feedback_request_wakeup(int gas_index, int target_timebin);
+void bh_ffr_feedback_wakeup_apply(void);
 void bh_ffr_collect_gas_environment(struct bh_ffr_gas_search_result *results);
 void bh_ffr_refresh_gas_neighbour_cache(void);
 void bh_ffr_prepare_dm_environment_search(void);

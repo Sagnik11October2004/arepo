@@ -216,6 +216,162 @@ static integertime bh_ffr_limit_integer_step_by_physical_myr(integertime ti_step
   return limited;
 }
 
+static double bh_ffr_feedback_channel_limit_myr(double threshold,
+                                                double power)
+{
+  if(!(threshold > 0) || !(power > 0))
+    return HUGE_VAL;
+
+  const double tth_myr = bh_ffr_code_time_to_myr(threshold / power);
+  const double limit =
+      BH_FFR_FEEDBACK_TARGET_QUANTA_PER_STEP * tth_myr;
+
+  if(!isfinite(limit) || !(limit > 0))
+    terminate("BH_FFR: invalid feedback cadence limit Eth=%g P=%g limit=%g Myr",
+              threshold, power, limit);
+  return limit;
+}
+
+static int bh_ffr_feedback_target_hydro_timebin_core(int p,
+                                                     double threshold,
+                                                     double power)
+{
+  if(!(threshold > 0) || !(power > 0))
+    return -1;
+
+  const int grav_bin = P[p].TimeBinGrav;
+  if(grav_bin <= 0 || grav_bin >= TIMEBINS)
+    terminate("BH_FFR: invalid BH gravity timebin=%d for feedback wake ID=%llu",
+              grav_bin, (unsigned long long)P[p].ID);
+
+  integertime ti_step = ((integertime)1) << grav_bin;
+  const double limit_myr =
+      bh_ffr_feedback_channel_limit_myr(threshold, power);
+  ti_step =
+      bh_ffr_limit_integer_step_by_physical_myr(ti_step, limit_myr);
+
+  const int bin = get_timestep_bin(ti_step);
+  if(bin <= 0 || bin >= TIMEBINS)
+    terminate("BH_FFR: invalid requested feedback hydro timebin=%d ti=%lld ID=%llu",
+              bin, (long long)ti_step, (unsigned long long)P[p].ID);
+  return bin;
+}
+
+int bh_ffr_feedback_wind_target_hydro_timebin(int p)
+{
+  const int b =
+      bh_ffr_compact_index_from_particle(
+          p, "bh_ffr_feedback_wind_target_hydro_timebin");
+  return bh_ffr_feedback_target_hydro_timebin_core(
+      p, BHP[b].WindThresholdEnergy, BHP[b].WindPower);
+}
+
+int bh_ffr_feedback_jet_target_hydro_timebin(int p)
+{
+  const int b =
+      bh_ffr_compact_index_from_particle(
+          p, "bh_ffr_feedback_jet_target_hydro_timebin");
+  return bh_ffr_feedback_target_hydro_timebin_core(
+      p, BHP[b].JetThresholdEnergy, BHP[b].JetPower);
+}
+
+static int *BHFFRFeedbackWakeBin = NULL;
+
+void bh_ffr_feedback_wakeup_begin(void)
+{
+  if(BHFFRFeedbackWakeBin != NULL)
+    terminate("BH_FFR: feedback wakeup transaction already open");
+
+  BHFFRFeedbackWakeBin =
+      (int *)malloc((NumGas > 0 ? NumGas : 1) * sizeof(int));
+  if(BHFFRFeedbackWakeBin == NULL)
+    terminate("BH_FFR: failed to allocate feedback wakeup requests");
+
+  for(int gas = 0; gas < NumGas; gas++)
+    BHFFRFeedbackWakeBin[gas] = TIMEBINS;
+}
+
+void bh_ffr_feedback_request_wakeup(int gas_index, int target_timebin)
+{
+  if(BHFFRFeedbackWakeBin == NULL || target_timebin < 0)
+    return;
+  if(gas_index < 0 || gas_index >= NumGas)
+    terminate("BH_FFR: wakeup gas index=%d outside NumGas=%d",
+              gas_index, NumGas);
+  if(target_timebin <= 0 || target_timebin >= TIMEBINS)
+    terminate("BH_FFR: invalid feedback wakeup target bin=%d gas=%d",
+              target_timebin, gas_index);
+
+  int old = BHFFRFeedbackWakeBin[gas_index];
+  while(target_timebin < old)
+    {
+      const int seen =
+          __sync_val_compare_and_swap(&BHFFRFeedbackWakeBin[gas_index],
+                                      old, target_timebin);
+      if(seen == old)
+        break;
+      old = seen;
+    }
+}
+
+void bh_ffr_feedback_wakeup_apply(void)
+{
+  if(BHFFRFeedbackWakeBin == NULL)
+    return;
+
+  int requested = 0;
+  int moved = 0;
+  int min_new_bin = TIMEBINS;
+  int max_old_bin = -1;
+
+  for(int gas = 0; gas < NumGas; gas++)
+    {
+      int target = BHFFRFeedbackWakeBin[gas];
+      if(target >= TIMEBINS)
+        continue;
+      requested++;
+
+      const int encoded_old = P[gas].TimeBinHydro;
+      int old = encoded_old;
+      if(old < 0)
+        old = -old - 1;
+
+      if(old <= 0 || old >= TIMEBINS)
+        terminate("BH_FFR: invalid gas hydro timebin=%d decoded=%d gasID=%llu during wakeup",
+                  encoded_old, old, (unsigned long long)P[gas].ID);
+
+      while(target > 1 && !TimeBinSynchronized[target])
+        target--;
+
+      if(target <= 0 || target >= TIMEBINS)
+        terminate("BH_FFR: failed to find synchronized feedback wakeup bin for gasID=%llu",
+                  (unsigned long long)P[gas].ID);
+
+      if(target >= old)
+        continue;
+
+      timebin_move_particle(&TimeBinsHydro, gas, old, target);
+      P[gas].TimeBinHydro =
+          encoded_old < 0 ? -target - 1 : target;
+
+      moved++;
+      if(target < min_new_bin)
+        min_new_bin = target;
+      if(old > max_old_bin)
+        max_old_bin = old;
+    }
+
+  printf("BH_FFR: feedback wakeup task=%d requested=%d moved=%d "
+         "minNewBin=%d maxOldBin=%d\n",
+         ThisTask, requested, moved,
+         moved > 0 ? min_new_bin : -1,
+         moved > 0 ? max_old_bin : -1);
+  fflush(stdout);
+
+  free(BHFFRFeedbackWakeBin);
+  BHFFRFeedbackWakeBin = NULL;
+}
+
 integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
 {
   const int b = bh_ffr_compact_index_from_particle(p, "bh_ffr_limit_gravity_timestep");
@@ -270,32 +426,22 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
         }
     }
 
-  /* Feedback thresholds are event triggers, not integration timescales.
-   * Keep their accumulation times for diagnostics, but do not reduce the BH
-   * gravity timestep with them.  Otherwise a BH can become active thousands
-   * of times while all eligible hydro receivers remain inactive, producing a
-   * self-sustaining feedback-backlog deadlock. */
+  /* Resolve feedback generation in time.  The next BH interval is limited so
+   * each channel creates at most a few threshold quanta; receiver gas is
+   * synchronized separately through deferred hydro-bin wake requests. */
   if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_MACER)
     {
-      if(BHP[b].WindThresholdEnergy > 0 && BHP[b].WindPower > 0)
-        {
-          const double tcode = BHP[b].WindThresholdEnergy / BHP[b].WindPower;
-          wind_limit_myr =
-              All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(tcode);
-          if(!isfinite(wind_limit_myr) || !(wind_limit_myr > 0))
-            terminate("BH_FFR: invalid wind threshold time=%g Myr for ID=%llu",
-                      wind_limit_myr, (unsigned long long)P[p].ID);
-        }
+      wind_limit_myr =
+          bh_ffr_feedback_channel_limit_myr(
+              BHP[b].WindThresholdEnergy, BHP[b].WindPower);
+      jet_limit_myr =
+          bh_ffr_feedback_channel_limit_myr(
+              BHP[b].JetThresholdEnergy, BHP[b].JetPower);
 
-      if(BHP[b].JetThresholdEnergy > 0 && BHP[b].JetPower > 0)
-        {
-          const double tcode = BHP[b].JetThresholdEnergy / BHP[b].JetPower;
-          jet_limit_myr =
-              All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(tcode);
-          if(!isfinite(jet_limit_myr) || !(jet_limit_myr > 0))
-            terminate("BH_FFR: invalid jet threshold time=%g Myr for ID=%llu",
-                      jet_limit_myr, (unsigned long long)P[p].ID);
-        }
+      if(wind_limit_myr < dt_limit_myr)
+        dt_limit_myr = wind_limit_myr;
+      if(jet_limit_myr < dt_limit_myr)
+        dt_limit_myr = jet_limit_myr;
     }
   else if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_TNG &&
           BHP[b].TNGFeedbackMode == BH_BENCHMARK_TNG_MODE_KINETIC &&
@@ -573,8 +719,10 @@ void bh_ffr_step(void)
         break;
 
       case BH_BENCHMARK_FEEDBACK_MACER:
+        bh_ffr_feedback_wakeup_begin();
         bh_ffr_inject_wind_feedback();
         bh_ffr_inject_jet_feedback();
+        bh_ffr_feedback_wakeup_apply();
         break;
 
       default:
