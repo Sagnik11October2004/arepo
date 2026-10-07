@@ -888,7 +888,7 @@ static void bh_ffr_jet_report_broadening_survey(void)
           const int ok =
               bh_ffr_jet_broaden_angle_ok(res, q, &fp, &fm);
 
-          printf("BH_FFR: jet broadening detail mode=survey ID=%llu task=%d "
+          printf("BH_FFR: jet broadening detail mode=live ID=%llu task=%d "
                  "angle=%g R=%g Reps=%g volumeRatio=1 "
                  "Nplus=%lld Nminus=%lld fplus=%g fminus=%g resolved=%d\n",
                  (unsigned long long)P[p].ID, ThisTask,
@@ -952,7 +952,7 @@ static void bh_ffr_jet_report_adaptive_radius_survey(void)
         {
           double fp = 0.0, fm = 0.0;
           const int ok = bh_ffr_jet_survey_radius_ok(res, k, &fp, &fm);
-          printf("BH_FFR: adaptive jet radius detail mode=survey ID=%llu task=%d "
+          printf("BH_FFR: adaptive jet radius detail mode=legacy-survey ID=%llu task=%d "
                  "index=%d R=%g Reps=%g Nplus=%lld Nminus=%lld "
                  "fplus=%g fminus=%g resolved=%d\n",
                  (unsigned long long)P[p].ID, ThisTask, k,
@@ -991,7 +991,7 @@ static void bh_ffr_jet_report_adaptive_radius_survey(void)
       const long long nminus = fallback ? res->AdaptiveHemiCount[1]
                                         : res->AdaptiveLobeCount[selected][1];
 
-      printf("BH_FFR: adaptive jet radius mode=survey ID=%llu task=%d eps=%g "
+      printf("BH_FFR: adaptive jet radius mode=legacy-survey ID=%llu task=%d eps=%g "
              "Rsearch=%g Rjet=%g index=%d Nplus=%lld Nminus=%lld "
              "fplus=%g fminus=%g fallback=%d underresolved=%d\n",
              (unsigned long long)P[p].ID, ThisTask, eps,
