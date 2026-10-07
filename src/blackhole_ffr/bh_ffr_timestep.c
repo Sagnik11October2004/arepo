@@ -385,6 +385,7 @@ void bh_ffr_step(void)
   static int self_tests_done = 0;
   if(!self_tests_done)
     {
+      bh_ffr_adaptive_radius_self_test();
       bh_ffr_reservoir_self_test();
       bh_ffr_inner_self_test();
       bh_ffr_feedback_self_test();
