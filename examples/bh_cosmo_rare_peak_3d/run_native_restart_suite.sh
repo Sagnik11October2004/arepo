@@ -13,6 +13,7 @@ COMMON_RESTART_DIR="${COMMON_RESTART_DIR:-$HERE/restart_archive/common_seed_spar
 PARAM_DIR="$HERE/params_native"
 LOG_DIR="$HERE/logs"
 BRANCHES="${BRANCHES:-}"
+RESUME="${RESUME:-0}"
 
 available_branches()
 {
@@ -91,23 +92,42 @@ for name in $BRANCHES; do
 
   log="$LOG_DIR/$name.log"
 
-  # Every science branch starts from an independent copy of the pristine
-  # post-seed native checkpoint. Existing branch data are never removed.
-  if [[ -e "$out/restartfiles" || -e "$out/end" || -s "$log" ]]; then
-    echo "Refusing to overwrite existing branch state for '$name'." >&2
-    echo "  output: $out" >&2
-    echo "  log:    $log" >&2
-    echo "Choose a new branch/output name or archive the existing result manually." >&2
-    exit 1
-  fi
+  if [[ "$RESUME" == "1" ]]; then
+    if [[ ! -d "$out/restartfiles" ]]; then
+      echo "Cannot resume '$name': missing $out/restartfiles" >&2
+      exit 1
+    fi
+    if [[ -e "$out/end" ]]; then
+      echo "Cannot resume '$name': branch already has an end file." >&2
+      exit 1
+    fi
+    # A deliberate AREPO stop leaves this sentinel behind. Remove only this
+    # branch-local stop request so RestartFlag=1 can advance again.
+    rm -f -- "$out/stop"
+  else
+    # Every fresh science branch starts from an independent copy of the
+    # pristine post-seed native checkpoint. Existing branch data are never
+    # removed or overwritten.
+    if [[ -e "$out/restartfiles" || -e "$out/end" || -s "$log" ]]; then
+      echo "Refusing to overwrite existing branch state for '$name'." >&2
+      echo "  output: $out" >&2
+      echo "  log:    $log" >&2
+      echo "Use RESUME=1 for a verified native restart, or archive the existing result manually." >&2
+      exit 1
+    fi
 
-  mkdir -p "$out"
-  cp -a --reflink=auto "$COMMON_RESTART_DIR" "$out/restartfiles"
+    mkdir -p "$out"
+    cp -a --reflink=auto "$COMMON_RESTART_DIR" "$out/restartfiles"
+  fi
 
   echo
   echo "================================================================"
   echo " native-restart branch: $name"
-  echo " checkpoint: z=20.8837, BH ID=1000120011, M_BH=1e5 Msun"
+  if [[ "$RESUME" == "1" ]]; then
+    echo " mode: resume existing verified native restart"
+  else
+    echo " checkpoint: z=20.8837, BH ID=1000120011, M_BH=1e5 Msun"
+  fi
   echo " MPI ranks: $NTASKS"
   echo " free-space floor: ${MIN_FREE_GIB} GiB"
   echo " output: $out"
@@ -115,11 +135,20 @@ for name in $BRANCHES; do
 
   (
     cd "$HERE"
-    "$MPIEXEC" -np "$NTASKS" "$EXEC" "$param" 1 </dev/null 2>&1 | tee "$log"
+    if [[ "$RESUME" == "1" ]]; then
+      "$MPIEXEC" -np "$NTASKS" "$EXEC" "$param" 1 </dev/null 2>&1 | tee -a "$log"
+    else
+      "$MPIEXEC" -np "$NTASKS" "$EXEC" "$param" 1 </dev/null 2>&1 | tee "$log"
+    fi
   )
 
-  if [[ ! -f "$out/end" ]]; then
-    echo "ERROR: branch '$name' did not finish cleanly." >&2
+  if [[ -f "$out/end" ]]; then
+    echo "Branch '$name' reached its configured final time."
+  elif [[ -f "$out/stop" && -d "$out/restartfiles" ]] &&
+       grep -q "All restart files written successfully" "$log"; then
+    echo "Branch '$name' stopped cleanly with verified native restart files."
+  else
+    echo "ERROR: branch '$name' exited without an end file or a verified deliberate-stop restart." >&2
     exit 1
   fi
 done
