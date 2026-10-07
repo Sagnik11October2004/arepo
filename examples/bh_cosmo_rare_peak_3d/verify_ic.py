@@ -12,8 +12,8 @@ OMEGA_M = 0.31
 OMEGA_B = 0.048
 H = 0.68
 L_MPC_H = 0.5
-N = 128 ** 3
-ZSTART = 99.0
+N = 64 ** 3
+ZSTART = 49.0
 
 
 def main() -> None:
