@@ -8,6 +8,15 @@ MPIEXEC="${MPIEXEC:-mpirun}"
 
 cd "$HERE"
 
+MIN_FREE_GIB="${MIN_FREE_GIB:-5}"
+FREE_KIB="$(df -Pk "$HERE" | awk 'NR==2 {print $4}')"
+FREE_GIB="$(awk -v k="$FREE_KIB" 'BEGIN {printf "%.2f", k/1024/1024}')"
+echo "Filesystem free space at $HERE: ${FREE_GIB} GiB"
+awk -v k="$FREE_KIB" -v min="$MIN_FREE_GIB" 'BEGIN {exit !(k >= min*1024*1024)}' || {
+  echo "ERROR: less than ${MIN_FREE_GIB} GiB free; refusing to start the scout." >&2
+  exit 1
+}
+
 if [[ -s ics.hdf5 ]]; then
   if ! python3 verify_ic.py ics.hdf5; then
     echo "Existing ics.hdf5 does not match the z=49 64^3 scout; regenerating it."
