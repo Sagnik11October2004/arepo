@@ -112,16 +112,11 @@ BHWindBurstFactor                       0.01
 BHJetBurstFactor                        0.10
 BHUseCentralBindingTerm                 1
 BHWindConeAngleDeg                      45.0
-BHJetConeAngleDeg                       15.0
 BHMinCoherence                          0.30
 BHJetDirectionTimeFactor                1.0
-% 64^3 scout only: the feedback aperture contains too few cells for the
-% production-style eight-target-per-lobe requirement.  The source retains
-% bipolar momentum conservation and uses a hemisphere fallback only when the
-% requested cone is under-resolved.
-BHMinTargetsPerLobe                     1
+% Live wind/jet geometry requires at least four active cells per lobe.
+% The active-target mass fraction remains configurable below.
 BHMinActiveTargetMassFrac               0.5
-BHMaxPacketsPerStep                     4
 BHDMNeighbours                          40
 BHInternalTimestepFactor                0.25
 
