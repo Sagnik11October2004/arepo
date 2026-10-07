@@ -1,6 +1,6 @@
-% Rare-peak cosmology stage A: common BH-free evolution from z=99 to z=22.
-% 0.5 cMpc/h, 128^3 parent DM -> 128^3 gas + 128^3 DM.
-% sigma8=2 is encoded in music.conf.  The compiled strict z<22 upper gate keeps this stage BH-free.
+% Rare-peak quick-scout stage A: common BH-free evolution from z=49 to z=22.
+% 0.5 cMpc/h, 64^3 parent DM -> 64^3 gas + 64^3 DM.
+% sigma8=1.2 is encoded in music.conf.  The compiled strict z<22 upper gate keeps this stage BH-free.
 
 InitCondFile                            ./ics
 OutputDir                               ./output_preseed
@@ -18,7 +18,7 @@ ResubmitOn                              0
 ResubmitCommand                         none
 MaxMemSize                              1500
 
-TimeBegin                               0.010000000000000000
+TimeBegin                               0.020000000000000000
 TimeMax                                 0.043478260869565216
 
 ComovingIntegrationOn                   1
@@ -35,17 +35,17 @@ BoxSize                                 500.0
 OutputListOn                            1
 TimeBetSnapshot                         0.0
 TimeOfFirstSnapshot                     0.0
-TimeBetStatistics                       0.002
+TimeBetStatistics                       0.004
 NumFilesPerSnapshot                     1
 NumFilesWrittenInParallel               1
 
 TypeOfTimestepCriterion                 0
-ErrTolIntAccuracy                       0.012
-CourantFac                              0.3
-MaxSizeTimestep                         0.002
+ErrTolIntAccuracy                       0.020
+CourantFac                              0.4
+MaxSizeTimestep                         0.004
 MinSizeTimestep                         1.0e-8
 
-InitGasTemp                             169.774
+InitGasTemp                             42.4435
 MinGasTemp                              10.0
 MinimumDensityOnStartUp                 1.0e-20
 LimitUBelowThisDensity                  0.0
@@ -54,8 +54,8 @@ MinEgySpec                              0.0
 
 TypeOfOpeningCriterion                  1
 ErrTolTheta                             0.7
-ErrTolForceAcc                          0.0025
-MultipleDomains                         4
+ErrTolForceAcc                          0.005
+MultipleDomains                         2
 TopNodeFactor                           2.5
 ActivePartFracForNewDomainDecomp        0.01
 
@@ -67,11 +67,11 @@ UnitMass_in_g                           1.989e43
 UnitVelocity_in_cm_per_s                1.0e5
 GravityConstantInternal                 0
 
-% Mean parent spacing = 500/128 = 3.90625 ckpc/h.
-SofteningComovingType0                  0.10
-SofteningComovingType1                  0.10
-SofteningMaxPhysType0                   0.025
-SofteningMaxPhysType1                   0.025
+% Mean parent spacing = 500/64 = 7.8125 ckpc/h.
+SofteningComovingType0                  0.20
+SofteningComovingType1                  0.20
+SofteningMaxPhysType0                   0.050
+SofteningMaxPhysType1                   0.050
 GasSoftFactor                           2.5
 SofteningTypeOfPartType0                0
 SofteningTypeOfPartType1                1
@@ -79,7 +79,7 @@ SofteningTypeOfPartType2                1
 SofteningTypeOfPartType3                1
 SofteningTypeOfPartType4                1
 SofteningTypeOfPartType5                1
-MinimumComovingHydroSoftening           0.0125
+MinimumComovingHydroSoftening           0.0250
 AdaptiveHydroSofteningSpacing           1.2
 
 CellShapingSpeed                        0.5
