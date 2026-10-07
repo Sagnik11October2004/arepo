@@ -302,6 +302,16 @@ void reread_params_after_loading_restart(void)
     warn("BHMinTargetsPerLobe modified from %d to %d while restarting at Time=%g",
          All.BHMinTargetsPerLobe, all.BHMinTargetsPerLobe, All.Time);
   All.BHMinTargetsPerLobe = all.BHMinTargetsPerLobe;
+
+  if(ThisTask == 0 && All.BHWindBurstFactor != all.BHWindBurstFactor)
+    warn("BHWindBurstFactor modified from %g to %g while restarting at Time=%g",
+         All.BHWindBurstFactor, all.BHWindBurstFactor, All.Time);
+  All.BHWindBurstFactor = all.BHWindBurstFactor;
+
+  if(ThisTask == 0 && All.BHJetBurstFactor != all.BHJetBurstFactor)
+    warn("BHJetBurstFactor modified from %g to %g while restarting at Time=%g",
+         All.BHJetBurstFactor, all.BHJetBurstFactor, All.Time);
+  All.BHJetBurstFactor = all.BHJetBurstFactor;
 #endif
 
   if(ThisTask == 0 && All.OutputListLength != all.OutputListLength)
