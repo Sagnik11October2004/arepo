@@ -247,6 +247,7 @@ struct bh_ffr_domain_exchange_context
  * accretion or feedback path selects from this grid yet.  Radii are proper
  * code lengths, matching BHAccretionRadius/BHFeedbackRadius semantics. */
 #define BH_FFR_MAX_ADAPTIVE_RADII 8
+#define BH_FFR_ADAPTIVE_RADIUS_COUNT 6
 struct bh_ffr_discrete_radius_grid
 {
   int Count;
@@ -281,6 +282,8 @@ void bh_ffr_validate_state(const char *where);
 
 void bh_ffr_build_discrete_radius_grid(double base_radius, const double *factors, int count,
                                        struct bh_ffr_discrete_radius_grid *grid);
+double bh_ffr_effective_softening_proper(int p);
+void bh_ffr_build_resolution_radius_grid(int p, struct bh_ffr_discrete_radius_grid *grid);
 int bh_ffr_select_smallest_resolved_radius(const struct bh_ffr_discrete_radius_grid *grid,
                                            const long long *counts, long long min_count,
                                            int *underresolved);

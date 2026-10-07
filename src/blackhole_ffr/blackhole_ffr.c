@@ -37,6 +37,9 @@ static void bh_ffr_deterministic_axis(MyIDType id, MyDouble axis[3])
   axis[2] = z;
 }
 
+static const double BHFFRAdaptiveRadiusFactors[BH_FFR_ADAPTIVE_RADIUS_COUNT] =
+    {2.0, 3.0, 4.0, 6.0, 8.0, 10.0};
+
 void bh_ffr_build_discrete_radius_grid(double base_radius, const double *factors, int count,
                                        struct bh_ffr_discrete_radius_grid *grid)
 {
@@ -69,6 +72,42 @@ void bh_ffr_build_discrete_radius_grid(double base_radius, const double *factors
 
       grid->Radius[k] = radius;
     }
+}
+
+double bh_ffr_effective_softening_proper(int p)
+{
+  if(p < 0 || p >= NumPart || P[p].Type != BH_FFR_PARTICLE_TYPE)
+    terminate("BH_FFR: invalid particle index=%d in effective-softening query", p);
+
+  const int softening_type = P[p].SofteningType;
+  const int nsoft = NSOFTTYPES + NSOFTTYPES_HYDRO;
+  if(softening_type < 0 || softening_type >= nsoft)
+    terminate("BH_FFR: invalid SofteningType=%d for BH ID=%llu (nsoft=%d)",
+              softening_type, (unsigned long long)P[p].ID, nsoft);
+
+  /* SofteningTable is the current coordinate/comoving spline softening that
+   * AREPO's gravity machinery has selected for this softening type.  Do not
+   * reconstruct it from SofteningComoving/SofteningMaxPhys here: set_softenings()
+   * owns that policy.  ForceSoftening=2.8*SofteningTable is the radius beyond
+   * which the spline force becomes Newtonian, not epsilon itself. */
+  const double eps_coordinate = All.SofteningTable[softening_type];
+  const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+  const double eps_proper = a * eps_coordinate;
+
+  if(!isfinite(a) || !(a > 0) || !isfinite(eps_coordinate) ||
+     !(eps_coordinate > 0) || !isfinite(eps_proper) || !(eps_proper > 0))
+    terminate("BH_FFR: invalid effective softening ID=%llu type=%d a=%g epsCoord=%g epsProper=%g",
+              (unsigned long long)P[p].ID, softening_type, a,
+              eps_coordinate, eps_proper);
+
+  return eps_proper;
+}
+
+void bh_ffr_build_resolution_radius_grid(int p, struct bh_ffr_discrete_radius_grid *grid)
+{
+  const double eps_proper = bh_ffr_effective_softening_proper(p);
+  bh_ffr_build_discrete_radius_grid(eps_proper, BHFFRAdaptiveRadiusFactors,
+                                    BH_FFR_ADAPTIVE_RADIUS_COUNT, grid);
 }
 
 int bh_ffr_select_smallest_resolved_radius(const struct bh_ffr_discrete_radius_grid *grid,
@@ -106,30 +145,35 @@ int bh_ffr_select_smallest_resolved_radius(const struct bh_ffr_discrete_radius_g
 
 void bh_ffr_adaptive_radius_self_test(void)
 {
-  const double factors[5] = {1.0, 1.5, 2.0, 2.5, 3.0};
-  const double expected[5] = {0.05, 0.075, 0.10, 0.125, 0.15};
+  /* Dimensionless regression for the production resolution-relative hierarchy:
+   * R/epsilon = {2,3,4,6,8,10}. */
+  const double expected[BH_FFR_ADAPTIVE_RADIUS_COUNT] =
+      {2.0, 3.0, 4.0, 6.0, 8.0, 10.0};
   struct bh_ffr_discrete_radius_grid grid;
 
-  bh_ffr_build_discrete_radius_grid(0.05, factors, 5, &grid);
+  bh_ffr_build_discrete_radius_grid(1.0, BHFFRAdaptiveRadiusFactors,
+                                    BH_FFR_ADAPTIVE_RADIUS_COUNT, &grid);
   for(int k = 0; k < grid.Count; k++)
     if(fabs(grid.Radius[k] - expected[k]) >
        2.0e-14 * fmax(fabs(expected[k]), 1.0))
       terminate("BH_FFR: adaptive-radius grid self-test failed k=%d got=%g expected=%g",
                 k, (double)grid.Radius[k], expected[k]);
 
-  const long long resolved_counts[5] = {3, 12, 31, 40, 80};
+  const long long resolved_counts[BH_FFR_ADAPTIVE_RADIUS_COUNT] =
+      {3, 12, 21, 31, 40, 80};
   int underresolved = -1;
   int k = bh_ffr_select_smallest_resolved_radius(&grid, resolved_counts, 32,
                                                   &underresolved);
-  if(k != 3 || underresolved != 0)
+  if(k != 4 || underresolved != 0)
     terminate("BH_FFR: adaptive-radius resolved-selection self-test failed "
               "k=%d underresolved=%d",
               k, underresolved);
 
-  const long long unresolved_counts[5] = {1, 2, 3, 4, 5};
+  const long long unresolved_counts[BH_FFR_ADAPTIVE_RADIUS_COUNT] =
+      {1, 2, 3, 4, 5, 6};
   k = bh_ffr_select_smallest_resolved_radius(&grid, unresolved_counts, 32,
                                               &underresolved);
-  if(k != 4 || underresolved != 1)
+  if(k != BH_FFR_ADAPTIVE_RADIUS_COUNT - 1 || underresolved != 1)
     terminate("BH_FFR: adaptive-radius fallback-selection self-test failed "
               "k=%d underresolved=%d",
               k, underresolved);
