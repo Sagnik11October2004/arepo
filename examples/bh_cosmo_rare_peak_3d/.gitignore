@@ -7,3 +7,7 @@ logs/
 params/
 output_branches.txt
 *.log
+outputs_z10/
+restart_archive/
+legacy_runs/
+output_branch_z10.local_before_pull.txt
