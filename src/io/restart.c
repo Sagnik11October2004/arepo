@@ -266,6 +266,39 @@ void reread_params_after_loading_restart(void)
     warn("CellShapingSpeed modified from %g to %g while restarting at Time=%g", All.CellShapingSpeed, all.CellShapingSpeed, All.Time);
   All.CellShapingSpeed = all.CellShapingSpeed;
 
+#ifdef BLACKHOLE_FFR
+  /* Native restart branch experiments deliberately share one fully
+   * serialized post-seed BH state, then change only the runtime choice of
+   * resolved accretion/target/feedback.  Copy these parameters from the new
+   * parameter file after loading the restart instead of silently retaining
+   * the seed-window values stored in All.  The persistent BHP state itself is
+   * untouched, so every branch starts from the identical BH/reservoir/buffer
+   * state. */
+  if(ThisTask == 0 && All.BHFreeFallA != all.BHFreeFallA)
+    warn("BHFreeFallA modified from %g to %g while restarting at Time=%g", All.BHFreeFallA, all.BHFreeFallA, All.Time);
+  All.BHFreeFallA = all.BHFreeFallA;
+
+  if(ThisTask == 0 && All.BHBenchmarkAccretionModel != all.BHBenchmarkAccretionModel)
+    warn("BHBenchmarkAccretionModel modified from %d to %d while restarting at Time=%g",
+         All.BHBenchmarkAccretionModel, all.BHBenchmarkAccretionModel, All.Time);
+  All.BHBenchmarkAccretionModel = all.BHBenchmarkAccretionModel;
+
+  if(ThisTask == 0 && All.BHBenchmarkAccretionTarget != all.BHBenchmarkAccretionTarget)
+    warn("BHBenchmarkAccretionTarget modified from %d to %d while restarting at Time=%g",
+         All.BHBenchmarkAccretionTarget, all.BHBenchmarkAccretionTarget, All.Time);
+  All.BHBenchmarkAccretionTarget = all.BHBenchmarkAccretionTarget;
+
+  if(ThisTask == 0 && All.BHBenchmarkFeedbackModel != all.BHBenchmarkFeedbackModel)
+    warn("BHBenchmarkFeedbackModel modified from %d to %d while restarting at Time=%g",
+         All.BHBenchmarkFeedbackModel, all.BHBenchmarkFeedbackModel, All.Time);
+  All.BHBenchmarkFeedbackModel = all.BHBenchmarkFeedbackModel;
+
+  if(ThisTask == 0 && All.BHBenchmarkEddingtonFactor != all.BHBenchmarkEddingtonFactor)
+    warn("BHBenchmarkEddingtonFactor modified from %g to %g while restarting at Time=%g",
+         All.BHBenchmarkEddingtonFactor, all.BHBenchmarkEddingtonFactor, All.Time);
+  All.BHBenchmarkEddingtonFactor = all.BHBenchmarkEddingtonFactor;
+#endif
+
   if(ThisTask == 0 && All.OutputListLength != all.OutputListLength)
     warn("OutputListLength modified from %d to %d while restarting at Time=%g", All.OutputListLength, all.OutputListLength, All.Time);
   All.OutputListLength = all.OutputListLength;
