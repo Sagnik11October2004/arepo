@@ -916,9 +916,16 @@ extern struct global_data_all_processes
   double BHJetBurstFactor;
   int BHUseCentralBindingTerm;
   double BHWindConeAngleDeg;
+
+  /* Deprecated runtime controls retained in their historical positions only
+   * to preserve the binary layout of native restart files written before the
+   * adaptive feedback cleanup.  Live MACER logic does not read these fields. */
+  double BHJetConeAngleDeg;
   double BHMinCoherence;
   double BHJetDirectionTimeFactor;
+  int BHMinTargetsPerLobe;
   double BHMinActiveTargetMassFrac;
+  int BHMaxPacketsPerStep;
   int BHDMNeighbours;
   double BHInternalTimestepFactor;
 
