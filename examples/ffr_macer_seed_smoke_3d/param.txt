@@ -109,7 +109,7 @@ AdaptiveHydroSofteningSpacing           1.2
 CellShapingSpeed                        0.5
 CellShapingFactor                       1.0
 
-%---- FFR-MACER fixed apertures
+%---- FFR-MACER apertures
 BHAccretionRadius                       0.10
 BHFeedbackRadius                        0.20
 
@@ -138,12 +138,9 @@ BHWindBurstFactor                       0.01
 BHJetBurstFactor                        0.10
 BHUseCentralBindingTerm                 1
 BHWindConeAngleDeg                      45.0
-BHJetConeAngleDeg                       15.0
 BHMinCoherence                          0.30
 BHJetDirectionTimeFactor                1.0
-BHMinTargetsPerLobe                     8
 BHMinActiveTargetMassFrac               0.5
-BHMaxPacketsPerStep                     4
 % Nearest Type-1 DM sample used for the cached 1D local velocity dispersion.
 BHDMNeighbours                          64
 % Internal BH accuracy factor in dt <= f_int min(t_d, Eth_w/P_w, Eth_j/P_j).

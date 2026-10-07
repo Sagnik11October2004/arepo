@@ -112,12 +112,9 @@ BHWindBurstFactor                       0.01
 BHJetBurstFactor                        0.10
 BHUseCentralBindingTerm                 1
 BHWindConeAngleDeg                      45.0
-BHJetConeAngleDeg                       15.0
 BHMinCoherence                          0.30
 BHJetDirectionTimeFactor                1.0
-BHMinTargetsPerLobe                     8
 BHMinActiveTargetMassFrac               0.5
-BHMaxPacketsPerStep                     4
 BHDMNeighbours                          40
 BHInternalTimestepFactor                0.25
 
