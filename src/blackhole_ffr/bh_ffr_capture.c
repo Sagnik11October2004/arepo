@@ -231,19 +231,33 @@ static void bh_ffr_shell_stats_accumulate(struct bh_ffr_shell_stats *dst,
                                           const double dv[3],
                                           const double ell[3], double vr)
 {
-  if(!(raw_rate > 0) || !(geom_rate > 0))
-    return;
+  if(!isfinite(mass) || !(mass > 0) ||
+     !isfinite(raw_rate) || raw_rate < 0 ||
+     !isfinite(geom_rate) || geom_rate < 0 ||
+     !isfinite(cs) || cs < 0 || !isfinite(vr))
+    terminate("BH_FFR: invalid adaptive shell contribution m=%g raw=%g geom=%g cs=%g vr=%g",
+              mass, raw_rate, geom_rate, cs, vr);
 
   dst->GasMass += mass;
   dst->RawRate += raw_rate;
   dst->GeometricRate += geom_rate;
-  dst->SoundRateWeighted += geom_rate * cs;
-  dst->InwardRateWeighted += geom_rate * dmax(-vr, 0.0);
-  dst->OutwardRateWeighted += geom_rate * dmax(vr, 0.0);
-  for(int k = 0; k < 3; k++)
+
+  /* ConvJ is defined from the unit-efficiency geometric shell even when the
+   * mode-4 free-fall coefficient is zero, so only the geometric weight gates
+   * its thermodynamic/kinematic moments. */
+  if(geom_rate > 0)
     {
-      dst->VelocityRateWeighted[k] += geom_rate * dv[k];
-      dst->AngularMomentumRateWeighted[k] += geom_rate * ell[k];
+      dst->SoundRateWeighted += geom_rate * cs;
+      dst->InwardRateWeighted += geom_rate * dmax(-vr, 0.0);
+      dst->OutwardRateWeighted += geom_rate * dmax(vr, 0.0);
+      for(int k = 0; k < 3; k++)
+        {
+          if(!isfinite(dv[k]) || !isfinite(ell[k]))
+            terminate("BH_FFR: invalid adaptive shell vector contribution component=%d dv=%g ell=%g",
+                      k, dv[k], ell[k]);
+          dst->VelocityRateWeighted[k] += geom_rate * dv[k];
+          dst->AngularMomentumRateWeighted[k] += geom_rate * ell[k];
+        }
     }
 }
 

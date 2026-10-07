@@ -146,7 +146,18 @@ void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *e
   *am_limiter = 1.0;
   *env_factor = 1.0;
 
-  if(env->GasMass <= 0 || bh_mass <= 0)
+  if(bh_mass <= 0)
+    return;
+
+  /* FFR-family diagnostics are defined by their own apertures.  Do not erase
+   * a valid selected shell merely because the historical common Bondi aperture
+   * happens to contain no gas. */
+  raw_rates[BH_BENCHMARK_ACC_FFR] = env->FFRRawRate;
+  raw_rates[BH_BENCHMARK_ACC_FFR_SHELL] = env->FFRShellRawRate;
+  raw_rates[BH_BENCHMARK_ACC_CONVJ_SHELL_FFR] = env->FFRConvJShellRate;
+  *env_factor = env->ConvJFactor;
+
+  if(env->GasMass <= 0)
     return;
 
   raw_rates[BH_BENCHMARK_ACC_TNG_BONDI] =
@@ -164,12 +175,6 @@ void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *e
   *am_limiter =
       bh_benchmark_am_limiter_core(env->SoundSpeed, env->Vphi, All.BHBenchmarkAMViscosity);
   raw_rates[BH_BENCHMARK_ACC_AM_BONDI] = (*am_limiter) * bhl;
-
-  raw_rates[BH_BENCHMARK_ACC_FFR] = env->FFRRawRate;
-  raw_rates[BH_BENCHMARK_ACC_FFR_SHELL] = env->FFRShellRawRate;
-
-  raw_rates[BH_BENCHMARK_ACC_CONVJ_SHELL_FFR] = env->FFRConvJShellRate;
-  *env_factor = env->ConvJFactor;
 
   for(int model = 0; model < BH_BENCHMARK_ACC_COUNT; model++)
     if(!isfinite(raw_rates[model]) || raw_rates[model] < 0)
