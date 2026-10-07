@@ -29,7 +29,8 @@ enum bh_ffr_feedback_pass
   BH_FFR_FEEDBACK_STATS = 0,
   BH_FFR_FEEDBACK_MARK = 1,
   BH_FFR_FEEDBACK_CONFLICT = 2,
-  BH_FFR_FEEDBACK_INJECT = 3
+  BH_FFR_FEEDBACK_INJECT = 3,
+  BH_FFR_FEEDBACK_WAKE = 4
 };
 
 struct bh_ffr_feedback_event
@@ -78,6 +79,7 @@ typedef struct
   MyDouble Q;
   MyDouble LobeMass[2];
   MyDouble LobeUtherm[2];
+  int WakeTimeBin;
   int Firstnode;
 } data_in;
 
@@ -213,6 +215,10 @@ static void particle2in(data_in *in, int target, int firstnode)
                     ? cos(All.BHWindConeAngleDeg * M_PI / 180.0)
                     : ev->CosCone;
   in->BHID = P[p].ID;
+  in->WakeTimeBin =
+      FeedbackPass == BH_FFR_FEEDBACK_WAKE
+          ? bh_ffr_feedback_wind_target_hydro_timebin(p)
+          : -1;
   in->Candidate = ev->Candidate;
   in->Fire = ev->Fire;
   in->PacketMass = ev->PacketMass;
@@ -413,6 +419,13 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
 
       double r2;
       const int lobe = bh_ffr_feedback_selected_lobe(in, j, &r2);
+
+      if(FeedbackPass == BH_FFR_FEEDBACK_WAKE)
+        {
+          if(lobe >= 0 && in->WakeTimeBin > 0)
+            bh_ffr_feedback_request_wakeup(j, in->WakeTimeBin);
+          continue;
+        }
 
       if(FeedbackPass == BH_FFR_FEEDBACK_STATS)
         {
@@ -848,7 +861,7 @@ static void bh_ffr_feedback_prepare_candidates(void)
           fflush(stdout);
         }
 
-      if(FeedbackPacketCount[n] >= All.BHMaxPacketsPerStep || underresolved)
+      if(underresolved)
         continue;
 
       const double eth = BHP[b].WindThresholdEnergy;
@@ -1059,12 +1072,15 @@ void bh_ffr_inject_wind_feedback(void)
 
   int any_global_fire = 0;
 
-  for(int round = 0; round < All.BHMaxPacketsPerStep; round++)
+  for(int round = 0; round < BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS; round++)
     {
       FeedbackConflictRound = round;
       bh_ffr_feedback_comm_pass(BH_FFR_FEEDBACK_STATS);
       bh_ffr_feedback_report_adaptive_radius_survey();
       bh_ffr_feedback_prepare_candidates();
+
+      if(round == 0)
+        bh_ffr_feedback_comm_pass(BH_FFR_FEEDBACK_WAKE);
 
       if(bh_ffr_feedback_global_candidate_count() <= 0)
         break;
@@ -1077,10 +1093,11 @@ void bh_ffr_inject_wind_feedback(void)
       bh_ffr_feedback_comm_pass(BH_FFR_FEEDBACK_INJECT);
       bh_ffr_feedback_commit_packets();
       any_global_fire += global_fire;
-    }
 
-  if(any_global_fire > 0)
-    update_primitive_variables();
+      /* Wind coupling uses lobe-averaged Utherm on the next round. Refresh
+       * primitives now so repeated packets never use stale thermodynamics. */
+      update_primitive_variables();
+    }
 
   /* End-of-transaction drainage diagnostic.  A residual ratio >= 1 means
    * at least one threshold quantum remains buffered after all allowed packet
@@ -1097,14 +1114,20 @@ void bh_ffr_inject_wind_feedback(void)
           eth > 0 ? BHP[b].WindEnergyBuffer / eth : 0.0;
       const int backlog = eth > 0 && BHP[b].WindEnergyBuffer >= eth;
       const int cap_hit =
-          FeedbackPacketCount[n] >= All.BHMaxPacketsPerStep;
+          FeedbackPacketCount[n] >= BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS;
 
-      printf("BH_FFR: wind drain ID=%llu task=%d packets=%d maxPackets=%d "
+      printf("BH_FFR: wind drain ID=%llu task=%d packets=%d safetyMax=%d "
              "buffer=%g Eth=%g backlogRatio=%g backlog=%d capHit=%d\n",
              (unsigned long long)P[p].ID, ThisTask,
-             FeedbackPacketCount[n], All.BHMaxPacketsPerStep,
+             FeedbackPacketCount[n], BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS,
              BHP[b].WindEnergyBuffer, eth, ratio, backlog, cap_hit);
       fflush(stdout);
+
+      if(backlog && cap_hit)
+        terminate("BH_FFR: wind feedback failed to drain below threshold "
+                  "after safety maximum ID=%llu buffer=%g Eth=%g ratio=%g",
+                  (unsigned long long)P[p].ID,
+                  BHP[b].WindEnergyBuffer, eth, ratio);
     }
 
   bh_ffr_validate_state("post-wind-feedback");

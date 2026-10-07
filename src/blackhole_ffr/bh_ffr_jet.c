@@ -34,7 +34,8 @@ enum bh_ffr_jet_pass
   BH_FFR_JET_STATS = 0,
   BH_FFR_JET_MARK = 1,
   BH_FFR_JET_CONFLICT = 2,
-  BH_FFR_JET_INJECT = 3
+  BH_FFR_JET_INJECT = 3,
+  BH_FFR_JET_WAKE = 4
 };
 
 struct bh_ffr_jet_event
@@ -77,6 +78,7 @@ typedef struct
   int Fire;
   MyDouble Q;
   MyDouble LobeMass[2];
+  int WakeTimeBin;
   int Firstnode;
 } data_in;
 
@@ -404,6 +406,10 @@ static void particle2in(data_in *in, int target, int firstnode)
                     ? cos(All.BHJetConeAngleDeg * M_PI / 180.0)
                     : ev->CosCone;
   in->BHID = P[p].ID;
+  in->WakeTimeBin =
+      JetPass == BH_FFR_JET_WAKE
+          ? bh_ffr_feedback_jet_target_hydro_timebin(p)
+          : -1;
   in->Candidate = ev->Candidate;
   in->Fire = ev->Fire;
   in->Q = ev->Q;
@@ -598,6 +604,13 @@ static int bh_ffr_jet_evaluate(int target, int mode, int threadid)
 
       double r2;
       const int lobe = bh_ffr_jet_selected_lobe(in, j, &r2);
+
+      if(JetPass == BH_FFR_JET_WAKE)
+        {
+          if(lobe >= 0 && in->WakeTimeBin > 0)
+            bh_ffr_feedback_request_wakeup(j, in->WakeTimeBin);
+          continue;
+        }
 
       if(JetPass == BH_FFR_JET_STATS)
         {
@@ -1023,23 +1036,16 @@ static void bh_ffr_jet_prepare_candidates(void)
       const double rref = grid.Radius[grid.Count - 1];
 
       double fplus = 0.0, fminus = 0.0;
-      const int selected =
+      const int selected_active =
           bh_ffr_jet_select_live_broadening(res, &fplus, &fminus);
 
-      if(selected < 0)
-        {
-          ev->Underresolved = 1;
-          BHP[b].JetThresholdEnergy = 0.0;
-
-          if(JetConflictRound == 0)
-            {
-              printf("BH_FFR: jet live geometry ID=%llu task=%d "
-                     "selectedAngle=none underresolved=1 bufferRetained=1\n",
-                     (unsigned long long)P[p].ID, ThisTask);
-              fflush(stdout);
-            }
-          continue;
-        }
+      /* If active targets are temporarily insufficient, keep a provisional
+       * widest-angle geometry solely to define a threshold and queue receiver
+       * wakeups. It is never allowed to fire until the live criterion passes. */
+      const int selected =
+          selected_active >= 0
+              ? selected_active
+              : BH_FFR_JET_BROADEN_ANGLE_COUNT - 1;
 
       const double theta =
           BHFFRJetBroadenAnglesDeg[selected] * M_PI / 180.0;
@@ -1060,7 +1066,7 @@ static void bh_ffr_jet_prepare_candidates(void)
       ev->RadiusCoordinate = radius / a;
       ev->CosCone = cos(theta);
       ev->UsedHemisphereFallback = 0;
-      ev->Underresolved = 0;
+      ev->Underresolved = selected_active < 0 ? 1 : 0;
 
       const double menc = res->BroadenEnclosedMass[selected];
       const double sigma2 = BHP[b].SigmaDM * BHP[b].SigmaDM;
@@ -1079,6 +1085,16 @@ static void bh_ffr_jet_prepare_candidates(void)
       BHP[b].JetThresholdEnergy =
           All.BHJetBurstFactor * base_threshold;
 
+      if(JetConflictRound == 0 && selected_active < 0)
+        {
+          printf("BH_FFR: jet live geometry ID=%llu task=%d "
+                 "selectedAngle=none wakeAngle=%g Rwake=%g "
+                 "underresolved=1 bufferRetained=1\n",
+                 (unsigned long long)P[p].ID, ThisTask,
+                 ev->AngleDeg, ev->RadiusProper);
+          fflush(stdout);
+        }
+
       if(JetConflictRound == 0 && BHP[b].SigmaDM > 0)
         {
           printf("BH_FFR: binding threshold jet ID=%llu task=%d "
@@ -1092,7 +1108,7 @@ static void bh_ffr_jet_prepare_candidates(void)
           fflush(stdout);
         }
 
-      if(JetPacketCount[n] >= All.BHMaxPacketsPerStep)
+      if(ev->Underresolved)
         continue;
 
       const double eth = BHP[b].JetThresholdEnergy;
@@ -1294,13 +1310,16 @@ void bh_ffr_inject_jet_feedback(void)
 
   int any_global_fire = 0;
 
-  for(int round = 0; round < All.BHMaxPacketsPerStep; round++)
+  for(int round = 0; round < BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS; round++)
     {
       JetConflictRound = round;
       bh_ffr_jet_comm_pass(BH_FFR_JET_STATS);
       bh_ffr_jet_report_adaptive_radius_survey();
       bh_ffr_jet_report_broadening_survey();
       bh_ffr_jet_prepare_candidates();
+
+      if(round == 0)
+        bh_ffr_jet_comm_pass(BH_FFR_JET_WAKE);
 
       if(bh_ffr_jet_global_candidate_count() <= 0)
         break;
@@ -1330,14 +1349,20 @@ void bh_ffr_inject_jet_feedback(void)
           eth > 0 ? BHP[b].JetEnergyBuffer / eth : 0.0;
       const int backlog = eth > 0 && BHP[b].JetEnergyBuffer >= eth;
       const int cap_hit =
-          JetPacketCount[n] >= All.BHMaxPacketsPerStep;
+          JetPacketCount[n] >= BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS;
 
-      printf("BH_FFR: jet drain ID=%llu task=%d packets=%d maxPackets=%d "
+      printf("BH_FFR: jet drain ID=%llu task=%d packets=%d safetyMax=%d "
              "buffer=%g Eth=%g backlogRatio=%g backlog=%d capHit=%d\n",
              (unsigned long long)P[p].ID, ThisTask,
-             JetPacketCount[n], All.BHMaxPacketsPerStep,
+             JetPacketCount[n], BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS,
              BHP[b].JetEnergyBuffer, eth, ratio, backlog, cap_hit);
       fflush(stdout);
+
+      if(backlog && cap_hit)
+        terminate("BH_FFR: jet feedback failed to drain below threshold "
+                  "after safety maximum ID=%llu buffer=%g Eth=%g ratio=%g",
+                  (unsigned long long)P[p].ID,
+                  BHP[b].JetEnergyBuffer, eth, ratio);
     }
 
   bh_ffr_validate_state("post-jet-feedback");
