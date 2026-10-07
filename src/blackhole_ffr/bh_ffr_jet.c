@@ -41,6 +41,8 @@ struct bh_ffr_jet_event
   MyDouble LobeMass[2];
   long long LobeCount[2];
   MyDouble EnergyBefore;
+  MyFloat CosCone;
+  int UsedHemisphereFallback;
 };
 
 static struct bh_ffr_jet_event *JetEvents;
@@ -71,7 +73,13 @@ typedef struct
   MyDouble EnclosedMass;
   MyDouble LobeMass[2];
   MyDouble LobeProjectedMomentum[2];
+  MyDouble LobeTotalMass[2];
   long long LobeCount[2];
+
+  MyDouble HemiMass[2];
+  MyDouble HemiProjectedMomentum[2];
+  MyDouble HemiTotalMass[2];
+  long long HemiCount[2];
   int Conflict;
 
   MyDouble KickEnergy;
@@ -303,7 +311,7 @@ static void particle2in(data_in *in, int target, int firstnode)
     }
 
   in->Radius = bh_ffr_jet_coordinate_radius();
-  in->CosCone = cos(All.BHJetConeAngleDeg * M_PI / 180.0);
+  in->CosCone = ev->CosCone;
   in->BHID = P[p].ID;
   in->Candidate = ev->Candidate;
   in->Fire = ev->Fire;
@@ -329,7 +337,13 @@ static void out2particle(data_out *out, int target, int mode)
         {
           res->LobeMass[l] += out->LobeMass[l];
           res->LobeProjectedMomentum[l] += out->LobeProjectedMomentum[l];
+          res->LobeTotalMass[l] += out->LobeTotalMass[l];
           res->LobeCount[l] += out->LobeCount[l];
+
+          res->HemiMass[l] += out->HemiMass[l];
+          res->HemiProjectedMomentum[l] += out->HemiProjectedMomentum[l];
+          res->HemiTotalMass[l] += out->HemiTotalMass[l];
+          res->HemiCount[l] += out->HemiCount[l];
         }
 
       if(out->Conflict)
@@ -471,19 +485,37 @@ static int bh_ffr_jet_evaluate(int target, int mode, int threadid)
 
       if(JetPass == BH_FFR_JET_STATS)
         {
-          if(r2 <= in->Radius * in->Radius)
-            out.EnclosedMass += P[j].Mass;
+          int hemi = -1;
+          if(r2 > 0 && r2 <= in->Radius * in->Radius)
+            {
+              const double dx = NEAREST_X(P[j].Pos[0] - in->Pos[0]);
+              const double dy = NEAREST_Y(P[j].Pos[1] - in->Pos[1]);
+              const double dz = NEAREST_Z(P[j].Pos[2] - in->Pos[2]);
+              const double dot = dx * in->Axis[0] + dy * in->Axis[1] + dz * in->Axis[2];
+              hemi = dot >= 0 ? 0 : 1;
+              out.EnclosedMass += P[j].Mass;
+              out.HemiTotalMass[hemi] += P[j].Mass;
+              if(lobe >= 0)
+                out.LobeTotalMass[lobe] += P[j].Mass;
+            }
 
-          if(lobe < 0 || !bh_ffr_jet_gas_is_active(j))
-            continue;
+          if(bh_ffr_jet_gas_is_active(j) && hemi >= 0)
+            {
+              double vdot = 0.0;
+              for(int k = 0; k < 3; k++)
+                vdot += (P[j].Vel[k] / a) * in->Axis[k];
 
-          out.LobeCount[lobe]++;
-          out.LobeMass[lobe] += P[j].Mass;
+              out.HemiCount[hemi]++;
+              out.HemiMass[hemi] += P[j].Mass;
+              out.HemiProjectedMomentum[hemi] += P[j].Mass * vdot;
 
-          double vdot = 0.0;
-          for(int k = 0; k < 3; k++)
-            vdot += (P[j].Vel[k] / a) * in->Axis[k];
-          out.LobeProjectedMomentum[lobe] += P[j].Mass * vdot;
+              if(lobe >= 0)
+                {
+                  out.LobeCount[lobe]++;
+                  out.LobeMass[lobe] += P[j].Mass;
+                  out.LobeProjectedMomentum[lobe] += P[j].Mass * vdot;
+                }
+            }
           continue;
         }
 
@@ -609,15 +641,29 @@ static void bh_ffr_jet_prepare_candidates(void)
       if(!(eth > 0) || !(BHP[b].JetEnergyBuffer >= eth))
         continue;
 
-      if(res->LobeCount[0] < All.BHMinTargetsPerLobe || res->LobeCount[1] < All.BHMinTargetsPerLobe)
+      const double cone_active_mass = res->LobeMass[0] + res->LobeMass[1];
+      const double cone_total_mass = res->LobeTotalMass[0] + res->LobeTotalMass[1];
+      const int cone_ok =
+          res->LobeCount[0] >= All.BHMinTargetsPerLobe &&
+          res->LobeCount[1] >= All.BHMinTargetsPerLobe &&
+          res->LobeMass[0] > 0 && res->LobeMass[1] > 0 &&
+          cone_total_mass > 0 &&
+          cone_active_mass >= All.BHMinActiveTargetMassFrac * cone_total_mass;
+
+      const double hemi_active_mass = res->HemiMass[0] + res->HemiMass[1];
+      const double hemi_total_mass = res->HemiTotalMass[0] + res->HemiTotalMass[1];
+      const int hemi_ok =
+          res->HemiCount[0] >= All.BHMinTargetsPerLobe &&
+          res->HemiCount[1] >= All.BHMinTargetsPerLobe &&
+          res->HemiMass[0] > 0 && res->HemiMass[1] > 0 &&
+          hemi_total_mass > 0 &&
+          hemi_active_mass >= All.BHMinActiveTargetMassFrac * hemi_total_mass;
+
+      if(!cone_ok && !hemi_ok)
         continue;
 
-      const double active_target_mass = res->LobeMass[0] + res->LobeMass[1];
-      if(active_target_mass < All.BHMinActiveTargetMassFrac * res->EnclosedMass)
-        continue;
-
-      if(!(res->LobeMass[0] > 0) || !(res->LobeMass[1] > 0))
-        continue;
+      ev->UsedHemisphereFallback = cone_ok ? 0 : 1;
+      ev->CosCone = cone_ok ? cos(All.BHJetConeAngleDeg * M_PI / 180.0) : 0.0;
 
       ev->EnergyBefore = BHP[b].JetEnergyBuffer;
 
@@ -625,13 +671,18 @@ static void bh_ffr_jet_prepare_candidates(void)
        * not a fixed packet quantum.  When a valid bipolar hydro target is
        * available, inject the complete accumulated jet-energy reservoir. */
       ev->PacketEnergy = ev->EnergyBefore;
-      ev->LobeMass[0] = res->LobeMass[0];
-      ev->LobeMass[1] = res->LobeMass[1];
-      ev->LobeCount[0] = res->LobeCount[0];
-      ev->LobeCount[1] = res->LobeCount[1];
+      for(int l = 0; l < 2; l++)
+        {
+          ev->LobeMass[l] = ev->UsedHemisphereFallback ? res->HemiMass[l] : res->LobeMass[l];
+          ev->LobeCount[l] = ev->UsedHemisphereFallback ? res->HemiCount[l] : res->LobeCount[l];
+        }
 
+      const double pplus =
+          ev->UsedHemisphereFallback ? res->HemiProjectedMomentum[0] : res->LobeProjectedMomentum[0];
+      const double pminus =
+          ev->UsedHemisphereFallback ? res->HemiProjectedMomentum[1] : res->LobeProjectedMomentum[1];
       const double A =
-          res->LobeProjectedMomentum[0] / res->LobeMass[0] - res->LobeProjectedMomentum[1] / res->LobeMass[1];
+          pplus / ev->LobeMass[0] - pminus / ev->LobeMass[1];
       const double B = 1.0 / res->LobeMass[0] + 1.0 / res->LobeMass[1];
 
       ev->Q = bh_ffr_jet_packet_q(A, B, ev->PacketEnergy);
