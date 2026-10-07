@@ -248,7 +248,7 @@ struct bh_ffr_domain_exchange_context
 #define BH_FFR_MAX_ADAPTIVE_RADII 16
 #define BH_FFR_ADAPTIVE_RADIUS_COUNT 13
 
-#define BH_FFR_FEEDBACK_TARGET_QUANTA_PER_STEP 4.0
+#define BH_FFR_FEEDBACK_TARGET_QUANTA_PER_STEP 1.0
 #define BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE 4
 #define BH_FFR_FEEDBACK_MAX_PACKETS_PER_STEP 8
 struct bh_ffr_discrete_radius_grid

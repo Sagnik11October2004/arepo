@@ -465,12 +465,9 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
         }
     }
 
-  /* Feedback burst cadence constrains the RECEIVER hydro timestep, not the
-   * BH gravity timestep.  Shortening the BH below the gas cadence only creates
-   * BH-only source subcycles: mechanical energy is accumulated repeatedly
-   * while no hydro-safe receivers exist, producing an artificial reservoir
-   * backlog.  Keep Eth/P here for diagnostics; the wake-up path applies it to
-   * gas through bh_ffr_feedback_*_target_hydro_timebin(). */
+  /* Use one shared physical feedback cadence for source generation and
+   * receiver response.  The BH source step and the deferred receiver-gas wake
+   * both use Eth/P, preventing either side from outrunning the other. */
   if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_MACER)
     {
       wind_limit_myr =
@@ -479,6 +476,11 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
       jet_limit_myr =
           bh_ffr_feedback_channel_limit_myr(
               BHP[b].JetThresholdEnergy, BHP[b].JetPower);
+
+      if(wind_limit_myr < dt_limit_myr)
+        dt_limit_myr = wind_limit_myr;
+      if(jet_limit_myr < dt_limit_myr)
+        dt_limit_myr = jet_limit_myr;
     }
   else if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_TNG &&
           BHP[b].TNGFeedbackMode == BH_BENCHMARK_TNG_MODE_KINETIC &&
