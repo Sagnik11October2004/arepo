@@ -110,17 +110,9 @@ typedef struct
 static data_out *FeedbackResults;
 static data_out *DataResult, *DataOut;
 
-static int bh_ffr_feedback_decode_hydro_timebin(int bin)
-{
-  if(bin < 0)
-    bin = -bin - 1;
-  return bin;
-}
-
 static int bh_ffr_feedback_gas_is_active(int j)
 {
-  const int bin = bh_ffr_feedback_decode_hydro_timebin(P[j].TimeBinHydro);
-  return bin > 0 && bin < TIMEBINS && TimeBinSynchronized[bin];
+  return bh_ffr_feedback_gas_is_hydro_active_now(j);
 }
 
 static int bh_ffr_feedback_particle_from_target(int target, const char *where)

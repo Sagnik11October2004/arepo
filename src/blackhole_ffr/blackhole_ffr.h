@@ -303,6 +303,7 @@ void bh_ffr_step(void);
 int bh_ffr_feedback_wind_target_hydro_timebin(int p);
 int bh_ffr_feedback_jet_target_hydro_timebin(int p);
 void bh_ffr_feedback_wakeup_begin(void);
+int bh_ffr_feedback_gas_is_hydro_active_now(int gas_index);
 void bh_ffr_feedback_request_wakeup(int gas_index, int target_timebin);
 void bh_ffr_feedback_wakeup_apply(void);
 void bh_ffr_collect_gas_environment(struct bh_ffr_gas_search_result *results);

@@ -276,19 +276,56 @@ int bh_ffr_feedback_jet_target_hydro_timebin(int p)
 }
 
 static int *BHFFRFeedbackWakeBin = NULL;
+static unsigned char *BHFFRFeedbackHydroActiveNow = NULL;
 
 void bh_ffr_feedback_wakeup_begin(void)
 {
-  if(BHFFRFeedbackWakeBin != NULL)
+  if(BHFFRFeedbackWakeBin != NULL || BHFFRFeedbackHydroActiveNow != NULL)
     terminate("BH_FFR: feedback wakeup transaction already open");
 
+  const size_t ngas_alloc = (size_t)(NumGas > 0 ? NumGas : 1);
+
   BHFFRFeedbackWakeBin =
-      (int *)malloc((NumGas > 0 ? NumGas : 1) * sizeof(int));
-  if(BHFFRFeedbackWakeBin == NULL)
-    terminate("BH_FFR: failed to allocate feedback wakeup requests");
+      (int *)malloc(ngas_alloc * sizeof(int));
+  BHFFRFeedbackHydroActiveNow =
+      (unsigned char *)malloc(ngas_alloc * sizeof(unsigned char));
+
+  if(BHFFRFeedbackWakeBin == NULL || BHFFRFeedbackHydroActiveNow == NULL)
+    terminate("BH_FFR: failed to allocate feedback wakeup/activity state");
 
   for(int gas = 0; gas < NumGas; gas++)
-    BHFFRFeedbackWakeBin[gas] = TIMEBINS;
+    {
+      BHFFRFeedbackWakeBin[gas] = TIMEBINS;
+      BHFFRFeedbackHydroActiveNow[gas] = 0;
+    }
+
+  /* Snapshot the actual current-step hydro active list before feedback.  The
+   * active cells may already have been assigned a different TimeBinHydro for
+   * their NEXT step, so TimeBinSynchronized[P[i].TimeBinHydro] is not a
+   * reliable indicator of whether they just completed hydro at Ti_Current. */
+  for(int idx = 0; idx < TimeBinsHydro.NActiveParticles; idx++)
+    {
+      const int gas = TimeBinsHydro.ActiveParticleList[idx];
+      if(gas < 0)
+        continue;
+      if(gas >= NumGas || P[gas].Type != 0)
+        terminate("BH_FFR: invalid hydro-active receiver index=%d NumGas=%d",
+                  gas, NumGas);
+      if(P[gas].ID == 0 || P[gas].Mass == 0)
+        continue;
+      BHFFRFeedbackHydroActiveNow[gas] = 1;
+    }
+}
+
+int bh_ffr_feedback_gas_is_hydro_active_now(int gas_index)
+{
+  if(BHFFRFeedbackHydroActiveNow == NULL)
+    terminate("BH_FFR: feedback hydro-active query outside feedback transaction");
+  if(gas_index < 0 || gas_index >= NumGas)
+    terminate("BH_FFR: hydro-active gas index=%d outside NumGas=%d",
+              gas_index, NumGas);
+
+  return BHFFRFeedbackHydroActiveNow[gas_index] != 0;
 }
 
 void bh_ffr_feedback_request_wakeup(int gas_index, int target_timebin)
@@ -369,7 +406,9 @@ void bh_ffr_feedback_wakeup_apply(void)
   fflush(stdout);
 
   free(BHFFRFeedbackWakeBin);
+  free(BHFFRFeedbackHydroActiveNow);
   BHFFRFeedbackWakeBin = NULL;
+  BHFFRFeedbackHydroActiveNow = NULL;
 }
 
 integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
