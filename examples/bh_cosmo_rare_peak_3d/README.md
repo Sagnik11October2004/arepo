@@ -102,6 +102,8 @@ Both configurations include `INPUT_IN_DOUBLEPRECISION`,
 NTASKS=8 ./run_to_z20.sh
 ```
 
+The rare-peak executables also enable `HIERARCHICAL_GRAVITY` and `ALLOW_DIRECT_SUMMATION` (`DIRECT_SUMMATION_THRESHOLD=500`). This matters once only a few particles occupy the shortest time bins: the non-hierarchical gravity path otherwise rebuilds a full multi-million-particle tree at every tiny synchronization step. `CELL_CENTER_GRAVITY` follows the public AREPO cosmological example. These are gravity-integration/performance choices; they do not change the BH accretion prescription.
+
 The checked-in rare-peak parameter files use `MaxMemSize=1500` MB per MPI
 rank.  This is intentionally a per-rank cap: for example, 16 ranks advertise
 at most 24 GB to AREPO's startup memory guard, leaving headroom on a 32 GB
