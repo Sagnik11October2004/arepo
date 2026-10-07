@@ -1,0 +1,148 @@
+% Native-restart science branch from the common post-seed z=20.8837 checkpoint.
+% Start with RestartFlag=1; do NOT use this as a snapshot/IC restart.
+% Standard AREPO MinSizeTimestep is 1e-7. No additional BH-specific floor is compiled.
+% ConvJ/Mach shell FFR. Mode 5 uses geometric shell * f_M * f_j; BHFreeFallA=1 denotes no extra suppression.
+% Rare-peak cosmology stage B: seed-window evolution from z=22 to z=20.
+% Starts from the already-split z=22 gas+DM checkpoint from stage A.
+% Strict seed gate: BHSeedMinRedshift=20 and Config's BH_FFR_SEED_MAX_REDSHIFT=22.
+
+InitCondFile                            ./ics/z22_preseed
+OutputDir                               ./outputs_z10/convj_shell_ffr__macer
+SnapshotFileBase                        snap
+OutputListFilename                      ./output_branch_z10.txt
+TreecoolFile                            ../cosmo_box_star_formation_3d/TREECOOL_ep
+
+ICFormat                                3
+SnapFormat                              3
+
+TimeLimitCPU                            172800
+CpuTimeBetRestartFile                   7200
+FlushCpuTimeDiff                        120
+ResubmitOn                              0
+ResubmitCommand                         none
+MaxMemSize                              1500
+
+TimeBegin                               0.043478260869565216
+TimeMax                                 0.09
+
+ComovingIntegrationOn                   1
+PeriodicBoundariesOn                    1
+CoolingOn                               1
+StarformationOn                         0
+
+Omega0                                  0.31
+OmegaLambda                             0.69
+OmegaBaryon                             0.048
+HubbleParam                             0.68
+BoxSize                                 500.0
+
+OutputListOn                            1
+TimeBetSnapshot                         0.0
+TimeOfFirstSnapshot                     0.0
+TimeBetStatistics                       0.004
+NumFilesPerSnapshot                     1
+NumFilesWrittenInParallel               1
+
+TypeOfTimestepCriterion                 0
+ErrTolIntAccuracy                       0.020
+CourantFac                              0.4
+MaxSizeTimestep                         0.001
+MinSizeTimestep                         1.0e-7
+
+InitGasTemp                             42.4435
+MinGasTemp                              10.0
+MinimumDensityOnStartUp                 1.0e-20
+LimitUBelowThisDensity                  0.0
+LimitUBelowCertainDensityToThisValue    0.0
+MinEgySpec                              0.0
+
+TypeOfOpeningCriterion                  1
+ErrTolTheta                             0.7
+ErrTolForceAcc                          0.005
+MultipleDomains                         2
+TopNodeFactor                           2.5
+ActivePartFracForNewDomainDecomp        0.01
+
+DesNumNgb                               64
+MaxNumNgbDeviation                      4
+
+UnitLength_in_cm                        3.085678e21
+UnitMass_in_g                           1.989e43
+UnitVelocity_in_cm_per_s                1.0e5
+GravityConstantInternal                 0
+
+% Mean parent spacing = 500/64 = 7.8125 ckpc/h.
+SofteningComovingType0                  0.20
+SofteningComovingType1                  0.20
+SofteningMaxPhysType0                   0.050
+SofteningMaxPhysType1                   0.050
+GasSoftFactor                           2.5
+SofteningTypeOfPartType0                0
+SofteningTypeOfPartType1                1
+SofteningTypeOfPartType2                1
+SofteningTypeOfPartType3                1
+SofteningTypeOfPartType4                1
+SofteningTypeOfPartType5                1
+MinimumComovingHydroSoftening           0.0250
+AdaptiveHydroSofteningSpacing           1.2
+
+CellShapingSpeed                        0.5
+CellShapingFactor                       1.0
+
+% BH apertures are proper code lengths. Capture is disabled through z=20.
+BHAccretionRadius                       0.05
+BHFeedbackRadius                        0.10
+
+% Single-most-massive eligible halo is enforced by the dedicated Config flag.
+BHSeedHaloMassMsun                      1.0e7
+BHSeedMassMsun                          1.0e5
+BHSeedMinRedshift                       20.0
+BHSeedMaxDonorFraction                  0.5
+
+BHFreeFallA                             1
+BHFreeFallAlpha                         0.0
+BHUseFullCentralMass                    1
+BHMaxSinkFraction                       0.10
+
+BHDiskTimeMyr                           42.0
+BHDiskTimeExponent                      0.4
+BHRHotMaxInRs                           1200.0
+BHRadiativeEfficiency                   0.1
+BHWindBurstFactor                       0.01
+BHJetBurstFactor                        0.10
+BHUseCentralBindingTerm                 1
+BHWindConeAngleDeg                      45.0
+BHJetConeAngleDeg                       15.0
+BHMinCoherence                          0.30
+BHJetDirectionTimeFactor                1.0
+BHMinTargetsPerLobe                     8
+BHMinActiveTargetMassFrac               0.5
+BHMaxPacketsPerStep                     4
+BHDMNeighbours                          40
+BHInternalTimestepFactor                0.25
+
+% Capture stays off before branching; shell FFR is selected because A_ff=0
+% disables it exactly.  Mode 5 is intentionally not selected here because its
+% present benchmark normalization is unit-efficiency.
+BHBenchmarkAccretionModel               5
+BHBenchmarkAccretionTarget              0
+BHBenchmarkBoostMode                    1
+BHBenchmarkBoostAlpha                   100.0
+BHBenchmarkBoostDensityThreshold        0.1
+BHBenchmarkBoostBeta                    2.0
+BHBenchmarkAMViscosity                  6.283185307179586
+BHBenchmarkRadiativeEfficiency          0.2
+BHBenchmarkEddingtonFactor              1.0
+BHBenchmarkEnvThermalFloor              0.4
+BHBenchmarkEnvRotationBeta              1.0
+BHBenchmarkStartTimeMyr                 0.0
+
+BHBenchmarkFeedbackModel                2
+BHBenchmarkTNGChi0                      0.002
+BHBenchmarkTNGChiBeta                   2.0
+BHBenchmarkTNGChiMax                    0.1
+BHBenchmarkTNGThermalCoupling           0.1
+BHBenchmarkTNGKineticMaxEfficiency      0.2
+BHBenchmarkTNGKineticDensityFactor      0.05
+BHBenchmarkTNGSFThresholdNH             0.1065
+BHBenchmarkTNGKineticBurstFactor        20.0
