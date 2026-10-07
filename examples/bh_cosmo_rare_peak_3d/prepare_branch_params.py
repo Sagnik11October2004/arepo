@@ -42,7 +42,7 @@ def set_param(text: str, key: str, value: str) -> str:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--z-end", type=float, default=15.0)
-    ap.add_argument("--none-target", choices=("direct", "reservoir"), default="direct")
+    ap.add_argument("--none-target", choices=("direct", "reservoir"), default="direct")\n    ap.add_argument("--ffr-a", type=float, choices=(1.0e-2, 1.0e-1), default=1.0e-2,\n                    help="shell-FFR normalization; 1e-3 is intentionally unsupported")
     args = ap.parse_args()
 
     if not (0.0 < args.z_end < 20.0):
