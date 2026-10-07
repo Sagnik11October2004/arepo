@@ -639,8 +639,12 @@ static void bh_ffr_feedback_prepare_candidates(void)
                   (unsigned long long)P[p].ID);
 
       const double half = 0.5 * ev->PacketMass;
-      const double mplus = res->LobeMass[0] + half;
-      const double mminus = res->LobeMass[1] + half;
+      const double mplus = ev->LobeMass[0] + half;
+      const double mminus = ev->LobeMass[1] + half;
+      if(!isfinite(mplus) || !isfinite(mminus) || !(mplus > 0) || !(mminus > 0))
+        terminate("BH_FFR: invalid selected wind lobe masses ID=%llu fallback=%d mplus=%g mminus=%g",
+                  (unsigned long long)P[p].ID, ev->UsedHemisphereFallback,
+                  mplus, mminus);
       const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
 
       double vbh_axis = 0.0;
