@@ -9,7 +9,7 @@
 InitCondFile                            ./ics/z22_preseed
 OutputDir                               ./outputs_z10/convj_shell_ffr__macer
 SnapshotFileBase                        snap
-OutputListFilename                      ./output_branch_z10.txt
+OutputListFilename                      ./output_convj_macer_z10.txt
 TreecoolFile                            ../cosmo_box_star_formation_3d/TREECOOL_ep
 
 ICFormat                                3
