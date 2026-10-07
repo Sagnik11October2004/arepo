@@ -1085,7 +1085,7 @@ void bh_ffr_inject_jet_feedback(void)
 
   int any_global_fire = 0;
 
-  for(int round = 0; round < BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS; round++)
+  for(int round = 0; round < BH_FFR_FEEDBACK_MAX_PACKETS_PER_STEP; round++)
     {
       JetConflictRound = round;
       bh_ffr_jet_comm_pass(BH_FFR_JET_STATS);
@@ -1111,7 +1111,9 @@ void bh_ffr_inject_jet_feedback(void)
   if(any_global_fire > 0)
     update_primitive_variables();
 
-  /* Mirror the wind drainage diagnostic for the jet reservoir. */
+  /* Mirror the wind drainage diagnostic for the jet reservoir. Residual
+   * backlog is retained for later hydro updates once this step reaches the
+   * bounded packet ceiling. */
   for(int n = 0; n < JetNTargets; n++)
     {
       const int p =
@@ -1123,20 +1125,15 @@ void bh_ffr_inject_jet_feedback(void)
           eth > 0 ? BHP[b].JetEnergyBuffer / eth : 0.0;
       const int backlog = eth > 0 && BHP[b].JetEnergyBuffer >= eth;
       const int cap_hit =
-          JetPacketCount[n] >= BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS;
+          JetPacketCount[n] >= BH_FFR_FEEDBACK_MAX_PACKETS_PER_STEP;
 
-      printf("BH_FFR: jet drain ID=%llu task=%d packets=%d safetyMax=%d "
+      printf("BH_FFR: jet drain ID=%llu task=%d packets=%d maxPackets=%d "
              "buffer=%g Eth=%g backlogRatio=%g backlog=%d capHit=%d\n",
              (unsigned long long)P[p].ID, ThisTask,
-             JetPacketCount[n], BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS,
+             JetPacketCount[n], BH_FFR_FEEDBACK_MAX_PACKETS_PER_STEP,
              BHP[b].JetEnergyBuffer, eth, ratio, backlog, cap_hit);
       fflush(stdout);
 
-      if(backlog && cap_hit)
-        terminate("BH_FFR: jet feedback failed to drain below threshold "
-                  "after safety maximum ID=%llu buffer=%g Eth=%g ratio=%g",
-                  (unsigned long long)P[p].ID,
-                  BHP[b].JetEnergyBuffer, eth, ratio);
     }
 
   bh_ffr_validate_state("post-jet-feedback");

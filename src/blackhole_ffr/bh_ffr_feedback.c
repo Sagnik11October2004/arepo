@@ -997,7 +997,7 @@ void bh_ffr_inject_wind_feedback(void)
 
   int any_global_fire = 0;
 
-  for(int round = 0; round < BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS; round++)
+  for(int round = 0; round < BH_FFR_FEEDBACK_MAX_PACKETS_PER_STEP; round++)
     {
       FeedbackConflictRound = round;
       bh_ffr_feedback_comm_pass(BH_FFR_FEEDBACK_STATS);
@@ -1024,9 +1024,10 @@ void bh_ffr_inject_wind_feedback(void)
       update_primitive_variables();
     }
 
-  /* End-of-transaction drainage diagnostic.  A residual ratio >= 1 means
-   * at least one threshold quantum remains buffered. capHit now refers only
-   * to the emergency safety guard, never to the old four-packet policy. */
+  /* End-of-transaction drainage diagnostic. A residual ratio >= 1 means
+   * at least one threshold quantum remains buffered. The per-step packet
+   * ceiling deliberately leaves any excess for later hydro updates so a
+   * recovered coupling geometry cannot dump a long backlog into one state. */
   for(int n = 0; n < FeedbackNTargets; n++)
     {
       const int p =
@@ -1038,20 +1039,15 @@ void bh_ffr_inject_wind_feedback(void)
           eth > 0 ? BHP[b].WindEnergyBuffer / eth : 0.0;
       const int backlog = eth > 0 && BHP[b].WindEnergyBuffer >= eth;
       const int cap_hit =
-          FeedbackPacketCount[n] >= BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS;
+          FeedbackPacketCount[n] >= BH_FFR_FEEDBACK_MAX_PACKETS_PER_STEP;
 
-      printf("BH_FFR: wind drain ID=%llu task=%d packets=%d safetyMax=%d "
+      printf("BH_FFR: wind drain ID=%llu task=%d packets=%d maxPackets=%d "
              "buffer=%g Eth=%g backlogRatio=%g backlog=%d capHit=%d\n",
              (unsigned long long)P[p].ID, ThisTask,
-             FeedbackPacketCount[n], BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS,
+             FeedbackPacketCount[n], BH_FFR_FEEDBACK_MAX_PACKETS_PER_STEP,
              BHP[b].WindEnergyBuffer, eth, ratio, backlog, cap_hit);
       fflush(stdout);
 
-      if(backlog && cap_hit)
-        terminate("BH_FFR: wind feedback failed to drain below threshold "
-                  "after safety maximum ID=%llu buffer=%g Eth=%g ratio=%g",
-                  (unsigned long long)P[p].ID,
-                  BHP[b].WindEnergyBuffer, eth, ratio);
     }
 
   bh_ffr_validate_state("post-wind-feedback");

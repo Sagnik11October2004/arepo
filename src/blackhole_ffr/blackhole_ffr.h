@@ -250,7 +250,7 @@ struct bh_ffr_domain_exchange_context
 
 #define BH_FFR_FEEDBACK_TARGET_QUANTA_PER_STEP 4.0
 #define BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE 4
-#define BH_FFR_FEEDBACK_SAFETY_MAX_PACKETS 4096
+#define BH_FFR_FEEDBACK_MAX_PACKETS_PER_STEP 8
 struct bh_ffr_discrete_radius_grid
 {
   int Count;
