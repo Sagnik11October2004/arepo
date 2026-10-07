@@ -222,8 +222,10 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
   integertime limited = ti_step;
   const integertime raw_step = ti_step;
 
-  /* Every backend remains synchronized to gas inside the common accretion
-   * aperture. */
+  /* Keep the BH no coarser than the fastest gas inside the common accretion
+   * aperture.  Feedback itself is coupled only when receiving gas is hydro
+   * active, so feedback-buffer thresholds must not force still finer BH-only
+   * subcycles. */
   const int gas_bin = BHP[b].MinNeighbourHydroTimeBin;
   if(gas_bin >= 0)
     {
@@ -243,9 +245,8 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
   double tng_limit_myr = HUGE_VAL;
   int used_frozen_disk_time = 0;
 
-  /* Reservoir evolution and Chandrasekhar drag belong only to the unresolved
-   * reservoir backend.  Direct TNG/feedback-free benchmarks must not inherit a
-   * fictitious disc timescale. */
+  /* Reservoir evolution and Chandrasekhar drag are genuine internal dynamical
+   * timescales and may require the BH to subcycle independently of hydro. */
   if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
     {
       const double disk_time_myr =
@@ -269,68 +270,60 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
         }
     }
 
-  /* The validated MACER backend resolves the time to one wind/jet burst
-   * threshold. */
+  /* Feedback thresholds are event triggers, not integration timescales.
+   * Keep their accumulation times for diagnostics, but do not reduce the BH
+   * gravity timestep with them.  Otherwise a BH can become active thousands
+   * of times while all eligible hydro receivers remain inactive, producing a
+   * self-sustaining feedback-backlog deadlock. */
   if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_MACER)
     {
       if(BHP[b].WindThresholdEnergy > 0 && BHP[b].WindPower > 0)
         {
-          const double tcode =
-              BHP[b].WindThresholdEnergy / BHP[b].WindPower;
+          const double tcode = BHP[b].WindThresholdEnergy / BHP[b].WindPower;
           wind_limit_myr =
               All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(tcode);
           if(!isfinite(wind_limit_myr) || !(wind_limit_myr > 0))
-            terminate("BH_FFR: invalid wind timestep limit=%g Myr for ID=%llu",
+            terminate("BH_FFR: invalid wind threshold time=%g Myr for ID=%llu",
                       wind_limit_myr, (unsigned long long)P[p].ID);
-          if(wind_limit_myr < dt_limit_myr)
-            dt_limit_myr = wind_limit_myr;
         }
 
       if(BHP[b].JetThresholdEnergy > 0 && BHP[b].JetPower > 0)
         {
-          const double tcode =
-              BHP[b].JetThresholdEnergy / BHP[b].JetPower;
+          const double tcode = BHP[b].JetThresholdEnergy / BHP[b].JetPower;
           jet_limit_myr =
               All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(tcode);
           if(!isfinite(jet_limit_myr) || !(jet_limit_myr > 0))
-            terminate("BH_FFR: invalid jet timestep limit=%g Myr for ID=%llu",
+            terminate("BH_FFR: invalid jet threshold time=%g Myr for ID=%llu",
                       jet_limit_myr, (unsigned long long)P[p].ID);
-          if(jet_limit_myr < dt_limit_myr)
-            dt_limit_myr = jet_limit_myr;
         }
     }
-
-  /* TNG thermal feedback is continuous and needs no burst timescale.  In the
-   * kinetic state, resolve a fraction of the time needed to accumulate one
-   * current E_inj,min. */
-  if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_TNG &&
-     BHP[b].TNGFeedbackMode == BH_BENCHMARK_TNG_MODE_KINETIC &&
-     BHP[b].TNGKineticThresholdEnergy > 0 && BHP[b].TNGFeedbackPower > 0)
+  else if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_TNG &&
+          BHP[b].TNGFeedbackMode == BH_BENCHMARK_TNG_MODE_KINETIC &&
+          BHP[b].TNGKineticThresholdEnergy > 0 && BHP[b].TNGFeedbackPower > 0)
     {
       const double tcode =
           BHP[b].TNGKineticThresholdEnergy / BHP[b].TNGFeedbackPower;
       tng_limit_myr =
           All.BHInternalTimestepFactor * bh_ffr_code_time_to_myr(tcode);
       if(!isfinite(tng_limit_myr) || !(tng_limit_myr > 0))
-        terminate("BH_TNG: invalid kinetic timestep limit=%g Myr for ID=%llu",
+        terminate("BH_TNG: invalid kinetic threshold time=%g Myr for ID=%llu",
                   tng_limit_myr, (unsigned long long)P[p].ID);
-      if(tng_limit_myr < dt_limit_myr)
-        dt_limit_myr = tng_limit_myr;
     }
 
   limited = bh_ffr_limit_integer_step_by_physical_myr(limited, dt_limit_myr);
   const integertime accuracy_limited = limited;
 
+  /* Backlog remains a diagnostic only.  Buffered feedback is discharged when
+   * synchronized hydro targets satisfy the coupling criteria; making the BH
+   * timestep even shorter cannot create such targets. */
   int backlog = 0;
   if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_MACER)
     {
       if(BHP[b].WindThresholdEnergy > 0 &&
-         BHP[b].WindEnergyBuffer >=
-             All.BHMaxPacketsPerStep * BHP[b].WindThresholdEnergy)
+         BHP[b].WindEnergyBuffer >= BHP[b].WindThresholdEnergy)
         backlog = 1;
       if(BHP[b].JetThresholdEnergy > 0 &&
-         BHP[b].JetEnergyBuffer >=
-             All.BHMaxPacketsPerStep * BHP[b].JetThresholdEnergy)
+         BHP[b].JetEnergyBuffer >= BHP[b].JetThresholdEnergy)
         backlog = 1;
     }
   else if(All.BHBenchmarkFeedbackModel == BH_BENCHMARK_FEEDBACK_TNG)
@@ -342,19 +335,8 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
         backlog = 1;
     }
 
-  integertime backlog_limit = accuracy_limited;
-  int backlog_applied = 0;
-  if(backlog && accuracy_limited > 2)
-    {
-      backlog_limit = accuracy_limited >> 1;
-      if(backlog_limit < 2)
-        backlog_limit = 2;
-      if(backlog_limit < limited)
-        {
-          limited = backlog_limit;
-          backlog_applied = 1;
-        }
-    }
+  const integertime backlog_limit = limited;
+  const int backlog_applied = 0;
 
   if(limited < raw_step)
     {
