@@ -18,13 +18,49 @@ if [[ ! -x "$ROOT/ArepoRarePeakInitial" || ! -x "$ROOT/ArepoRarePeak" ]]; then
   ./build.sh
 fi
 
-rm -rf output_preseed output_seed_window logs
 mkdir -p output_preseed output_seed_window logs ics
 
-echo
-echo "=== Stage A: common BH-free cosmology, z=99 -> z=22 ==="
-"$MPIEXEC" -np "$NTASKS" "$ROOT/ArepoRarePeakInitial" param_preseed.txt \
-  </dev/null 2>&1 | tee logs/preseed.log
+if [[ "${RESUME_PRESEED:-0}" == "1" ]]; then
+  echo
+  echo "=== Stage A resume: latest existing BH-free snapshot -> z=22 ==="
+
+  LATEST_PRESEED="$(ls output_preseed/snap_*.hdf5 2>/dev/null | sort | tail -n 1 || true)"
+  if [[ -z "$LATEST_PRESEED" ]]; then
+    echo "ERROR: RESUME_PRESEED=1 but no output_preseed/snap_*.hdf5 exists." >&2
+    exit 1
+  fi
+
+  SNAPNUM="$(basename "$LATEST_PRESEED" .hdf5 | sed 's/^snap_//')"
+  SNAPNUM_DEC="$((10#$SNAPNUM))"
+
+  python3 - "$LATEST_PRESEED" <<'PY'
+import h5py, sys
+p=sys.argv[1]
+with h5py.File(p,"r") as f:
+    z=float(f["Header"].attrs["Redshift"])
+    nbh=len(f["PartType5"]["ParticleIDs"]) if "PartType5" in f else 0
+if not (22.0 - 2e-3 <= z < 99.0):
+    raise SystemExit(f"Refusing Stage-A resume from unexpected redshift: {p} z={z}")
+if nbh != 0:
+    raise SystemExit(f"Stage-A resume snapshot must be BH-free; found {nbh} BH(s)")
+print(f"Resuming Stage A from {p}: z={z:.6f}, N_BH={nbh}")
+PY
+
+  rm -rf output_seed_window
+  mkdir -p output_seed_window
+  : > logs/preseed_resume.log
+
+  "$MPIEXEC" -np "$NTASKS" "$ROOT/ArepoRarePeak" param_preseed.txt 2 "$SNAPNUM_DEC" \
+    </dev/null 2>&1 | tee logs/preseed_resume.log
+else
+  rm -rf output_preseed output_seed_window logs
+  mkdir -p output_preseed output_seed_window logs ics
+
+  echo
+  echo "=== Stage A: common BH-free cosmology, z=99 -> z=22 ==="
+  "$MPIEXEC" -np "$NTASKS" "$ROOT/ArepoRarePeakInitial" param_preseed.txt \
+    </dev/null 2>&1 | tee logs/preseed.log
+fi
 
 if [[ ! -f output_preseed/end ]]; then
   echo "ERROR: pre-seed stage did not finish cleanly." >&2
