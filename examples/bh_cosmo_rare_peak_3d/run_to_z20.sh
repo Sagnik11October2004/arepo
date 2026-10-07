@@ -3,7 +3,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-NTASKS="${NTASKS:-8}"
+NTASKS="${NTASKS:-4}"
 MPIEXEC="${MPIEXEC:-mpirun}"
 
 cd "$HERE"
@@ -53,7 +53,7 @@ p=sys.argv[1]
 with h5py.File(p,"r") as f:
     z=float(f["Header"].attrs["Redshift"])
     nbh=len(f["PartType5"]["ParticleIDs"]) if "PartType5" in f else 0
-if not (22.0 - 2e-3 <= z < 99.0):
+if not (22.0 - 2e-3 <= z < 49.0):
     raise SystemExit(f"Refusing Stage-A resume from unexpected redshift: {p} z={z}")
 if nbh != 0:
     raise SystemExit(f"Stage-A resume snapshot must be BH-free; found {nbh} BH(s)")
