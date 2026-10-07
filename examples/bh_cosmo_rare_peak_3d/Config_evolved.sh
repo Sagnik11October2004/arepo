@@ -39,3 +39,10 @@ FOF_SECONDARY_LINK_TYPES=1+32
 
 PROCESS_TIMES_OF_OUTPUTLIST
 REDUCE_FLUSH
+
+# Science-branch policy:
+# - shell FFR production comparisons use A_ff=1e-2 and 1e-1 at runtime;
+# - mode 5 (ConvJ/Mach shell FFR) uses its unit geometric-shell base with
+#   resolved f_M*f_j suppression and no extra 1e-3 prefactor;
+# - timestep floors remain the standard AREPO runtime MinSizeTimestep only.
+#   No BLACKHOLE_FFR-specific minimum-timestep floor is compiled here.
