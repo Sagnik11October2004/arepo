@@ -38,7 +38,7 @@ static void bh_ffr_deterministic_axis(MyIDType id, MyDouble axis[3])
 }
 
 static const double BHFFRAdaptiveRadiusFactors[BH_FFR_ADAPTIVE_RADIUS_COUNT] =
-    {2.0, 3.0, 4.0, 6.0, 8.0, 10.0};
+    {3.0, 4.0, 5.0, 6.0, 8.0, 10.0};
 
 void bh_ffr_build_discrete_radius_grid(double base_radius, const double *factors, int count,
                                        struct bh_ffr_discrete_radius_grid *grid)
@@ -145,10 +145,12 @@ int bh_ffr_select_smallest_resolved_radius(const struct bh_ffr_discrete_radius_g
 
 void bh_ffr_adaptive_radius_self_test(void)
 {
-  /* Dimensionless regression for the production resolution-relative hierarchy:
-   * R/epsilon = {2,3,4,6,8,10}. */
+  /* Dimensionless regression for the production resolution-relative hierarchy.
+   * The minimum candidate is deliberately outside AREPO's spline-softened
+   * force region, whose Newtonian transition is at about 2.8 epsilon:
+   * R/epsilon = {3,4,5,6,8,10}. */
   const double expected[BH_FFR_ADAPTIVE_RADIUS_COUNT] =
-      {2.0, 3.0, 4.0, 6.0, 8.0, 10.0};
+      {3.0, 4.0, 5.0, 6.0, 8.0, 10.0};
   struct bh_ffr_discrete_radius_grid grid;
 
   bh_ffr_build_discrete_radius_grid(1.0, BHFFRAdaptiveRadiusFactors,

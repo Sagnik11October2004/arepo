@@ -217,13 +217,23 @@ static void particle2in(data_in *in, int target, int firstnode)
 
   in->AccretionRadius = bh_ffr_proper_radius_to_coordinate_radius(All.BHAccretionRadius);
 
-  struct bh_ffr_discrete_radius_grid adaptive_grid;
-  bh_ffr_build_resolution_radius_grid(p, &adaptive_grid);
-  if(adaptive_grid.Count != BH_FFR_ADAPTIVE_RADIUS_COUNT)
-    terminate("BH_FFR: unexpected resolution-radius count=%d", adaptive_grid.Count);
   for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
-    in->AdaptiveRadius[k] =
-        bh_ffr_proper_radius_to_coordinate_radius(adaptive_grid.Radius[k]);
+    in->AdaptiveRadius[k] = 0.0;
+
+  /* Only the shell-based accretion estimators (mode 4 shell FFR and mode 5
+   * ConvJ shell FFR) use this shell-resolution hierarchy.  Modes 0--2 retain
+   * their Bondi apertures, while mode 3 volume FFR needs a separate enclosed-
+   * cell resolution criterion if/when it is made adaptive. */
+  if(bh_benchmark_uses_ffr_shell())
+    {
+      struct bh_ffr_discrete_radius_grid adaptive_grid;
+      bh_ffr_build_resolution_radius_grid(p, &adaptive_grid);
+      if(adaptive_grid.Count != BH_FFR_ADAPTIVE_RADIUS_COUNT)
+        terminate("BH_FFR: unexpected resolution-radius count=%d", adaptive_grid.Count);
+      for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
+        in->AdaptiveRadius[k] =
+            bh_ffr_proper_radius_to_coordinate_radius(adaptive_grid.Radius[k]);
+    }
 
   /* Expose the PDF source-fidelity M_cen=M_BH comparison while keeping
    * the full unresolved dynamical point mass as the recommended default. */
@@ -473,7 +483,7 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
 
   double search_radius = bh->AccretionRadius;
   if(CapturePass == BH_FFR_CAPTURE_PASS_ENVIRONMENT &&
-     All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_CONVJ_SHELL_FFR)
+     bh_benchmark_uses_ffr_shell())
     search_radius =
         dmax(search_radius, bh->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1]);
 
@@ -497,7 +507,7 @@ static int bh_ffr_capture_evaluate(int target, int mode, int threadid)
 
       if(CapturePass == BH_FFR_CAPTURE_PASS_ENVIRONMENT)
         {
-          if(All.BHBenchmarkAccretionModel == BH_BENCHMARK_ACC_CONVJ_SHELL_FFR)
+          if(bh_benchmark_uses_ffr_shell())
             {
               for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
                 {
@@ -703,7 +713,7 @@ static double bh_ffr_active_gas_timestep_code_time(int j)
 
 static void bh_ffr_report_adaptive_acc_radius_survey(void)
 {
-  if(All.BHBenchmarkAccretionModel != BH_BENCHMARK_ACC_CONVJ_SHELL_FFR)
+  if(!bh_benchmark_uses_ffr_shell())
     return;
 
   /* Diagnostic-only throttling.  Resetting this counter on restart changes
@@ -728,9 +738,10 @@ static void bh_ffr_report_adaptive_acc_radius_survey(void)
               &grid, res->EnvAdaptiveShellCellCount, 32, &underresolved);
 
       const double eps = bh_ffr_effective_softening_proper(p);
-      printf("BH_FFR: adaptive accretion radius mode=survey ID=%llu task=%d "
+      printf("BH_FFR: adaptive accretion radius mode=survey accModel=%s ID=%llu task=%d "
              "eps=%g Rsearch=%g Racc=%g index=%d "
              "Nshell=[%lld,%lld,%lld,%lld,%lld,%lld] underresolved=%d\n",
+             bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              (unsigned long long)P[p].ID, ThisTask, eps,
              (double)grid.Radius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1],
              (double)grid.Radius[selected], selected,
