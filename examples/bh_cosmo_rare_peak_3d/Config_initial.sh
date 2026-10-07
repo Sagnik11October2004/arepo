@@ -1,15 +1,15 @@
 #!/bin/bash
 
-# 0.5 cMpc/h rare-peak cosmology: z=99 initial stage.
-# MUSIC writes a DM-only 128^3 HDF5 unigrid; AREPO splits it into
-# 128^3 gas + 128^3 Type-1 DM particles at startup.
+# 0.5 cMpc/h rare-peak quick scout: z=49 initial stage.
+# MUSIC writes a DM-only 64^3 HDF5 unigrid; AREPO splits it into
+# 64^3 gas + 64^3 Type-1 DM particles at startup.
 
 SELFGRAVITY
 HIERARCHICAL_GRAVITY
 CELL_CENTER_GRAVITY
 ALLOW_DIRECT_SUMMATION
 DIRECT_SUMMATION_THRESHOLD=500
-PMGRID=128
+PMGRID=64
 RCUT=5.0
 
 NSOFTTYPES=2
