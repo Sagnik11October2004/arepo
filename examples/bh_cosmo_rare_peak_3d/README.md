@@ -102,6 +102,19 @@ Both configurations include `INPUT_IN_DOUBLEPRECISION`,
 NTASKS=8 ./run_to_z20.sh
 ```
 
+If Stage A has already produced one or more `output_preseed/snap_*.hdf5`
+snapshots, it can be resumed from the latest existing snapshot after rebuilding
+the evolved executable:
+
+```bash
+RESUME_PRESEED=1 NTASKS=8 ./run_to_z20.sh
+```
+
+The resume path validates that the selected checkpoint is BH-free, uses AREPO
+`RestartFlag=2`, and runs it with `ArepoRarePeak` (the executable without
+`GENERATE_GAS_IN_ICS`). It does not delete the existing Stage-A snapshots.
+
+
 The rare-peak executables also enable `HIERARCHICAL_GRAVITY` and `ALLOW_DIRECT_SUMMATION` (`DIRECT_SUMMATION_THRESHOLD=500`). This matters once only a few particles occupy the shortest time bins: the non-hierarchical gravity path otherwise rebuilds a full multi-million-particle tree at every tiny synchronization step. `CELL_CENTER_GRAVITY` follows the public AREPO cosmological example. These are gravity-integration/performance choices; they do not change the BH accretion prescription.
 
 The checked-in rare-peak parameter files use `MaxMemSize=1500` MB per MPI
