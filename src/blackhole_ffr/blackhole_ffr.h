@@ -248,7 +248,12 @@ struct bh_ffr_domain_exchange_context
 #define BH_FFR_MAX_ADAPTIVE_RADII 16
 #define BH_FFR_ADAPTIVE_RADIUS_COUNT 13
 
-#define BH_FFR_FEEDBACK_TARGET_QUANTA_PER_STEP 1.0
+/* The receiver wake is applied after the current hydro closure, so a newly
+ * shortened gas cell can only participate on a future synchronized step.
+ * Limit both MACER source channels to half a packet threshold per transaction;
+ * this gives one full transaction of wake latency without allowing a single
+ * deferred update to create an order-unity multi-packet backlog. */
+#define BH_FFR_FEEDBACK_TARGET_QUANTA_PER_STEP 0.5
 #define BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE 4
 #define BH_FFR_FEEDBACK_MAX_PACKETS_PER_STEP 8
 struct bh_ffr_discrete_radius_grid
