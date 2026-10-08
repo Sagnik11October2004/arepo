@@ -275,6 +275,43 @@ int bh_ffr_feedback_jet_target_hydro_timebin(int p)
       p, BHP[b].JetThresholdEnergy, BHP[b].JetPower);
 }
 
+/* Shared guard-zone cadence for gas inside the maximum MACER receiver sphere.
+ * Start from the actual BH gravity timebin and only shorten it further if the
+ * wind or jet threshold/power cadence requires a smaller synchronized step.
+ * Gas already on a finer hydro step is never lengthened by the wake manager. */
+int bh_ffr_feedback_sync_target_hydro_timebin(int p)
+{
+  const int b =
+      bh_ffr_compact_index_from_particle(
+          p, "bh_ffr_feedback_sync_target_hydro_timebin");
+
+  const int grav_bin = P[p].TimeBinGrav;
+  if(grav_bin <= 0 || grav_bin >= TIMEBINS)
+    terminate("BH_FFR: invalid BH gravity timebin=%d for feedback sync guard ID=%llu",
+              grav_bin, (unsigned long long)P[p].ID);
+
+  integertime ti_step = ((integertime)1) << grav_bin;
+
+  const double wind_limit_myr =
+      bh_ffr_feedback_channel_limit_myr(
+          BHP[b].WindThresholdEnergy, BHP[b].WindPower);
+  const double jet_limit_myr =
+      bh_ffr_feedback_channel_limit_myr(
+          BHP[b].JetThresholdEnergy, BHP[b].JetPower);
+
+  ti_step =
+      bh_ffr_limit_integer_step_by_physical_myr(ti_step, wind_limit_myr);
+  ti_step =
+      bh_ffr_limit_integer_step_by_physical_myr(ti_step, jet_limit_myr);
+
+  const int bin = get_timestep_bin(ti_step);
+  if(bin <= 0 || bin >= TIMEBINS)
+    terminate("BH_FFR: invalid feedback sync-guard timebin=%d ti=%lld ID=%llu",
+              bin, (long long)ti_step, (unsigned long long)P[p].ID);
+
+  return bin;
+}
+
 static int *BHFFRFeedbackWakeBin = NULL;
 static unsigned char *BHFFRFeedbackHydroActiveNow = NULL;
 
