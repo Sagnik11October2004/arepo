@@ -288,6 +288,7 @@ void bh_ffr_initialize_particles(void);
 void bh_ffr_rebuild_state_after_particle_changes(void);
 void bh_ffr_validate_state(const char *where);
 
+int bh_ffr_seed_quiescent(int p);
 void bh_ffr_build_discrete_radius_grid(double base_radius, const double *factors, int count,
                                        struct bh_ffr_discrete_radius_grid *grid);
 double bh_ffr_effective_softening_proper(int p);
