@@ -90,6 +90,7 @@ typedef struct
   MyDouble ReceiverLobeMass[BH_FFR_JET_RECEIVER_RADIUS_COUNT][2];
   MyDouble ReceiverLobeProjectedMomentum[BH_FFR_JET_RECEIVER_RADIUS_COUNT][2];
   MyDouble ReceiverLobeTotalMass[BH_FFR_JET_RECEIVER_RADIUS_COUNT][2];
+  long long ReceiverLobeTotalCount[BH_FFR_JET_RECEIVER_RADIUS_COUNT][2];
   long long ReceiverLobeCount[BH_FFR_JET_RECEIVER_RADIUS_COUNT][2];
 
   int Conflict;
@@ -364,6 +365,7 @@ static void out2particle(data_out *out, int target, int mode)
               res->ReceiverLobeProjectedMomentum[q][l] +=
                   out->ReceiverLobeProjectedMomentum[q][l];
               res->ReceiverLobeTotalMass[q][l] += out->ReceiverLobeTotalMass[q][l];
+              res->ReceiverLobeTotalCount[q][l] += out->ReceiverLobeTotalCount[q][l];
               res->ReceiverLobeCount[q][l] += out->ReceiverLobeCount[q][l];
             }
         }
@@ -535,6 +537,7 @@ static int bh_ffr_jet_evaluate(int target, int mode, int threadid)
                   {
                     out.ReceiverEnclosedMass[q] += P[j].Mass;
                     out.ReceiverLobeTotalMass[q][receiver_lobe] += P[j].Mass;
+                    out.ReceiverLobeTotalCount[q][receiver_lobe]++;
                     if(active)
                       {
                         out.ReceiverLobeCount[q][receiver_lobe]++;
@@ -638,8 +641,16 @@ static double bh_ffr_jet_packet_q(double A, double B, double energy)
   return q;
 }
 
-static int bh_ffr_jet_receiver_radius_ok(const data_out *res, int q,
-                                           double *fplus, double *fminus)
+static int bh_ffr_jet_receiver_geometry_ok(const data_out *res, int q)
+{
+  return res->ReceiverLobeTotalCount[q][0] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
+         res->ReceiverLobeTotalCount[q][1] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
+         res->ReceiverLobeTotalMass[q][0] > 0 &&
+         res->ReceiverLobeTotalMass[q][1] > 0;
+}
+
+static int bh_ffr_jet_receiver_active_ok(const data_out *res, int q,
+                                         double *fplus, double *fminus)
 {
   const double mtot_plus = res->ReceiverLobeTotalMass[q][0];
   const double mtot_minus = res->ReceiverLobeTotalMass[q][1];
@@ -648,7 +659,6 @@ static int bh_ffr_jet_receiver_radius_ok(const data_out *res, int q,
 
   return res->ReceiverLobeCount[q][0] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
          res->ReceiverLobeCount[q][1] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
-         mtot_plus > 0 && mtot_minus > 0 &&
          *fplus >= All.BHMinActiveTargetMassFrac &&
          *fminus >= All.BHMinActiveTargetMassFrac;
 }
@@ -661,15 +671,11 @@ static int bh_ffr_jet_select_receiver_radius(const data_out *res,
   *fminus = 0.0;
 
   for(int q = 0; q < BH_FFR_JET_RECEIVER_RADIUS_COUNT; q++)
-    {
-      double fp = 0.0, fm = 0.0;
-      if(bh_ffr_jet_receiver_radius_ok(res, q, &fp, &fm))
-        {
-          *fplus = fp;
-          *fminus = fm;
-          return q;
-        }
-    }
+    if(bh_ffr_jet_receiver_geometry_ok(res, q))
+      {
+        bh_ffr_jet_receiver_active_ok(res, q, fplus, fminus);
+        return q;
+      }
 
   return -1;
 }
@@ -705,36 +711,46 @@ static void bh_ffr_jet_report_broadening_survey(void)
       for(int q = 0; q < grid.Count; q++)
         {
           double fp = 0.0, fm = 0.0;
-          const int ok =
-              bh_ffr_jet_receiver_radius_ok(res, q, &fp, &fm);
+          const int geometry_ok = bh_ffr_jet_receiver_geometry_ok(res, q);
+          const int active_ok = bh_ffr_jet_receiver_active_ok(res, q, &fp, &fm);
 
           printf("BH_FFR: jet receiver detail mode=live ID=%llu task=%d "
                  "R=%g Reps=%g radiusIndex=%d "
-                 "Nplus=%lld Nminus=%lld fplus=%g fminus=%g resolved=%d\n",
+                 "NtotPlus=%lld NtotMinus=%lld NactivePlus=%lld NactiveMinus=%lld "
+                 "fplus=%g fminus=%g geometryResolved=%d activeReady=%d\n",
                  (unsigned long long)P[p].ID, ThisTask,
                  grid.Radius[q], grid.Radius[q] / eps, q,
+                 res->ReceiverLobeTotalCount[q][0],
+                 res->ReceiverLobeTotalCount[q][1],
                  res->ReceiverLobeCount[q][0],
                  res->ReceiverLobeCount[q][1],
-                 fp, fm, ok);
+                 fp, fm, geometry_ok, active_ok);
         }
 
       if(selected >= 0)
         {
+          const int active_ready =
+              bh_ffr_jet_receiver_active_ok(
+                  res, selected, &selected_fplus, &selected_fminus);
           printf("BH_FFR: jet receiver mode=live ID=%llu task=%d "
                  "Rjet=%g Reps=%g radiusIndex=%d "
-                 "Nplus=%lld Nminus=%lld fplus=%g fminus=%g underresolved=0\n",
+                 "NtotPlus=%lld NtotMinus=%lld NactivePlus=%lld NactiveMinus=%lld "
+                 "fplus=%g fminus=%g underresolved=0 activeReady=%d\n",
                  (unsigned long long)P[p].ID, ThisTask,
                  grid.Radius[selected], grid.Radius[selected] / eps,
                  selected,
+                 res->ReceiverLobeTotalCount[selected][0],
+                 res->ReceiverLobeTotalCount[selected][1],
                  res->ReceiverLobeCount[selected][0],
                  res->ReceiverLobeCount[selected][1],
-                 selected_fplus, selected_fminus);
+                 selected_fplus, selected_fminus, active_ready);
         }
       else
         {
           printf("BH_FFR: jet receiver mode=live ID=%llu task=%d "
                  "Rjet=0 Reps=0 radiusIndex=-1 "
-                 "Nplus=0 Nminus=0 fplus=0 fminus=0 underresolved=1\n",
+                 "NtotPlus=0 NtotMinus=0 NactivePlus=0 NactiveMinus=0 "
+                 "fplus=0 fminus=0 underresolved=1 activeReady=0\n",
                  (unsigned long long)P[p].ID, ThisTask);
         }
       fflush(stdout);
@@ -761,16 +777,16 @@ static void bh_ffr_jet_prepare_candidates(void)
           BH_FFR_JET_RECEIVER_RADIUS_COUNT, &grid);
 
       double fplus = 0.0, fminus = 0.0;
-      const int selected_active =
+      const int selected_geometry =
           bh_ffr_jet_select_receiver_radius(res, &fplus, &fminus);
 
-      /* If current-step hydro-active receivers are temporarily insufficient,
-       * use the 128-epsilon hemisphere only to define the threshold and wake
-       * future receivers. It is never allowed to fire until both hemispheres
-       * meet the active count and mass-fraction criteria. */
+      /* Physical receiver geometry is selected from all gas, independently
+       * of the current hydro-active phase. If even 128 epsilon is physically
+       * unresolved, retain that maximum sphere only as a wake/threshold
+       * envelope and never fire. */
       const int selected =
-          selected_active >= 0
-              ? selected_active
+          selected_geometry >= 0
+              ? selected_geometry
               : grid.Count - 1;
 
       const double radius = grid.Radius[selected];
@@ -787,7 +803,7 @@ static void bh_ffr_jet_prepare_candidates(void)
       ev->RadiusProper = radius;
       ev->RadiusCoordinate = radius / a;
       ev->CosCone = 0.0;
-      ev->Underresolved = selected_active < 0 ? 1 : 0;
+      ev->Underresolved = selected_geometry < 0 ? 1 : 0;
 
       const double menc = res->ReceiverEnclosedMass[selected];
       const double sigma2 = BHP[b].SigmaDM * BHP[b].SigmaDM;
@@ -806,7 +822,12 @@ static void bh_ffr_jet_prepare_candidates(void)
       BHP[b].JetThresholdEnergy =
           All.BHJetBurstFactor * base_threshold;
 
-      if(JetConflictRound == 0 && selected_active < 0)
+      const int active_ready =
+          selected_geometry >= 0 &&
+          bh_ffr_jet_receiver_active_ok(
+              res, selected, &fplus, &fminus);
+
+      if(JetConflictRound == 0 && selected_geometry < 0)
         {
           printf("BH_FFR: jet live geometry ID=%llu task=%d "
                  "receiver=hemisphere selectedRadius=none Rwake=%g Reps=%g "
@@ -814,6 +835,18 @@ static void bh_ffr_jet_prepare_candidates(void)
                  (unsigned long long)P[p].ID, ThisTask,
                  ev->RadiusProper,
                  ev->RadiusProper / bh_ffr_effective_softening_proper(p));
+          fflush(stdout);
+        }
+
+      if(JetConflictRound == 0 && selected_geometry >= 0 && !active_ready)
+        {
+          printf("BH_FFR: jet live geometry ID=%llu task=%d "
+                 "receiver=hemisphere Rjet=%g Reps=%g radiusIndex=%d "
+                 "activeReady=0 bufferRetained=1\n",
+                 (unsigned long long)P[p].ID, ThisTask,
+                 ev->RadiusProper,
+                 ev->RadiusProper / bh_ffr_effective_softening_proper(p),
+                 selected);
           fflush(stdout);
         }
 
@@ -830,7 +863,7 @@ static void bh_ffr_jet_prepare_candidates(void)
           fflush(stdout);
         }
 
-      if(ev->Underresolved)
+      if(ev->Underresolved || !active_ready)
         continue;
 
       const double eth = BHP[b].JetThresholdEnergy;
