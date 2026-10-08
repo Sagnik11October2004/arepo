@@ -102,6 +102,7 @@ typedef struct
   MyDouble AdaptiveLobeRadialDirectionMass[BH_FFR_ADAPTIVE_RADIUS_COUNT][2][3];
   MyDouble AdaptiveLobeThermalMassWeighted[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
   MyDouble AdaptiveLobeTotalMass[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
+  long long AdaptiveLobeTotalCount[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
   long long AdaptiveLobeCount[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
 
   MyDouble FallbackEnclosedMass[BH_FFR_WIND_FALLBACK_RADIUS_COUNT];
@@ -110,6 +111,7 @@ typedef struct
   MyDouble FallbackHemiRadialDirectionMass[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2][3];
   MyDouble FallbackHemiThermalMassWeighted[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
   MyDouble FallbackHemiTotalMass[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
+  long long FallbackHemiTotalCount[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
   long long FallbackHemiCount[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
 
   int Conflict;
@@ -240,6 +242,7 @@ static void out2particle(data_out *out, int target, int mode)
                     out->FallbackHemiRadialDirectionMass[k][l][q];
               res->FallbackHemiThermalMassWeighted[k][l] += out->FallbackHemiThermalMassWeighted[k][l];
               res->FallbackHemiTotalMass[k][l] += out->FallbackHemiTotalMass[k][l];
+              res->FallbackHemiTotalCount[k][l] += out->FallbackHemiTotalCount[k][l];
               res->FallbackHemiCount[k][l] += out->FallbackHemiCount[k][l];
             }
         }
@@ -258,6 +261,8 @@ static void out2particle(data_out *out, int target, int mode)
                   out->AdaptiveLobeThermalMassWeighted[k][l];
               res->AdaptiveLobeTotalMass[k][l] +=
                   out->AdaptiveLobeTotalMass[k][l];
+              res->AdaptiveLobeTotalCount[k][l] +=
+                  out->AdaptiveLobeTotalCount[k][l];
               res->AdaptiveLobeCount[k][l] += out->AdaptiveLobeCount[k][l];
             }
         }
@@ -452,6 +457,7 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
                     if(lobe >= 0)
                       {
                         out.AdaptiveLobeTotalMass[k][lobe] += P[j].Mass;
+                        out.AdaptiveLobeTotalCount[k][lobe]++;
                         if(active)
                           {
                             out.AdaptiveLobeCount[k][lobe]++;
@@ -472,6 +478,7 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
                   {
                     out.FallbackEnclosedMass[k] += P[j].Mass;
                     out.FallbackHemiTotalMass[k][hemi_search] += P[j].Mass;
+                    out.FallbackHemiTotalCount[k][hemi_search]++;
                     if(active)
                       {
                         out.FallbackHemiCount[k][hemi_search]++;
@@ -672,8 +679,16 @@ void bh_ffr_feedback_self_test(void)
               Erad_got, Erad);
 }
 
-static int bh_ffr_feedback_radius_ok(const data_out *res, int k,
-                                      double *fplus, double *fminus)
+static int bh_ffr_feedback_radius_geometry_ok(const data_out *res, int k)
+{
+  return res->AdaptiveLobeTotalCount[k][0] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
+         res->AdaptiveLobeTotalCount[k][1] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
+         res->AdaptiveLobeTotalMass[k][0] > 0 &&
+         res->AdaptiveLobeTotalMass[k][1] > 0;
+}
+
+static int bh_ffr_feedback_radius_active_ok(const data_out *res, int k,
+                                            double *fplus, double *fminus)
 {
   const double mtot_plus = res->AdaptiveLobeTotalMass[k][0];
   const double mtot_minus = res->AdaptiveLobeTotalMass[k][1];
@@ -682,21 +697,28 @@ static int bh_ffr_feedback_radius_ok(const data_out *res, int k,
 
   return res->AdaptiveLobeCount[k][0] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
          res->AdaptiveLobeCount[k][1] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
-         mtot_plus > 0 && mtot_minus > 0 &&
          *fplus >= All.BHMinActiveTargetMassFrac &&
          *fminus >= All.BHMinActiveTargetMassFrac;
 }
 
-static int bh_ffr_feedback_fallback_radius_ok(const data_out *res, int k,
-                                                double *fplus, double *fminus)
+static int bh_ffr_feedback_fallback_geometry_ok(const data_out *res, int k)
+{
+  return res->FallbackHemiTotalCount[k][0] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
+         res->FallbackHemiTotalCount[k][1] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
+         res->FallbackHemiTotalMass[k][0] > 0 &&
+         res->FallbackHemiTotalMass[k][1] > 0;
+}
+
+static int bh_ffr_feedback_fallback_active_ok(const data_out *res, int k,
+                                               double *fplus, double *fminus)
 {
   const double mtot_plus = res->FallbackHemiTotalMass[k][0];
   const double mtot_minus = res->FallbackHemiTotalMass[k][1];
   *fplus = mtot_plus > 0 ? res->FallbackHemiMass[k][0] / mtot_plus : 0.0;
   *fminus = mtot_minus > 0 ? res->FallbackHemiMass[k][1] / mtot_minus : 0.0;
+
   return res->FallbackHemiCount[k][0] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
          res->FallbackHemiCount[k][1] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
-         mtot_plus > 0 && mtot_minus > 0 &&
          *fplus >= All.BHMinActiveTargetMassFrac &&
          *fminus >= All.BHMinActiveTargetMassFrac;
 }
@@ -714,11 +736,9 @@ static int bh_ffr_feedback_select_live_geometry(const data_out *res,
 
   for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
     {
-      double fp = 0.0, fm = 0.0;
-      if(bh_ffr_feedback_radius_ok(res, k, &fp, &fm))
+      if(bh_ffr_feedback_radius_geometry_ok(res, k))
         {
-          *fplus = fp;
-          *fminus = fm;
+          bh_ffr_feedback_radius_active_ok(res, k, fplus, fminus);
           return k;
         }
     }
@@ -726,17 +746,15 @@ static int bh_ffr_feedback_select_live_geometry(const data_out *res,
   *fallback = 1;
   for(int k = 0; k < BH_FFR_WIND_FALLBACK_RADIUS_COUNT; k++)
     {
-      double fp = 0.0, fm = 0.0;
-      if(bh_ffr_feedback_fallback_radius_ok(res, k, &fp, &fm))
+      if(bh_ffr_feedback_fallback_geometry_ok(res, k))
         {
-          *fplus = fp;
-          *fminus = fm;
+          bh_ffr_feedback_fallback_active_ok(res, k, fplus, fminus);
           return k;
         }
     }
 
   const int k = BH_FFR_WIND_FALLBACK_RADIUS_COUNT - 1;
-  bh_ffr_feedback_fallback_radius_ok(res, k, fplus, fminus);
+  bh_ffr_feedback_fallback_active_ok(res, k, fplus, fminus);
   *underresolved = 1;
   return k;
 }
@@ -762,32 +780,44 @@ static void bh_ffr_feedback_report_adaptive_radius_survey(void)
       for(int k = 0; k < grid.Count; k++)
         {
           double fp = 0.0, fm = 0.0;
-          const int ok = bh_ffr_feedback_radius_ok(res, k, &fp, &fm);
-          printf("BH_FFR: adaptive wind radius detail mode=live ID=%llu task=%d geometry=cone index=%d R=%g Reps=%g Nplus=%lld Nminus=%lld fplus=%g fminus=%g resolved=%d\n",
+          const int geometry_ok = bh_ffr_feedback_radius_geometry_ok(res, k);
+          const int active_ok = bh_ffr_feedback_radius_active_ok(res, k, &fp, &fm);
+          printf("BH_FFR: adaptive wind radius detail mode=live ID=%llu task=%d geometry=cone index=%d R=%g Reps=%g NtotPlus=%lld NtotMinus=%lld NactivePlus=%lld NactiveMinus=%lld fplus=%g fminus=%g geometryResolved=%d activeReady=%d\n",
                  (unsigned long long)P[p].ID, ThisTask, k, (double)grid.Radius[k],
-                 (double)(grid.Radius[k] / eps), res->AdaptiveLobeCount[k][0],
-                 res->AdaptiveLobeCount[k][1], fp, fm, ok);
+                 (double)(grid.Radius[k] / eps),
+                 res->AdaptiveLobeTotalCount[k][0], res->AdaptiveLobeTotalCount[k][1],
+                 res->AdaptiveLobeCount[k][0], res->AdaptiveLobeCount[k][1],
+                 fp, fm, geometry_ok, active_ok);
         }
       for(int k = 0; k < fallback_grid.Count; k++)
         {
           double fp = 0.0, fm = 0.0;
-          const int ok = bh_ffr_feedback_fallback_radius_ok(res, k, &fp, &fm);
-          printf("BH_FFR: adaptive wind radius detail mode=live ID=%llu task=%d geometry=hemisphere index=%d R=%g Reps=%g Nplus=%lld Nminus=%lld fplus=%g fminus=%g resolved=%d\n",
+          const int geometry_ok = bh_ffr_feedback_fallback_geometry_ok(res, k);
+          const int active_ok = bh_ffr_feedback_fallback_active_ok(res, k, &fp, &fm);
+          printf("BH_FFR: adaptive wind radius detail mode=live ID=%llu task=%d geometry=hemisphere index=%d R=%g Reps=%g NtotPlus=%lld NtotMinus=%lld NactivePlus=%lld NactiveMinus=%lld fplus=%g fminus=%g geometryResolved=%d activeReady=%d\n",
                  (unsigned long long)P[p].ID, ThisTask, k, (double)fallback_grid.Radius[k],
-                 (double)(fallback_grid.Radius[k] / eps), res->FallbackHemiCount[k][0],
-                 res->FallbackHemiCount[k][1], fp, fm, ok);
+                 (double)(fallback_grid.Radius[k] / eps),
+                 res->FallbackHemiTotalCount[k][0], res->FallbackHemiTotalCount[k][1],
+                 res->FallbackHemiCount[k][0], res->FallbackHemiCount[k][1],
+                 fp, fm, geometry_ok, active_ok);
         }
 
       int fallback = 0, underresolved = 0;
       double fp = 0.0, fm = 0.0;
       const int selected = bh_ffr_feedback_select_live_geometry(res, &fallback, &underresolved, &fp, &fm);
       const double rsel = fallback ? fallback_grid.Radius[selected] : grid.Radius[selected];
-      const long long np = fallback ? res->FallbackHemiCount[selected][0] : res->AdaptiveLobeCount[selected][0];
-      const long long nm = fallback ? res->FallbackHemiCount[selected][1] : res->AdaptiveLobeCount[selected][1];
-      printf("BH_FFR: adaptive wind radius mode=live ID=%llu task=%d eps=%g Rsearch=%g Rwind=%g index=%d Nplus=%lld Nminus=%lld fplus=%g fminus=%g fallback=%d underresolved=%d\n",
+      const long long ntp = fallback ? res->FallbackHemiTotalCount[selected][0] : res->AdaptiveLobeTotalCount[selected][0];
+      const long long ntm = fallback ? res->FallbackHemiTotalCount[selected][1] : res->AdaptiveLobeTotalCount[selected][1];
+      const long long nap = fallback ? res->FallbackHemiCount[selected][0] : res->AdaptiveLobeCount[selected][0];
+      const long long nam = fallback ? res->FallbackHemiCount[selected][1] : res->AdaptiveLobeCount[selected][1];
+      const int active_ready =
+          !underresolved &&
+          (fallback ? bh_ffr_feedback_fallback_active_ok(res, selected, &fp, &fm)
+                    : bh_ffr_feedback_radius_active_ok(res, selected, &fp, &fm));
+      printf("BH_FFR: adaptive wind radius mode=live ID=%llu task=%d eps=%g Rsearch=%g Rwind=%g index=%d NtotPlus=%lld NtotMinus=%lld NactivePlus=%lld NactiveMinus=%lld fplus=%g fminus=%g fallback=%d underresolved=%d activeReady=%d\n",
              (unsigned long long)P[p].ID, ThisTask, eps,
              (double)fallback_grid.Radius[fallback_grid.Count - 1], rsel, selected,
-             np, nm, fp, fm, fallback, underresolved);
+             ntp, ntm, nap, nam, fp, fm, fallback, underresolved, active_ready);
       fflush(stdout);
     }
 }
@@ -829,6 +859,12 @@ static void bh_ffr_feedback_prepare_candidates(void)
         terminate("BH_FFR: invalid adaptive wind threshold environment Menc=%g R=%g vbind2=%g for ID=%llu", menc, ev->RadiusProper, vbind2, (unsigned long long)P[p].ID);
 
       BHP[b].WindThresholdEnergy = All.BHWindBurstFactor * 0.5 * menc * vbind2;
+
+      const int active_ready =
+          !underresolved &&
+          (fallback ? bh_ffr_feedback_fallback_active_ok(res, selected, &fplus, &fminus)
+                    : bh_ffr_feedback_radius_active_ok(res, selected, &fplus, &fminus));
+
       if(BHP[b].SigmaDM > 0)
         {
           printf("BH_FFR: binding threshold wind ID=%llu task=%d Rwind=%g index=%d fallback=%d Menc=%g sigmaDM=%g vbind2=%g central=%d EthWind=%g\n",
@@ -836,7 +872,7 @@ static void bh_ffr_feedback_prepare_candidates(void)
                  menc, BHP[b].SigmaDM, vbind2, All.BHUseCentralBindingTerm, BHP[b].WindThresholdEnergy);
           fflush(stdout);
         }
-      if(underresolved) continue;
+      if(underresolved || !active_ready) continue;
 
       const double eth = BHP[b].WindThresholdEnergy;
       if(!(eth > 0) || !(BHP[b].WindEnergyBuffer >= eth)) continue;
