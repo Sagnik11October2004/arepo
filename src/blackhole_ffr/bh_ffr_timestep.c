@@ -593,6 +593,40 @@ integertime bh_ffr_limit_gravity_timestep(int p, integertime ti_step)
   return limited;
 }
 
+/* One-Myr physical seed-quiescence experiment (this branch only).
+ * ColdBlendWeight is the unused restart-persistent Iteration-5 slot. We
+ * temporarily store a_seed here without changing the native restart ABI.
+ * In the pristine post-seed z=20.8837 restart this slot is zero, so its
+ * first BH step establishes the epoch. Newly seeded BHs do likewise. */
+#define BH_FFR_SEED_QUIET_MYR 1.0
+int bh_ffr_seed_quiescent(int p)
+{
+  const int b = bh_ffr_compact_index_from_particle(p, "bh_ffr_seed_quiescent");
+
+  if(!All.ComovingIntegrationOn || !(All.Time > 0.0) || !(All.Time < 1.0))
+    terminate("BH_FFR: 1-Myr seed delay requires cosmological 0<a<1 (a=%g)", All.Time);
+
+  if(BHP[b].ColdBlendWeight == 0.0)
+    {
+      BHP[b].ColdBlendWeight = All.Time;
+      printf("BH_FFR: seed delay started ID=%llu a_seed=%.17g durationMyr=%g\n",
+             (unsigned long long)P[p].ID, All.Time, BH_FFR_SEED_QUIET_MYR);
+      fflush(stdout);
+    }
+
+  const double a_seed = BHP[b].ColdBlendWeight;
+  if(!isfinite(a_seed) || !(a_seed > 0.0) || a_seed > All.Time)
+    terminate("BH_FFR: invalid seed epoch ID=%llu a_seed=%g a=%g",
+              (unsigned long long)P[p].ID, a_seed, All.Time);
+
+  const double age_myr = 1000.0 * get_time_difference_in_Gyr(a_seed, All.Time);
+  if(!isfinite(age_myr) || age_myr < 0.0)
+    terminate("BH_FFR: invalid seed age ID=%llu ageMyr=%g",
+              (unsigned long long)P[p].ID, age_myr);
+
+  return age_myr < BH_FFR_SEED_QUIET_MYR;
+}
+
 void bh_ffr_step(void)
 {
   /* Particle array indices can change after domain/FoF reordering. */
@@ -654,7 +688,10 @@ void bh_ffr_step(void)
               bh_ffr_reservoir_timescale_myr(BHP[b].BHMass,
                                               BHP[b].ReservoirMass);
 
-          bh_ffr_update_reservoir_state(p, dt_myr, dt_code, disk_time_myr);
+          /* During seed quiescence neither horizon growth nor wind/jet
+           * source generation is permitted; empty buffers remain empty. */
+          if(!bh_ffr_seed_quiescent(p))
+            bh_ffr_update_reservoir_state(p, dt_myr, dt_code, disk_time_myr);
 
           const double bh_growth = BHP[b].BHMass - bh_mass_before_inner;
           if(!isfinite(bh_growth) ||
@@ -664,8 +701,11 @@ void bh_ffr_step(void)
           if(bh_growth > 0)
             BHP[b].BenchmarkCumulativeBHMassGrowth += bh_growth;
 
-          bh_ffr_update_jet_direction(p, dt_myr, disk_time_myr);
-          bh_ffr_store_frozen_disk_time(p, b, disk_time_myr);
+          if(!bh_ffr_seed_quiescent(p))
+            {
+              bh_ffr_update_jet_direction(p, dt_myr, disk_time_myr);
+              bh_ffr_store_frozen_disk_time(p, b, disk_time_myr);
+            }
         }
       else
         {
