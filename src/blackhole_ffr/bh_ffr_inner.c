@@ -23,7 +23,32 @@
 #define BH_FFR_GOFFORD_V_MAX_KMS 1.0e5
 #define BH_FFR_GOFFORD_L_NORM_CGS 1.0e45
 #define BH_FFR_HOT_WIND_VK_FACTOR 0.2
-#define BH_FFR_HOT_JET_EFFICIENCY 0.125
+/* Fixed-spin / fixed-dimensionless-flux Blandford-Znajek jet benchmark.
+ * The normalized horizon flux phi_BH is NOT evolved by this non-MHD model. */
+#define BH_FFR_BZ_SPIN 0.4
+#define BH_FFR_BZ_PHI 10.0
+#define BH_FFR_BZ_KAPPA 0.05
+
+static double bh_ffr_bz_jet_efficiency(void)
+{
+  const double spin = BH_FFR_BZ_SPIN;
+  const double phi = BH_FFR_BZ_PHI;
+  const double kappa = BH_FFR_BZ_KAPPA;
+
+  if(!isfinite(spin) || spin < 0.0 || spin >= 1.0 ||
+     !isfinite(phi) || phi < 0.0 || !isfinite(kappa) || kappa <= 0.0)
+    terminate("BH_FFR: invalid fixed BZ jet parameters spin=%g phi=%g kappa=%g", spin, phi, kappa);
+
+  /* omega_H = Omega_H r_g/c; Tchekhovskoy et al. high-spin correction. */
+  const double omega_h = spin / (2.0 * (1.0 + sqrt(1.0 - spin * spin)));
+  const double w2 = omega_h * omega_h;
+  const double eta = (kappa / (4.0 * M_PI)) * phi * phi * w2 *
+                     (1.0 + 1.38 * w2 - 9.2 * w2 * w2);
+
+  if(!isfinite(eta) || eta < 0.0)
+    terminate("BH_FFR: invalid BZ jet efficiency eta=%g", eta);
+  return eta;
+}
 
 static double bh_ffr_rate_cgs_to_code(double rate_cgs)
 {
@@ -254,7 +279,7 @@ void bh_ffr_apply_inner_flow(int p, double processable_mass, double dt_code)
   const double lbol = bh_ffr_radiative_luminosity_code(mdot_h, mdot_edd);
   const double pwind = 0.5 * mdot_w * wind_velocity_code * wind_velocity_code;
   const double pjet =
-      (BHP[b].AccretionState == BH_FFR_STATE_COLD) ? 0.0 : BH_FFR_HOT_JET_EFFICIENCY * mdot_h * c_internal * c_internal;
+      (BHP[b].AccretionState == BH_FFR_STATE_COLD) ? 0.0 : bh_ffr_bz_jet_efficiency() * mdot_h * c_internal * c_internal;
 
   double epsilon_rad = 0.0;
   if(mdot_h > 0)
@@ -350,7 +375,7 @@ void bh_ffr_inner_self_test(void)
   if(fabs(l_low_b / l_low_a - 4.0) > 2.0e-12)
     terminate("BH_FFR: inner-flow self-test failed low-rate quadratic luminosity scaling");
 
-  const double pjet = BH_FFR_HOT_JET_EFFICIENCY * mdot_edd * c_internal * c_internal;
+  const double pjet = bh_ffr_bz_jet_efficiency() * mdot_edd * c_internal * c_internal;
   if(!(vhot > 0) || !(pjet > 0))
     terminate("BH_FFR: inner-flow self-test failed hot wind/jet energetics");
 }
