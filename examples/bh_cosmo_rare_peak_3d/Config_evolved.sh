@@ -30,6 +30,9 @@ HAVE_HDF5
 COOLING
 
 BLACKHOLE_FFR
+# Controlled science experiment: 60% of original ConvJ/Mach shell-FFR supply.
+# No post-seed quiet period: accretion and feedback are active immediately.
+BH_FFR_CONVJ_SUPPLY_FACTOR=0.6
 BH_FFR_SEED_ONLY_MOST_MASSIVE
 BH_FFR_SEED_MAX_REDSHIFT=22
 
