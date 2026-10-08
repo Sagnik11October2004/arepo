@@ -11,14 +11,17 @@
  * Iteration 7: bursty, exactly bipolar wind feedback.
  *
  * The full gas mass inside R_fb sets the binding-energy threshold, while only
- * hydro-active gas cells are eligible injection targets.  Wind targets lie in
- * a broad bicone about DiscDir.  Each lobe uses separately normalized
- * mass-weighted top-hat weights.  The returned unresolved wind mass is added
- * comoving with the BH before the kinetic impulse is applied.
+ * hydro-active gas cells are eligible injection targets. Wind targets are
+ * selected from the configured bicone, with a resolution fallback to larger
+ * hemispheric receiver spheres. Each selected gas cell is kicked locally
+ * outward along its BH-centered radial direction using mass-weighted top-hat
+ * weights. The returned unresolved wind mass is added comoving with the BH
+ * before the mechanical impulse is applied.
  *
- * The impulse amplitude is solved from the exact quadratic kinetic-energy
- * change in physical peculiar velocities, so every accepted packet has zero
- * net kick momentum and injects exactly E_packet up to MPI roundoff.
+ * Finite-resolution sampling can leave a small net gas impulse, so the BH
+ * receives the equal-and-opposite recoil. The impulse amplitude is solved
+ * from the exact combined gas+BH kinetic-energy quadratic, conserving total
+ * momentum and injecting exactly E_packet up to MPI roundoff.
  *
  * The wind channel remains independent of the narrow jet channel. Iteration
  * 8 applies jet packets afterward using the gas state left by any wind events.
@@ -95,14 +98,16 @@ typedef struct
   /* Transient adaptive MACER wind-radius statistics. */
   MyDouble AdaptiveEnclosedMass[BH_FFR_ADAPTIVE_RADIUS_COUNT];
   MyDouble AdaptiveLobeMass[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
-  MyDouble AdaptiveLobeProjectedMomentum[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
+  MyDouble AdaptiveLobeRadialMomentum[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
+  MyDouble AdaptiveLobeRadialDirectionMass[BH_FFR_ADAPTIVE_RADIUS_COUNT][2][3];
   MyDouble AdaptiveLobeThermalMassWeighted[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
   MyDouble AdaptiveLobeTotalMass[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
   long long AdaptiveLobeCount[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
 
   MyDouble FallbackEnclosedMass[BH_FFR_WIND_FALLBACK_RADIUS_COUNT];
   MyDouble FallbackHemiMass[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
-  MyDouble FallbackHemiProjectedMomentum[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
+  MyDouble FallbackHemiRadialMomentum[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
+  MyDouble FallbackHemiRadialDirectionMass[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2][3];
   MyDouble FallbackHemiThermalMassWeighted[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
   MyDouble FallbackHemiTotalMass[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
   long long FallbackHemiCount[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
@@ -229,7 +234,10 @@ static void out2particle(data_out *out, int target, int mode)
           for(int l = 0; l < 2; l++)
             {
               res->FallbackHemiMass[k][l] += out->FallbackHemiMass[k][l];
-              res->FallbackHemiProjectedMomentum[k][l] += out->FallbackHemiProjectedMomentum[k][l];
+              res->FallbackHemiRadialMomentum[k][l] += out->FallbackHemiRadialMomentum[k][l];
+              for(int q = 0; q < 3; q++)
+                res->FallbackHemiRadialDirectionMass[k][l][q] +=
+                    out->FallbackHemiRadialDirectionMass[k][l][q];
               res->FallbackHemiThermalMassWeighted[k][l] += out->FallbackHemiThermalMassWeighted[k][l];
               res->FallbackHemiTotalMass[k][l] += out->FallbackHemiTotalMass[k][l];
               res->FallbackHemiCount[k][l] += out->FallbackHemiCount[k][l];
@@ -241,8 +249,11 @@ static void out2particle(data_out *out, int target, int mode)
           for(int l = 0; l < 2; l++)
             {
               res->AdaptiveLobeMass[k][l] += out->AdaptiveLobeMass[k][l];
-              res->AdaptiveLobeProjectedMomentum[k][l] +=
-                  out->AdaptiveLobeProjectedMomentum[k][l];
+              res->AdaptiveLobeRadialMomentum[k][l] +=
+                  out->AdaptiveLobeRadialMomentum[k][l];
+              for(int q = 0; q < 3; q++)
+                res->AdaptiveLobeRadialDirectionMass[k][l][q] +=
+                    out->AdaptiveLobeRadialDirectionMass[k][l][q];
               res->AdaptiveLobeThermalMassWeighted[k][l] +=
                   out->AdaptiveLobeThermalMassWeighted[k][l];
               res->AdaptiveLobeTotalMass[k][l] +=
@@ -418,15 +429,20 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
           if(hemi_search >= 0 &&
              in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1] > 0)
             {
-              double vdot = 0.0;
+              double radial_velocity = 0.0;
+              double rhat[3] = {0.0, 0.0, 0.0};
               if(active)
                 {
                   if(!isfinite(SphP[j].Utherm) || SphP[j].Utherm < 0)
                     terminate("BH_FFR: invalid target internal energy u=%g for gas ID=%llu",
                               (double)SphP[j].Utherm,
                               (unsigned long long)P[j].ID);
+                  const double rinv = 1.0 / sqrt(r2);
+                  rhat[0] = NEAREST_X(P[j].Pos[0] - in->Pos[0]) * rinv;
+                  rhat[1] = NEAREST_Y(P[j].Pos[1] - in->Pos[1]) * rinv;
+                  rhat[2] = NEAREST_Z(P[j].Pos[2] - in->Pos[2]) * rinv;
                   for(int q = 0; q < 3; q++)
-                    vdot += (P[j].Vel[q] / a) * in->Axis[q];
+                    radial_velocity += (P[j].Vel[q] / a) * rhat[q];
                 }
 
               for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
@@ -440,8 +456,11 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
                           {
                             out.AdaptiveLobeCount[k][lobe]++;
                             out.AdaptiveLobeMass[k][lobe] += P[j].Mass;
-                            out.AdaptiveLobeProjectedMomentum[k][lobe] +=
-                                P[j].Mass * vdot;
+                            out.AdaptiveLobeRadialMomentum[k][lobe] +=
+                                P[j].Mass * radial_velocity;
+                            for(int q = 0; q < 3; q++)
+                              out.AdaptiveLobeRadialDirectionMass[k][lobe][q] +=
+                                  P[j].Mass * rhat[q];
                             out.AdaptiveLobeThermalMassWeighted[k][lobe] +=
                                 P[j].Mass * SphP[j].Utherm;
                           }
@@ -457,7 +476,10 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
                       {
                         out.FallbackHemiCount[k][hemi_search]++;
                         out.FallbackHemiMass[k][hemi_search] += P[j].Mass;
-                        out.FallbackHemiProjectedMomentum[k][hemi_search] += P[j].Mass * vdot;
+                        out.FallbackHemiRadialMomentum[k][hemi_search] += P[j].Mass * radial_velocity;
+                        for(int q = 0; q < 3; q++)
+                          out.FallbackHemiRadialDirectionMass[k][hemi_search][q] +=
+                              P[j].Mass * rhat[q];
                         out.FallbackHemiThermalMassWeighted[k][hemi_search] += P[j].Mass * SphP[j].Utherm;
                       }
                   }
@@ -507,13 +529,18 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
        * energy; the mechanical packet remains a separate kinetic increment. */
       SphP[j].Energy += dm * (0.5 * bh_v2 + a * a * in->LobeUtherm[lobe]);
 
+      const double rinv = 1.0 / sqrt(r2);
+      const double rhat[3] = {
+          NEAREST_X(P[j].Pos[0] - in->Pos[0]) * rinv,
+          NEAREST_Y(P[j].Pos[1] - in->Pos[1]) * rinv,
+          NEAREST_Z(P[j].Pos[2] - in->Pos[2]) * rinv};
+
       double dp_phys[3], v_phys[3];
-      const double sign = (lobe == 0) ? 1.0 : -1.0;
       double dp2 = 0.0, vdotdp = 0.0;
       for(int k = 0; k < 3; k++)
         {
           v_phys[k] = (SphP[j].Momentum[k] / P[j].Mass) / a;
-          dp_phys[k] = sign * in->Q * weight * in->Axis[k];
+          dp_phys[k] = in->Q * weight * rhat[k];
           dp2 += dp_phys[k] * dp_phys[k];
           vdotdp += v_phys[k] * dp_phys[k];
         }
@@ -631,6 +658,18 @@ void bh_ffr_feedback_self_test(void)
   if(BHFFRWindFallbackRadiusFactors[0] != 64.0 ||
      BHFFRWindFallbackRadiusFactors[BH_FFR_WIND_FALLBACK_RADIUS_COUNT - 1] != 128.0)
     terminate("BH_FFR: wind fallback-radius endpoints are not 64 and 128 epsilon");
+
+  const double Arad = -0.21;
+  const double Bgas = 0.73;
+  const double s2 = 0.14;
+  const double mbh = 11.0;
+  const double Erad = 0.91;
+  const double Brad = Bgas + s2 / mbh;
+  const double qrad = bh_ffr_feedback_packet_q(Arad, Brad, Erad);
+  const double Erad_got = Arad * qrad + 0.5 * Brad * qrad * qrad;
+  if(fabs(Erad_got - Erad) > 2.0e-13 * Erad)
+    terminate("BH_FFR: radial-wind recoil self-test failed got=%g expected=%g",
+              Erad_got, Erad);
 }
 
 static int bh_ffr_feedback_radius_ok(const data_out *res, int k,
@@ -836,13 +875,52 @@ static void bh_ffr_feedback_prepare_candidates(void)
       if(!isfinite(mplus) || !isfinite(mminus) || !(mplus > 0) || !(mminus > 0))
         terminate("BH_FFR: invalid selected wind lobe masses ID=%llu fallback=%d mplus=%g mminus=%g", (unsigned long long)P[p].ID, fallback, mplus, mminus);
 
-      double vbh_axis = 0.0;
-      for(int k = 0; k < 3; k++) vbh_axis += (P[p].Vel[k] / a) * BHP[b].DiscDir[k];
-      const double pplus = fallback ? res->FallbackHemiProjectedMomentum[selected][0] : res->AdaptiveLobeProjectedMomentum[selected][0];
-      const double pminus = fallback ? res->FallbackHemiProjectedMomentum[selected][1] : res->AdaptiveLobeProjectedMomentum[selected][1];
-      const double vplus = (pplus + half * vbh_axis) / mplus;
-      const double vminus = (pminus + half * vbh_axis) / mminus;
-      ev->Q = bh_ffr_feedback_packet_q(vplus - vminus, 1.0 / mplus + 1.0 / mminus, ev->PacketEnergy);
+      double vbh_phys[3], total_direction[3] = {0.0, 0.0, 0.0};
+      for(int k = 0; k < 3; k++)
+        vbh_phys[k] = P[p].Vel[k] / a;
+
+      double A = 0.0;
+      double B = 1.0 / mplus + 1.0 / mminus;
+
+      for(int l = 0; l < 2; l++)
+        {
+          const double mlobe = ev->LobeMass[l];
+          const double mpost = mlobe + half;
+          const double radial_momentum =
+              fallback ? res->FallbackHemiRadialMomentum[selected][l]
+                       : res->AdaptiveLobeRadialMomentum[selected][l];
+
+          double mean_rhat[3];
+          double vbh_dot_rhat = 0.0;
+          for(int k = 0; k < 3; k++)
+            {
+              const double direction_mass =
+                  fallback ? res->FallbackHemiRadialDirectionMass[selected][l][k]
+                           : res->AdaptiveLobeRadialDirectionMass[selected][l][k];
+              mean_rhat[k] = direction_mass / mlobe;
+              total_direction[k] += mean_rhat[k];
+              vbh_dot_rhat += vbh_phys[k] * mean_rhat[k];
+            }
+
+          A += (radial_momentum + half * vbh_dot_rhat) / mpost;
+        }
+
+      const double bh_mass_after = P[p].Mass - ev->PacketMass;
+      if(!isfinite(bh_mass_after) || !(bh_mass_after > 0))
+        terminate("BH_FFR: invalid BH dynamical mass after radial wind packet ID=%llu Mafter=%g",
+                  (unsigned long long)P[p].ID, bh_mass_after);
+
+      double total_direction2 = 0.0, vbh_dot_total = 0.0;
+      for(int k = 0; k < 3; k++)
+        {
+          total_direction2 += total_direction[k] * total_direction[k];
+          vbh_dot_total += vbh_phys[k] * total_direction[k];
+        }
+
+      A -= vbh_dot_total;
+      B += total_direction2 / bh_mass_after;
+
+      ev->Q = bh_ffr_feedback_packet_q(A, B, ev->PacketEnergy);
       ev->Candidate = 1;
     }
 }
@@ -909,18 +987,34 @@ static void bh_ffr_feedback_commit_packets(void)
         terminate("BH_FFR: wind packet mass-return mismatch ID=%llu returned=%g requested=%g", (unsigned long long)P[p].ID,
                   res->ReturnedMass, ev->PacketMass);
 
-      const double etol = 3.0e-8 * fmax(fabs(ev->PacketEnergy), 1.0e-30);
-      if(fabs(res->KickEnergy - ev->PacketEnergy) > etol)
-        terminate("BH_FFR: wind packet kinetic-energy mismatch ID=%llu injected=%g requested=%g",
-                  (unsigned long long)P[p].ID, res->KickEnergy, ev->PacketEnergy);
+      const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+      if(!isfinite(a) || !(a > 0))
+        terminate("BH_FFR: invalid scale factor=%g in radial wind commit", a);
 
-      double pnorm2 = 0.0;
+      const double bh_mass_after =
+          BHP[b].BHMass + BHP[b].ReservoirMass +
+          (ev->MassBefore - ev->PacketMass);
+      if(!isfinite(bh_mass_after) || !(bh_mass_after > 0))
+        terminate("BH_FFR: invalid BH mass after radial wind return ID=%llu M=%g",
+                  (unsigned long long)P[p].ID, bh_mass_after);
+
+      double gas_p2 = 0.0, bh_recoil_energy = 0.0;
       for(int k = 0; k < 3; k++)
-        pnorm2 += res->KickMomentum[k] * res->KickMomentum[k];
-      const double pnorm = sqrt(pnorm2);
-      if(pnorm > 3.0e-8 * fmax(fabs(ev->Q), 1.0e-30))
-        terminate("BH_FFR: wind packet kick-momentum imbalance ID=%llu |sum dp|=%g q=%g", (unsigned long long)P[p].ID,
-                  pnorm, ev->Q);
+        {
+          const double dp_bh = -res->KickMomentum[k];
+          const double vbh_phys = P[p].Vel[k] / a;
+          gas_p2 += res->KickMomentum[k] * res->KickMomentum[k];
+          bh_recoil_energy +=
+              vbh_phys * dp_bh +
+              0.5 * dp_bh * dp_bh / bh_mass_after;
+        }
+
+      const double total_kick_energy = res->KickEnergy + bh_recoil_energy;
+      const double etol = 3.0e-8 * fmax(fabs(ev->PacketEnergy), 1.0e-30);
+      if(fabs(total_kick_energy - ev->PacketEnergy) > etol)
+        terminate("BH_FFR: radial wind packet energy mismatch ID=%llu gas=%g recoil=%g total=%g requested=%g",
+                  (unsigned long long)P[p].ID, res->KickEnergy,
+                  bh_recoil_energy, total_kick_energy, ev->PacketEnergy);
 
       BHP[b].WindEnergyBuffer = ev->EnergyBefore - ev->PacketEnergy;
       BHP[b].WindMassBuffer = ev->MassBefore - ev->PacketMass;
@@ -937,14 +1031,26 @@ static void bh_ffr_feedback_commit_packets(void)
         terminate("BH_FFR: negative wind buffer after packet for ID=%llu", (unsigned long long)P[p].ID);
 
       P[p].Mass = BHP[b].BHMass + BHP[b].ReservoirMass + BHP[b].WindMassBuffer;
+      if(fabs(P[p].Mass - bh_mass_after) >
+         3.0e-12 * fmax(fabs(bh_mass_after), 1.0e-30))
+        terminate("BH_FFR: radial wind BH mass mismatch ID=%llu state=%g expected=%g",
+                  (unsigned long long)P[p].ID, (double)P[p].Mass, bh_mass_after);
+
+      for(int k = 0; k < 3; k++)
+        P[p].Vel[k] += a * (-res->KickMomentum[k]) / P[p].Mass;
+
       FeedbackPacketCount[n]++;
 
+      const double gas_pnorm = sqrt(gas_p2);
+      const double recoil_fraction = gas_pnorm / fmax(fabs(ev->Q), 1.0e-30);
       const double eerg = ev->PacketEnergy * All.UnitEnergy_in_cgs / All.HubbleParam;
       const double mmsun = ev->PacketMass * All.UnitMass_in_g / (All.HubbleParam * SOLAR_MASS);
-      printf("BH_FFR: wind packet fired ID=%llu task=%d E=%g erg dM=%g Msun q=%g Nplus=%lld Nminus=%lld dErel=%g pbal=%g\n",
-             (unsigned long long)P[p].ID, ThisTask, eerg, mmsun, ev->Q, ev->LobeCount[0], ev->LobeCount[1],
-             fabs(res->KickEnergy - ev->PacketEnergy) / ev->PacketEnergy, pnorm / fmax(fabs(ev->Q), 1.0e-30));
-      printf("BH_FFR: wind coupling ID=%llu task=%d Rwind=%g index=%d "
+      printf("BH_FFR: wind packet fired ID=%llu task=%d E=%g erg dM=%g Msun q=%g Nplus=%lld Nminus=%lld dErel=%g pbal=0 recoilFrac=%g bhRecoilEfrac=%g\n",
+             (unsigned long long)P[p].ID, ThisTask, eerg, mmsun, ev->Q,
+             ev->LobeCount[0], ev->LobeCount[1],
+             fabs(total_kick_energy - ev->PacketEnergy) / ev->PacketEnergy,
+             recoil_fraction, bh_recoil_energy / ev->PacketEnergy);
+      printf("BH_FFR: wind coupling ID=%llu task=%d kick=radial-outward Rwind=%g index=%d "
              "fallback=%d cosCone=%g Nplus=%lld Nminus=%lld\n",
              (unsigned long long)P[p].ID, ThisTask, ev->RadiusProper,
              ev->RadiusIndex, ev->UsedHemisphereFallback,
