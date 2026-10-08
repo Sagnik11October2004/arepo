@@ -1146,28 +1146,9 @@ void bh_ffr_inject_wind_feedback(void)
       bh_ffr_feedback_report_adaptive_radius_survey();
       bh_ffr_feedback_prepare_candidates();
 
-      if(round == 0)
-        {
-          for(int n = 0; n < FeedbackNTargets; n++)
-            {
-              const int p =
-                  bh_ffr_feedback_particle_from_target(
-                      n, "bh_ffr_inject_wind_feedback/sync-guard");
-              const double eps = bh_ffr_effective_softening_proper(p);
-              const double rguard =
-                  BHFFRWindFallbackRadiusFactors[BH_FFR_WIND_FALLBACK_RADIUS_COUNT - 1] * eps;
-              const int sync_bin =
-                  bh_ffr_feedback_sync_target_hydro_timebin(p);
-
-              printf("BH_FFR: feedback sync guard ID=%llu task=%d "
-                     "Rguard=%g Reps=%g targetBin=%d bhGravBin=%d\n",
-                     (unsigned long long)P[p].ID, ThisTask,
-                     rguard, rguard / eps, sync_bin, P[p].TimeBinGrav);
-              fflush(stdout);
-            }
-
-          bh_ffr_feedback_comm_pass(BH_FFR_FEEDBACK_WAKE);
-        }
+      /* The shared 128-epsilon synchronization guard is executed once
+       * in the jet stage, after both the current wind and current jet
+       * thresholds have been surveyed. */
 
       if(bh_ffr_feedback_global_candidate_count() <= 0)
         break;
