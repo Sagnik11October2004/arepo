@@ -618,6 +618,19 @@ void bh_ffr_feedback_self_test(void)
 
   if(!isfinite(u_after) || fabs(u_after - u_return) > 2.0e-13 * fmax(fabs(u_return), 1.0))
     terminate("BH_FFR: feedback self-test failed wind thermal return got=%g expected=%g", u_after, u_return);
+
+  double previous_radius = 0.0;
+  for(int k = 0; k < BH_FFR_WIND_FALLBACK_RADIUS_COUNT; k++)
+    {
+      const double r = BHFFRWindFallbackRadiusFactors[k];
+      if(!isfinite(r) || !(r > 0) || (k > 0 && !(r > previous_radius)))
+        terminate("BH_FFR: wind fallback-radius self-test failed k=%d R/eps=%g", k, r);
+      previous_radius = r;
+    }
+
+  if(BHFFRWindFallbackRadiusFactors[0] != 64.0 ||
+     BHFFRWindFallbackRadiusFactors[BH_FFR_WIND_FALLBACK_RADIUS_COUNT - 1] != 128.0)
+    terminate("BH_FFR: wind fallback-radius endpoints are not 64 and 128 epsilon");
 }
 
 static int bh_ffr_feedback_radius_ok(const data_out *res, int k,
