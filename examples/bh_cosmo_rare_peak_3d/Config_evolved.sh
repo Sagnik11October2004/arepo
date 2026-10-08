@@ -30,6 +30,10 @@ HAVE_HDF5
 COOLING
 
 BLACKHOLE_FFR
+# Controlled post-seed native-restart experiment (1 physical Myr dormancy).
+# Reference epoch: the common post-seed checkpoint at z ~= 20.88374.
+BH_FFR_DELAY_QUIET_MYR=1.0
+BH_FFR_DELAY_QUIET_START_Z=20.88374
 BH_FFR_SEED_ONLY_MOST_MASSIVE
 BH_FFR_SEED_MAX_REDSHIFT=22
 
