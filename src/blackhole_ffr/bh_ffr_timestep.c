@@ -6,6 +6,10 @@
 #include "blackhole_ffr.h"
 #include "../main/proto.h"
 
+#if defined(BH_FFR_DELAY_QUIET_MYR) != defined(BH_FFR_DELAY_QUIET_START_Z)
+#error "The post-seed quiet test requires both BH_FFR_DELAY_QUIET_MYR and BH_FFR_DELAY_QUIET_START_Z"
+#endif
+
 static int bh_ffr_compact_index_from_particle(int p, const char *where)
 {
   if(p < 0 || p >= NumPart)
@@ -615,6 +619,67 @@ void bh_ffr_step(void)
       bh_benchmark_tng_feedback_self_test();
       self_tests_done = 1;
     }
+
+#ifdef BH_FFR_DELAY_QUIET_MYR
+  /* Controlled post-seed native-restart experiment.  The archived common
+   * checkpoint is immediately after FoF seeding at the configured redshift.
+   * Compute *physical* elapsed time; All.Time is a scale factor in cosmology.
+   * This test is deliberately opt-in and changes no persistent BH layout. */
+  if(!All.ComovingIntegrationOn)
+    terminate("BH_FFR: delayed-start test requires cosmological integration");
+
+  const double seed_a = 1.0 / (1.0 + (double)BH_FFR_DELAY_QUIET_START_Z);
+  const double quiet_duration_myr = (double)BH_FFR_DELAY_QUIET_MYR;
+  if(!(seed_a > 0) || !(seed_a <= 1) || !isfinite(quiet_duration_myr) ||
+     !(quiet_duration_myr > 0))
+    terminate("BH_FFR: invalid post-seed quiet-test configuration");
+
+  const double age_myr = All.Time > seed_a
+                         ? 1000.0 * get_time_difference_in_Gyr(seed_a, All.Time)
+                         : 0.0;
+  if(!isfinite(age_myr) || age_myr < 0)
+    terminate("BH_FFR: invalid post-seed age=%g Myr", age_myr);
+
+  const int quiet = age_myr < quiet_duration_myr;
+  static int last_reported_quiet = -1;
+  if(last_reported_quiet != quiet)
+    {
+      mpi_printf("BH_FFR: post-seed quiet test state=%s age=%g Myr delay=%g Myr z=%g\n",
+                 quiet ? "QUIET" : "ACTIVE", age_myr, quiet_duration_myr, All.cf_redshift);
+      last_reported_quiet = quiet;
+    }
+
+  if(quiet)
+    {
+      /* No gas capture, reservoir drainage, BH growth or feedback.  Retain
+       * the original orbital dynamical-friction update and advance the BH
+       * transaction clock so the dormant interval is never accreted later. */
+      for(int n = 0; n < NumActiveBHFFR; n++)
+        {
+          const int p = BHFFRActiveParticleList[n];
+          const int b = bh_ffr_compact_index_from_particle(p, "post-seed quiet test");
+          if(All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_RESERVOIR)
+            bh_ffr_apply_cached_dynamical_friction(p, bh_ffr_get_elapsed_time_code_time(p));
+
+          BHP[b].MdotSupply = 0;
+          BHP[b].MdotProcessed = 0;
+          BHP[b].MdotHorizon = 0;
+          BHP[b].MdotWind = 0;
+          BHP[b].ProcessedEddingtonRatio = 0;
+          BHP[b].BolometricLuminosity = 0;
+          BHP[b].WindPower = 0;
+          BHP[b].JetPower = 0;
+          BHP[b].BenchmarkMdotRaw = 0;
+          BHP[b].BenchmarkMdotOperational = 0;
+          BHP[b].BenchmarkMdotRealized = 0;
+          BHP[b].BenchmarkSinkRateRatio = 0;
+          BHP[b].LastProcessedTi = All.Ti_Current;
+        }
+
+      bh_ffr_merge_close_black_holes();
+      return;
+    }
+#endif
 
   /* The selected resolved estimator removes gas exactly once and stores both
    * its uncapped algebraic rate and the realized conservative capture rate. */
