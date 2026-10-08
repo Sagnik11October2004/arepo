@@ -24,6 +24,11 @@
  * 8 applies jet packets afterward using the gas state left by any wind events.
  */
 
+#define BH_FFR_WIND_FALLBACK_RADIUS_COUNT 3
+
+static const double BHFFRWindFallbackRadiusFactors[BH_FFR_WIND_FALLBACK_RADIUS_COUNT] =
+    {64.0, 96.0, 128.0};
+
 enum bh_ffr_feedback_pass
 {
   BH_FFR_FEEDBACK_STATS = 0,
@@ -70,6 +75,7 @@ typedef struct
   MyFloat BHVel[3];
   MyFloat Radius;
   MyDouble AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT];
+  MyDouble FallbackRadius[BH_FFR_WIND_FALLBACK_RADIUS_COUNT];
   MyFloat CosCone;
   MyIDType BHID;
   int Candidate;
@@ -94,11 +100,12 @@ typedef struct
   MyDouble AdaptiveLobeTotalMass[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
   long long AdaptiveLobeCount[BH_FFR_ADAPTIVE_RADIUS_COUNT][2];
 
-  MyDouble AdaptiveHemiMass[2];
-  MyDouble AdaptiveHemiProjectedMomentum[2];
-  MyDouble AdaptiveHemiThermalMassWeighted[2];
-  MyDouble AdaptiveHemiTotalMass[2];
-  long long AdaptiveHemiCount[2];
+  MyDouble FallbackEnclosedMass[BH_FFR_WIND_FALLBACK_RADIUS_COUNT];
+  MyDouble FallbackHemiMass[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
+  MyDouble FallbackHemiProjectedMomentum[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
+  MyDouble FallbackHemiThermalMassWeighted[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
+  MyDouble FallbackHemiTotalMass[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
+  long long FallbackHemiCount[BH_FFR_WIND_FALLBACK_RADIUS_COUNT][2];
 
   int Conflict;
 
@@ -151,13 +158,21 @@ static void particle2in(data_in *in, int target, int firstnode)
   in->Radius = 0.0;
   for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
     in->AdaptiveRadius[k] = 0.0;
+  for(int k = 0; k < BH_FFR_WIND_FALLBACK_RADIUS_COUNT; k++)
+    in->FallbackRadius[k] = 0.0;
 
   if(FeedbackPass == BH_FFR_FEEDBACK_STATS)
     {
-      struct bh_ffr_discrete_radius_grid grid;
+      struct bh_ffr_discrete_radius_grid grid, fallback_grid;
       bh_ffr_build_resolution_radius_grid(p, &grid);
+      bh_ffr_build_discrete_radius_grid(bh_ffr_effective_softening_proper(p),
+                                        BHFFRWindFallbackRadiusFactors,
+                                        BH_FFR_WIND_FALLBACK_RADIUS_COUNT,
+                                        &fallback_grid);
       if(grid.Count != BH_FFR_ADAPTIVE_RADIUS_COUNT)
         terminate("BH_FFR: unexpected wind adaptive-radius count=%d", grid.Count);
+      if(fallback_grid.Count != BH_FFR_WIND_FALLBACK_RADIUS_COUNT)
+        terminate("BH_FFR: unexpected wind fallback-radius count=%d", fallback_grid.Count);
 
       const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
       if(!isfinite(a) || !(a > 0))
@@ -165,8 +180,10 @@ static void particle2in(data_in *in, int target, int firstnode)
 
       for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
         in->AdaptiveRadius[k] = grid.Radius[k] / a;
+      for(int k = 0; k < BH_FFR_WIND_FALLBACK_RADIUS_COUNT; k++)
+        in->FallbackRadius[k] = fallback_grid.Radius[k] / a;
 
-      in->Radius = in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1];
+      in->Radius = in->FallbackRadius[BH_FFR_WIND_FALLBACK_RADIUS_COUNT - 1];
     }
   else
     {
@@ -206,15 +223,17 @@ static void out2particle(data_out *out, int target, int mode)
     *res = *out;
   else
     {
-      for(int l = 0; l < 2; l++)
+      for(int k = 0; k < BH_FFR_WIND_FALLBACK_RADIUS_COUNT; k++)
         {
-          res->AdaptiveHemiMass[l] += out->AdaptiveHemiMass[l];
-          res->AdaptiveHemiProjectedMomentum[l] +=
-              out->AdaptiveHemiProjectedMomentum[l];
-          res->AdaptiveHemiThermalMassWeighted[l] +=
-              out->AdaptiveHemiThermalMassWeighted[l];
-          res->AdaptiveHemiTotalMass[l] += out->AdaptiveHemiTotalMass[l];
-          res->AdaptiveHemiCount[l] += out->AdaptiveHemiCount[l];
+          res->FallbackEnclosedMass[k] += out->FallbackEnclosedMass[k];
+          for(int l = 0; l < 2; l++)
+            {
+              res->FallbackHemiMass[k][l] += out->FallbackHemiMass[k][l];
+              res->FallbackHemiProjectedMomentum[k][l] += out->FallbackHemiProjectedMomentum[k][l];
+              res->FallbackHemiThermalMassWeighted[k][l] += out->FallbackHemiThermalMassWeighted[k][l];
+              res->FallbackHemiTotalMass[k][l] += out->FallbackHemiTotalMass[k][l];
+              res->FallbackHemiCount[k][l] += out->FallbackHemiCount[k][l];
+            }
         }
       for(int k = 0; k < BH_FFR_ADAPTIVE_RADIUS_COUNT; k++)
         {
@@ -429,21 +448,19 @@ static int bh_ffr_feedback_evaluate(int target, int mode, int threadid)
                       }
                   }
 
-              const double rmax =
-                  in->AdaptiveRadius[BH_FFR_ADAPTIVE_RADIUS_COUNT - 1];
-              if(r2 <= rmax * rmax)
-                {
-                  out.AdaptiveHemiTotalMass[hemi_search] += P[j].Mass;
-                  if(active)
-                    {
-                      out.AdaptiveHemiCount[hemi_search]++;
-                      out.AdaptiveHemiMass[hemi_search] += P[j].Mass;
-                      out.AdaptiveHemiProjectedMomentum[hemi_search] +=
-                          P[j].Mass * vdot;
-                      out.AdaptiveHemiThermalMassWeighted[hemi_search] +=
-                          P[j].Mass * SphP[j].Utherm;
-                    }
-                }
+              for(int k = 0; k < BH_FFR_WIND_FALLBACK_RADIUS_COUNT; k++)
+                if(in->FallbackRadius[k] > 0 && r2 <= in->FallbackRadius[k] * in->FallbackRadius[k])
+                  {
+                    out.FallbackEnclosedMass[k] += P[j].Mass;
+                    out.FallbackHemiTotalMass[k][hemi_search] += P[j].Mass;
+                    if(active)
+                      {
+                        out.FallbackHemiCount[k][hemi_search]++;
+                        out.FallbackHemiMass[k][hemi_search] += P[j].Mass;
+                        out.FallbackHemiProjectedMomentum[k][hemi_search] += P[j].Mass * vdot;
+                        out.FallbackHemiThermalMassWeighted[k][hemi_search] += P[j].Mass * SphP[j].Utherm;
+                      }
+                  }
             }
 
           continue;
@@ -618,6 +635,20 @@ static int bh_ffr_feedback_radius_ok(const data_out *res, int k,
          *fminus >= All.BHMinActiveTargetMassFrac;
 }
 
+static int bh_ffr_feedback_fallback_radius_ok(const data_out *res, int k,
+                                                double *fplus, double *fminus)
+{
+  const double mtot_plus = res->FallbackHemiTotalMass[k][0];
+  const double mtot_minus = res->FallbackHemiTotalMass[k][1];
+  *fplus = mtot_plus > 0 ? res->FallbackHemiMass[k][0] / mtot_plus : 0.0;
+  *fminus = mtot_minus > 0 ? res->FallbackHemiMass[k][1] / mtot_minus : 0.0;
+  return res->FallbackHemiCount[k][0] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
+         res->FallbackHemiCount[k][1] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
+         mtot_plus > 0 && mtot_minus > 0 &&
+         *fplus >= All.BHMinActiveTargetMassFrac &&
+         *fminus >= All.BHMinActiveTargetMassFrac;
+}
+
 static int bh_ffr_feedback_select_live_geometry(const data_out *res,
                                                 int *fallback,
                                                 int *underresolved,
@@ -640,77 +671,71 @@ static int bh_ffr_feedback_select_live_geometry(const data_out *res,
         }
     }
 
-  const double mtot_plus = res->AdaptiveHemiTotalMass[0];
-  const double mtot_minus = res->AdaptiveHemiTotalMass[1];
-  *fplus = mtot_plus > 0 ? res->AdaptiveHemiMass[0] / mtot_plus : 0.0;
-  *fminus = mtot_minus > 0 ? res->AdaptiveHemiMass[1] / mtot_minus : 0.0;
+  *fallback = 1;
+  for(int k = 0; k < BH_FFR_WIND_FALLBACK_RADIUS_COUNT; k++)
+    {
+      double fp = 0.0, fm = 0.0;
+      if(bh_ffr_feedback_fallback_radius_ok(res, k, &fp, &fm))
+        {
+          *fplus = fp;
+          *fminus = fm;
+          return k;
+        }
+    }
 
-  const int hemi_ok =
-      res->AdaptiveHemiCount[0] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
-      res->AdaptiveHemiCount[1] >= BH_FFR_FEEDBACK_MIN_ACTIVE_PER_LOBE &&
-      mtot_plus > 0 && mtot_minus > 0 &&
-      *fplus >= All.BHMinActiveTargetMassFrac &&
-      *fminus >= All.BHMinActiveTargetMassFrac;
-
-  *fallback = hemi_ok ? 1 : 0;
-  *underresolved = hemi_ok ? 0 : 1;
-  return BH_FFR_ADAPTIVE_RADIUS_COUNT - 1;
+  const int k = BH_FFR_WIND_FALLBACK_RADIUS_COUNT - 1;
+  bh_ffr_feedback_fallback_radius_ok(res, k, fplus, fminus);
+  *underresolved = 1;
+  return k;
 }
 
 static void bh_ffr_feedback_report_adaptive_radius_survey(void)
 {
-  if(All.BHBenchmarkFeedbackModel != BH_BENCHMARK_FEEDBACK_MACER ||
-     FeedbackConflictRound != 0)
+  if(All.BHBenchmarkFeedbackModel != BH_BENCHMARK_FEEDBACK_MACER || FeedbackConflictRound != 0)
     return;
-
   static unsigned long long survey_calls = 0;
   if((survey_calls++ % 64ULL) != 0ULL)
     return;
 
   for(int n = 0; n < FeedbackNTargets; n++)
     {
-      const int p =
-          bh_ffr_feedback_particle_from_target(
-              n, "bh_ffr_feedback_report_adaptive_radius_survey");
+      const int p = bh_ffr_feedback_particle_from_target(n, "bh_ffr_feedback_report_adaptive_radius_survey");
       const data_out *res = &FeedbackResults[n];
-
-      struct bh_ffr_discrete_radius_grid grid;
-      bh_ffr_build_resolution_radius_grid(p, &grid);
       const double eps = bh_ffr_effective_softening_proper(p);
+      struct bh_ffr_discrete_radius_grid grid, fallback_grid;
+      bh_ffr_build_resolution_radius_grid(p, &grid);
+      bh_ffr_build_discrete_radius_grid(eps, BHFFRWindFallbackRadiusFactors,
+                                        BH_FFR_WIND_FALLBACK_RADIUS_COUNT, &fallback_grid);
 
       for(int k = 0; k < grid.Count; k++)
         {
           double fp = 0.0, fm = 0.0;
           const int ok = bh_ffr_feedback_radius_ok(res, k, &fp, &fm);
-          printf("BH_FFR: adaptive wind radius detail mode=live ID=%llu task=%d "
-                 "index=%d R=%g Reps=%g Nplus=%lld Nminus=%lld "
-                 "fplus=%g fminus=%g resolved=%d\n",
-                 (unsigned long long)P[p].ID, ThisTask, k,
-                 (double)grid.Radius[k], (double)(grid.Radius[k] / eps),
-                 res->AdaptiveLobeCount[k][0],
+          printf("BH_FFR: adaptive wind radius detail mode=live ID=%llu task=%d geometry=cone index=%d R=%g Reps=%g Nplus=%lld Nminus=%lld fplus=%g fminus=%g resolved=%d\n",
+                 (unsigned long long)P[p].ID, ThisTask, k, (double)grid.Radius[k],
+                 (double)(grid.Radius[k] / eps), res->AdaptiveLobeCount[k][0],
                  res->AdaptiveLobeCount[k][1], fp, fm, ok);
+        }
+      for(int k = 0; k < fallback_grid.Count; k++)
+        {
+          double fp = 0.0, fm = 0.0;
+          const int ok = bh_ffr_feedback_fallback_radius_ok(res, k, &fp, &fm);
+          printf("BH_FFR: adaptive wind radius detail mode=live ID=%llu task=%d geometry=hemisphere index=%d R=%g Reps=%g Nplus=%lld Nminus=%lld fplus=%g fminus=%g resolved=%d\n",
+                 (unsigned long long)P[p].ID, ThisTask, k, (double)fallback_grid.Radius[k],
+                 (double)(fallback_grid.Radius[k] / eps), res->FallbackHemiCount[k][0],
+                 res->FallbackHemiCount[k][1], fp, fm, ok);
         }
 
       int fallback = 0, underresolved = 0;
-      double fplus = 0.0, fminus = 0.0;
-      const int selected =
-          bh_ffr_feedback_select_live_geometry(
-              res, &fallback, &underresolved, &fplus, &fminus);
-
-      const long long nplus =
-          fallback ? res->AdaptiveHemiCount[0]
-                   : res->AdaptiveLobeCount[selected][0];
-      const long long nminus =
-          fallback ? res->AdaptiveHemiCount[1]
-                   : res->AdaptiveLobeCount[selected][1];
-
-      printf("BH_FFR: adaptive wind radius mode=live ID=%llu task=%d eps=%g "
-             "Rsearch=%g Rwind=%g index=%d Nplus=%lld Nminus=%lld "
-             "fplus=%g fminus=%g fallback=%d underresolved=%d\n",
+      double fp = 0.0, fm = 0.0;
+      const int selected = bh_ffr_feedback_select_live_geometry(res, &fallback, &underresolved, &fp, &fm);
+      const double rsel = fallback ? fallback_grid.Radius[selected] : grid.Radius[selected];
+      const long long np = fallback ? res->FallbackHemiCount[selected][0] : res->AdaptiveLobeCount[selected][0];
+      const long long nm = fallback ? res->FallbackHemiCount[selected][1] : res->AdaptiveLobeCount[selected][1];
+      printf("BH_FFR: adaptive wind radius mode=live ID=%llu task=%d eps=%g Rsearch=%g Rwind=%g index=%d Nplus=%lld Nminus=%lld fplus=%g fminus=%g fallback=%d underresolved=%d\n",
              (unsigned long long)P[p].ID, ThisTask, eps,
-             (double)grid.Radius[grid.Count - 1],
-             (double)grid.Radius[selected], selected, nplus, nminus,
-             fplus, fminus, fallback, underresolved);
+             (double)fallback_grid.Radius[fallback_grid.Count - 1], rsel, selected,
+             np, nm, fp, fm, fallback, underresolved);
       fflush(stdout);
     }
 }
@@ -721,76 +746,53 @@ static void bh_ffr_feedback_prepare_candidates(void)
     {
       struct bh_ffr_feedback_event *ev = &FeedbackEvents[n];
       memset(ev, 0, sizeof(*ev));
-
-      const int p =
-          bh_ffr_feedback_particle_from_target(
-              n, "bh_ffr_feedback_prepare_candidates");
+      const int p = bh_ffr_feedback_particle_from_target(n, "bh_ffr_feedback_prepare_candidates");
       const int b = P[p].BHDataIndex;
       const data_out *res = &FeedbackResults[n];
 
-      struct bh_ffr_discrete_radius_grid grid;
+      struct bh_ffr_discrete_radius_grid grid, fallback_grid;
       bh_ffr_build_resolution_radius_grid(p, &grid);
+      bh_ffr_build_discrete_radius_grid(bh_ffr_effective_softening_proper(p),
+                                        BHFFRWindFallbackRadiusFactors,
+                                        BH_FFR_WIND_FALLBACK_RADIUS_COUNT, &fallback_grid);
 
       int fallback = 0, underresolved = 0;
       double fplus = 0.0, fminus = 0.0;
-      const int selected =
-          bh_ffr_feedback_select_live_geometry(
-              res, &fallback, &underresolved, &fplus, &fminus);
-
+      const int selected = bh_ffr_feedback_select_live_geometry(res, &fallback, &underresolved, &fplus, &fminus);
       ev->RadiusIndex = selected;
       ev->Underresolved = underresolved;
       ev->UsedHemisphereFallback = fallback;
-      ev->RadiusProper = grid.Radius[selected];
+      ev->RadiusProper = fallback ? fallback_grid.Radius[selected] : grid.Radius[selected];
 
       const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
-      if(!isfinite(a) || !(a > 0))
-        terminate("BH_FFR: invalid scale factor=%g in wind candidate setup", a);
+      if(!isfinite(a) || !(a > 0)) terminate("BH_FFR: invalid scale factor=%g in wind candidate setup", a);
       ev->RadiusCoordinate = ev->RadiusProper / a;
-      ev->CosCone =
-          fallback ? 0.0 : cos(All.BHWindConeAngleDeg * M_PI / 180.0);
+      ev->CosCone = fallback ? 0.0 : cos(All.BHWindConeAngleDeg * M_PI / 180.0);
 
-      const double menc = res->AdaptiveEnclosedMass[selected];
+      const double menc = fallback ? res->FallbackEnclosedMass[selected] : res->AdaptiveEnclosedMass[selected];
       const double sigma2 = BHP[b].SigmaDM * BHP[b].SigmaDM;
       double vbind2 = sigma2;
-      if(All.BHUseCentralBindingTerm)
-        vbind2 +=
-            2.0 * All.G * bh_ffr_central_mass_code(p) / ev->RadiusProper;
+      if(All.BHUseCentralBindingTerm) vbind2 += 2.0 * All.G * bh_ffr_central_mass_code(p) / ev->RadiusProper;
+      if(!isfinite(vbind2) || vbind2 < 0 || !isfinite(menc) || menc < 0)
+        terminate("BH_FFR: invalid adaptive wind threshold environment Menc=%g R=%g vbind2=%g for ID=%llu", menc, ev->RadiusProper, vbind2, (unsigned long long)P[p].ID);
 
-      if(!isfinite(vbind2) || vbind2 < 0 ||
-         !isfinite(menc) || menc < 0)
-        terminate("BH_FFR: invalid adaptive wind threshold environment "
-                  "Menc=%g R=%g vbind2=%g for ID=%llu",
-                  menc, ev->RadiusProper, vbind2,
-                  (unsigned long long)P[p].ID);
-
-      const double base_threshold = 0.5 * menc * vbind2;
-      BHP[b].WindThresholdEnergy = All.BHWindBurstFactor * base_threshold;
-
+      BHP[b].WindThresholdEnergy = All.BHWindBurstFactor * 0.5 * menc * vbind2;
       if(BHP[b].SigmaDM > 0)
         {
-          printf("BH_FFR: binding threshold wind ID=%llu task=%d "
-                 "Rwind=%g index=%d fallback=%d Menc=%g sigmaDM=%g "
-                 "vbind2=%g central=%d EthWind=%g\n",
-                 (unsigned long long)P[p].ID, ThisTask,
-                 ev->RadiusProper, selected, fallback, menc,
-                 BHP[b].SigmaDM, vbind2, All.BHUseCentralBindingTerm,
-                 BHP[b].WindThresholdEnergy);
+          printf("BH_FFR: binding threshold wind ID=%llu task=%d Rwind=%g index=%d fallback=%d Menc=%g sigmaDM=%g vbind2=%g central=%d EthWind=%g\n",
+                 (unsigned long long)P[p].ID, ThisTask, ev->RadiusProper, selected, fallback,
+                 menc, BHP[b].SigmaDM, vbind2, All.BHUseCentralBindingTerm, BHP[b].WindThresholdEnergy);
           fflush(stdout);
         }
-
-      if(underresolved)
-        continue;
+      if(underresolved) continue;
 
       const double eth = BHP[b].WindThresholdEnergy;
-      if(!(eth > 0) || !(BHP[b].WindEnergyBuffer >= eth))
-        continue;
-
+      if(!(eth > 0) || !(BHP[b].WindEnergyBuffer >= eth)) continue;
       ev->EnergyBefore = BHP[b].WindEnergyBuffer;
       ev->MassBefore = BHP[b].WindMassBuffer;
       ev->MomentumBefore = BHP[b].WindMomentumBuffer;
       ev->ThresholdEnergy = eth;
       ev->PacketEnergy = eth;
-
       const double frac = ev->PacketEnergy / ev->EnergyBefore;
       ev->PacketMass = ev->MassBefore * frac;
       ev->PacketMomentum = ev->MomentumBefore * frac;
@@ -799,60 +801,35 @@ static void bh_ffr_feedback_prepare_candidates(void)
         {
           if(fallback)
             {
-              ev->LobeMass[l] = res->AdaptiveHemiMass[l];
-              ev->LobeCount[l] = res->AdaptiveHemiCount[l];
-              ev->LobeUtherm[l] =
-                  res->AdaptiveHemiThermalMassWeighted[l] /
-                  ev->LobeMass[l];
+              ev->LobeMass[l] = res->FallbackHemiMass[selected][l];
+              ev->LobeCount[l] = res->FallbackHemiCount[selected][l];
+              ev->LobeUtherm[l] = res->FallbackHemiThermalMassWeighted[selected][l] / ev->LobeMass[l];
             }
           else
             {
               ev->LobeMass[l] = res->AdaptiveLobeMass[selected][l];
               ev->LobeCount[l] = res->AdaptiveLobeCount[selected][l];
-              ev->LobeUtherm[l] =
-                  res->AdaptiveLobeThermalMassWeighted[selected][l] /
-                  ev->LobeMass[l];
+              ev->LobeUtherm[l] = res->AdaptiveLobeThermalMassWeighted[selected][l] / ev->LobeMass[l];
             }
-
           if(!isfinite(ev->LobeUtherm[l]) || ev->LobeUtherm[l] < 0)
-            terminate("BH_FFR: invalid adaptive wind lobe internal energy=%g "
-                      "for ID=%llu lobe=%d",
-                      ev->LobeUtherm[l], (unsigned long long)P[p].ID, l);
+            terminate("BH_FFR: invalid adaptive wind lobe internal energy=%g for ID=%llu lobe=%d", ev->LobeUtherm[l], (unsigned long long)P[p].ID, l);
         }
 
-      if(!isfinite(frac) || frac <= 0 || frac > 1.0 + 2.0e-12 ||
-         !isfinite(ev->PacketMass) || ev->PacketMass < 0 ||
-         ev->PacketMass > ev->MassBefore * (1.0 + 2.0e-12))
-        terminate("BH_FFR: invalid wind packet fraction=%g dM=%g for ID=%llu",
-                  frac, ev->PacketMass, (unsigned long long)P[p].ID);
+      if(!isfinite(frac) || frac <= 0 || frac > 1.0 + 2.0e-12 || !isfinite(ev->PacketMass) || ev->PacketMass < 0 || ev->PacketMass > ev->MassBefore * (1.0 + 2.0e-12))
+        terminate("BH_FFR: invalid wind packet fraction=%g dM=%g for ID=%llu", frac, ev->PacketMass, (unsigned long long)P[p].ID);
 
       const double half = 0.5 * ev->PacketMass;
-      const double mplus = ev->LobeMass[0] + half;
-      const double mminus = ev->LobeMass[1] + half;
-      if(!isfinite(mplus) || !isfinite(mminus) ||
-         !(mplus > 0) || !(mminus > 0))
-        terminate("BH_FFR: invalid selected wind lobe masses ID=%llu "
-                  "fallback=%d mplus=%g mminus=%g",
-                  (unsigned long long)P[p].ID, fallback,
-                  mplus, mminus);
+      const double mplus = ev->LobeMass[0] + half, mminus = ev->LobeMass[1] + half;
+      if(!isfinite(mplus) || !isfinite(mminus) || !(mplus > 0) || !(mminus > 0))
+        terminate("BH_FFR: invalid selected wind lobe masses ID=%llu fallback=%d mplus=%g mminus=%g", (unsigned long long)P[p].ID, fallback, mplus, mminus);
 
       double vbh_axis = 0.0;
-      for(int k = 0; k < 3; k++)
-        vbh_axis += (P[p].Vel[k] / a) * BHP[b].DiscDir[k];
-
-      const double pplus =
-          fallback ? res->AdaptiveHemiProjectedMomentum[0]
-                   : res->AdaptiveLobeProjectedMomentum[selected][0];
-      const double pminus =
-          fallback ? res->AdaptiveHemiProjectedMomentum[1]
-                   : res->AdaptiveLobeProjectedMomentum[selected][1];
-
+      for(int k = 0; k < 3; k++) vbh_axis += (P[p].Vel[k] / a) * BHP[b].DiscDir[k];
+      const double pplus = fallback ? res->FallbackHemiProjectedMomentum[selected][0] : res->AdaptiveLobeProjectedMomentum[selected][0];
+      const double pminus = fallback ? res->FallbackHemiProjectedMomentum[selected][1] : res->AdaptiveLobeProjectedMomentum[selected][1];
       const double vplus = (pplus + half * vbh_axis) / mplus;
       const double vminus = (pminus + half * vbh_axis) / mminus;
-      const double A = vplus - vminus;
-      const double B = 1.0 / mplus + 1.0 / mminus;
-
-      ev->Q = bh_ffr_feedback_packet_q(A, B, ev->PacketEnergy);
+      ev->Q = bh_ffr_feedback_packet_q(vplus - vminus, 1.0 / mplus + 1.0 / mminus, ev->PacketEnergy);
       ev->Candidate = 1;
     }
 }
