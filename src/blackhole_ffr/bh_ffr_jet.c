@@ -1067,9 +1067,9 @@ void bh_ffr_inject_jet_feedback(void)
       bh_ffr_jet_report_broadening_survey();
       bh_ffr_jet_prepare_candidates();
 
-      if(round == 0)
-        bh_ffr_jet_comm_pass(BH_FFR_JET_WAKE);
-
+      /* The wind module has already performed the shared spherical
+       * 128-epsilon synchronization guard for both MACER channels. Do not
+       * repeat an otherwise identical jet wake treewalk here. */
       if(bh_ffr_jet_global_candidate_count() <= 0)
         break;
 
