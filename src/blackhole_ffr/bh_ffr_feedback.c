@@ -192,6 +192,21 @@ static void particle2in(data_in *in, int target, int firstnode)
 
       in->Radius = in->FallbackRadius[BH_FFR_WIND_FALLBACK_RADIUS_COUNT - 1];
     }
+  else if(FeedbackPass == BH_FFR_FEEDBACK_WAKE)
+    {
+      const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+      if(!isfinite(a) || !(a > 0))
+        terminate("BH_FFR: invalid scale factor=%g in feedback sync guard", a);
+
+      const double eps = bh_ffr_effective_softening_proper(p);
+      const double rguard =
+          BHFFRWindFallbackRadiusFactors[BH_FFR_WIND_FALLBACK_RADIUS_COUNT - 1] * eps;
+      if(!isfinite(rguard) || !(rguard > 0))
+        terminate("BH_FFR: invalid 128-epsilon feedback sync radius=%g ID=%llu",
+                  rguard, (unsigned long long)P[p].ID);
+
+      in->Radius = rguard / a;
+    }
   else
     {
       if(!isfinite(ev->RadiusCoordinate) || !(ev->RadiusCoordinate > 0))
@@ -200,13 +215,16 @@ static void particle2in(data_in *in, int target, int firstnode)
       in->Radius = ev->RadiusCoordinate;
     }
 
-  in->CosCone = (FeedbackPass == BH_FFR_FEEDBACK_STATS)
-                    ? cos(All.BHWindConeAngleDeg * M_PI / 180.0)
-                    : ev->CosCone;
+  /* Statistics use the physical wind cone; injection uses the selected cone
+   * or hemisphere; the shared synchronization guard is always a full sphere. */
+  in->CosCone =
+      FeedbackPass == BH_FFR_FEEDBACK_STATS
+          ? cos(All.BHWindConeAngleDeg * M_PI / 180.0)
+          : (FeedbackPass == BH_FFR_FEEDBACK_WAKE ? 0.0 : ev->CosCone);
   in->BHID = P[p].ID;
   in->WakeTimeBin =
       FeedbackPass == BH_FFR_FEEDBACK_WAKE
-          ? bh_ffr_feedback_wind_target_hydro_timebin(p)
+          ? bh_ffr_feedback_sync_target_hydro_timebin(p)
           : -1;
   in->Candidate = ev->Candidate;
   in->Fire = ev->Fire;
@@ -1129,7 +1147,27 @@ void bh_ffr_inject_wind_feedback(void)
       bh_ffr_feedback_prepare_candidates();
 
       if(round == 0)
-        bh_ffr_feedback_comm_pass(BH_FFR_FEEDBACK_WAKE);
+        {
+          for(int n = 0; n < FeedbackNTargets; n++)
+            {
+              const int p =
+                  bh_ffr_feedback_particle_from_target(
+                      n, "bh_ffr_inject_wind_feedback/sync-guard");
+              const double eps = bh_ffr_effective_softening_proper(p);
+              const double rguard =
+                  BHFFRWindFallbackRadiusFactors[BH_FFR_WIND_FALLBACK_RADIUS_COUNT - 1] * eps;
+              const int sync_bin =
+                  bh_ffr_feedback_sync_target_hydro_timebin(p);
+
+              printf("BH_FFR: feedback sync guard ID=%llu task=%d "
+                     "Rguard=%g Reps=%g targetBin=%d bhGravBin=%d\n",
+                     (unsigned long long)P[p].ID, ThisTask,
+                     rguard, rguard / eps, sync_bin, P[p].TimeBinGrav);
+              fflush(stdout);
+            }
+
+          bh_ffr_feedback_comm_pass(BH_FFR_FEEDBACK_WAKE);
+        }
 
       if(bh_ffr_feedback_global_candidate_count() <= 0)
         break;
