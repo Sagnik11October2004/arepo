@@ -749,6 +749,17 @@ void bh_ffr_step(void)
    * cannot emit two spatially overlapping events immediately before coalescing. */
   bh_ffr_merge_close_black_holes();
 
+  /* No packet injection while every BH remains inside its seed quiet phase.
+   * The experiment uses one BH; this also avoids discharging pre-existing
+   * buffers from its pristine checkpoint before the delay expires. */
+  int local_ready_bhs = 0, global_ready_bhs = 0;
+  for(int n = 0; n < NumActiveBHFFR; n++)
+    if(!bh_ffr_seed_quiescent(BHFFRActiveParticleList[n]))
+      local_ready_bhs++;
+  MPI_Allreduce(&local_ready_bhs, &global_ready_bhs, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+  if(global_ready_bhs == 0)
+    return;
+
   switch(All.BHBenchmarkFeedbackModel)
     {
       case BH_BENCHMARK_FEEDBACK_NONE:
