@@ -5,6 +5,14 @@
 #include "blackhole_ffr.h"
 #include "../main/proto.h"
 
+/* Global multiplicative supply efficiency for the ConvJ/Mach shell-FFR
+ * estimator. Defaults to unity outside the opt-in science experiment.
+ * Both diagnostic and operational raw rates use the same factor, while
+ * FMACH/FJ remain their original dimensionless dynamical suppressions. */
+#ifndef BH_FFR_CONVJ_SUPPLY_FACTOR
+#define BH_FFR_CONVJ_SUPPLY_FACTOR 1.0
+#endif
+
 /*
  * Accretion-only comparison layer used by the convergence benchmark branch.
  *
@@ -154,7 +162,8 @@ void bh_benchmark_compute_all_raw_rates(const struct bh_benchmark_environment *e
    * happens to contain no gas. */
   raw_rates[BH_BENCHMARK_ACC_FFR] = env->FFRRawRate;
   raw_rates[BH_BENCHMARK_ACC_FFR_SHELL] = env->FFRShellRawRate;
-  raw_rates[BH_BENCHMARK_ACC_CONVJ_SHELL_FFR] = env->FFRConvJShellRate;
+  raw_rates[BH_BENCHMARK_ACC_CONVJ_SHELL_FFR] =
+      (double)BH_FFR_CONVJ_SUPPLY_FACTOR * env->FFRConvJShellRate;
   *env_factor = env->ConvJFactor;
 
   if(env->GasMass <= 0)
@@ -252,7 +261,7 @@ void bh_benchmark_compute_accretion(const struct bh_benchmark_environment *env, 
         break;
 
       case BH_BENCHMARK_ACC_CONVJ_SHELL_FFR:
-        out->RawRate = env->FFRConvJShellRate;
+        out->RawRate = (double)BH_FFR_CONVJ_SUPPLY_FACTOR * env->FFRConvJShellRate;
         break;
 
       default:
