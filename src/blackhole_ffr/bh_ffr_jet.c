@@ -323,6 +323,21 @@ static void particle2in(data_in *in, int target, int firstnode)
 
       in->Radius = in->ReceiverRadius[grid.Count - 1];
     }
+  else if(JetPass == BH_FFR_JET_WAKE)
+    {
+      const double a = All.ComovingIntegrationOn ? All.cf_atime : 1.0;
+      if(!isfinite(a) || !(a > 0))
+        terminate("BH_FFR: invalid scale factor=%g in feedback sync guard", a);
+
+      const double eps = bh_ffr_effective_softening_proper(p);
+      const double rguard =
+          BHFFRJetReceiverRadiusFactors[BH_FFR_JET_RECEIVER_RADIUS_COUNT - 1] * eps;
+      if(!isfinite(rguard) || !(rguard > 0))
+        terminate("BH_FFR: invalid 128-epsilon feedback sync radius=%g ID=%llu",
+                  rguard, (unsigned long long)P[p].ID);
+
+      in->Radius = rguard / a;
+    }
   else
     {
       if(!isfinite(ev->RadiusCoordinate) || !(ev->RadiusCoordinate > 0))
@@ -335,7 +350,7 @@ static void particle2in(data_in *in, int target, int firstnode)
   in->BHID = P[p].ID;
   in->WakeTimeBin =
       JetPass == BH_FFR_JET_WAKE
-          ? bh_ffr_feedback_jet_target_hydro_timebin(p)
+          ? bh_ffr_feedback_sync_target_hydro_timebin(p)
           : -1;
   in->Candidate = ev->Candidate;
   in->Fire = ev->Fire;
@@ -1067,9 +1082,32 @@ void bh_ffr_inject_jet_feedback(void)
       bh_ffr_jet_report_broadening_survey();
       bh_ffr_jet_prepare_candidates();
 
-      /* The wind module has already performed the shared spherical
-       * 128-epsilon synchronization guard for both MACER channels. Do not
-       * repeat an otherwise identical jet wake treewalk here. */
+      if(round == 0)
+        {
+          /* By this point both current wind and current jet thresholds are
+           * known, so one spherical 128-epsilon wake pass can enforce the
+           * fully current shared synchronization cadence for both channels. */
+          for(int n = 0; n < JetNTargets; n++)
+            {
+              const int p =
+                  bh_ffr_jet_particle_from_target(
+                      n, "bh_ffr_inject_jet_feedback/sync-guard");
+              const double eps = bh_ffr_effective_softening_proper(p);
+              const double rguard =
+                  BHFFRJetReceiverRadiusFactors[BH_FFR_JET_RECEIVER_RADIUS_COUNT - 1] * eps;
+              const int sync_bin =
+                  bh_ffr_feedback_sync_target_hydro_timebin(p);
+
+              printf("BH_FFR: feedback sync guard ID=%llu task=%d "
+                     "Rguard=%g Reps=%g targetBin=%d bhGravBin=%d\n",
+                     (unsigned long long)P[p].ID, ThisTask,
+                     rguard, rguard / eps, sync_bin, P[p].TimeBinGrav);
+              fflush(stdout);
+            }
+
+          bh_ffr_jet_comm_pass(BH_FFR_JET_WAKE);
+        }
+
       if(bh_ffr_jet_global_candidate_count() <= 0)
         break;
 
