@@ -1085,6 +1085,11 @@ static void bh_ffr_prepare_benchmark_rates(void)
       struct bh_benchmark_rate_result rate;
       bh_benchmark_compute_accretion(&env, BHP[b].BHMass, &rate);
 
+      /* Seed remains gravitationally present but captures no gas for its
+       * first physical Myr; leave the raw estimator diagnostic unchanged. */
+      if(bh_ffr_seed_quiescent(p))
+        rate.OperationalRate = 0.0;
+
       double raw_all[BH_BENCHMARK_ACC_COUNT], all_boost_factor, all_am_limiter;
       double all_convj_factor;
       bh_benchmark_compute_all_raw_rates(&env, BHP[b].BHMass, raw_all,
@@ -1098,7 +1103,7 @@ static void bh_ffr_prepare_benchmark_rates(void)
              "boost=%.17g amlim=%.17g FCORR=%.17g FMACH=%.17g FJ=%.17g "
              "CCONV=%.17g Mbulk=%.17g Meff=%.17g chiJ=%.17g rcirc=%.17g "
              "cssh=%.17g vbulksh=%.17g jsh=%.17g\n",
-             All.Time, bh_benchmark_current_time_myr(), bh_benchmark_capture_window_open(),
+             All.Time, bh_benchmark_current_time_myr(), (bh_benchmark_capture_window_open() && !bh_ffr_seed_quiescent(p)),
              (unsigned long long)P[p].ID, ThisTask,
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT ? "direct" : "reservoir",
@@ -1153,7 +1158,7 @@ static void bh_ffr_prepare_benchmark_rates(void)
       printf("BH_BENCHMARK: accretion timeMyr=%.17g captureon=%d ID=%llu task=%d model=%s target=%s feedback=%d "
              "Mgas=%.17g rho=%.17g cs=%.17g vrel=%.17g Vphi=%.17g nH=%.17g raw=%.17g edd=%.17g operational=%.17g "
              "boost=%.17g amlim=%.17g FCORR=%.17g FMACH=%.17g FJ=%.17g\n",
-             bh_benchmark_current_time_myr(), bh_benchmark_capture_window_open(),
+             bh_benchmark_current_time_myr(), (bh_benchmark_capture_window_open() && !bh_ffr_seed_quiescent(p)),
              (unsigned long long)P[p].ID, ThisTask,
              bh_benchmark_accretion_model_name(All.BHBenchmarkAccretionModel),
              All.BHBenchmarkAccretionTarget == BH_BENCHMARK_TARGET_DIRECT ? "direct" : "reservoir",
